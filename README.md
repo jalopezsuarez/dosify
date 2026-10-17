@@ -1,6 +1,6 @@
 # Dosify
 
-App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) (web components por CDN) como única dependencia. Sin build, sin frameworks, sin CSS propio. Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
+App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) (web components por CDN) como única dependencia. Sin build, sin frameworks y sin CSS propio, salvo las seis variables de tema de Ionic que fijan el color principal (#56bde3). Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
 
 **Web:** https://jalopezsuarez.github.io/dosify/
 
@@ -8,8 +8,8 @@ App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [I
 
 - **Toma** (única pantalla):
   - Selector de días con scroll horizontal: hoy centrado, los últimos 30 días a la izquierda y los próximos en gris, no seleccionables. Cada día pasado lleva un anillo de progreso con «tomadas/total». Tocar un día muestra sus tomas y su registro.
-  - Pestañas Mañana / Tarde / Noche, abiertas en la franja del momento (06–12 Mañana, 12–18 Tarde, 18–06 Noche). Cada franja muestra su porcentaje, «n de m tomadas» y las tomas con un check por fila.
-  - **Registro** del día elegido, seccionado por Mañana / Tarde / Noche, con la hora de cada toma. Desmarcar una toma elimina su entrada.
+  - Pestañas Mañana / Tarde / Noche, abiertas en la franja del momento (06–12 Mañana, 12–18 Tarde, 18–06 Noche). Cada franja muestra un círculo de progreso con su porcentaje, «n de m tomadas» y las tomas con un check por fila (la dosis debajo del nombre).
+  - Debajo, siempre, las secciones Mañana / Tarde / Noche del día elegido con las tomas registradas y su hora. Desmarcar una toma elimina su entrada.
 - **Pautas** (botón arriba a la derecha): lista por Mañana / Tarde / Noche. Cada fila muestra nombre, dosis, en qué franjas se toma (chips Mañana · Tarde · Noche con check), indicaciones y referencias, y, a la derecha, un interruptor para activarla o desactivarla (las desactivadas no aparecen en la toma) junto al asa para ordenar arrastrando. Tocar la fila la edita; «Añadir» crea una nueva. El editor va en secciones: Medicamento, Tomas, Notas y Eliminar. Al final del gestor, el bloque **Datos**: cargar y exportar un único CSV con pautas y tomas, y borrar el registro de tomas.
 
 Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
