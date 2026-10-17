@@ -67,13 +67,15 @@
         <ion-buttons slot="start"><ion-button id="close">Cerrar</ion-button></ion-buttons>
         <ion-title>Pautas</ion-title>
         <ion-buttons slot="end">
-          <ion-button id="sort">Ordenar</ion-button>
           <ion-button id="add"><ion-icon slot="start" name="add"></ion-icon>Añadir</ion-button>
         </ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
-      <ion-list-header><ion-label>Pautas</ion-label></ion-list-header>
+      <ion-list-header>
+        <ion-label>Pautas</ion-label>
+        <ion-button id="sort" fill="clear" aria-label="Ordenar"><ion-icon slot="icon-only" name="swap-vertical-outline"></ion-icon></ion-button>
+      </ion-list-header>
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
       </ion-list>

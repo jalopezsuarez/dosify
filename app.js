@@ -33,7 +33,7 @@ const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === i
 // ---------- Toma ----------
 
 const ring = (done, total, label, size = 44, font = 11) => `
-  <ion-text color="${total && done === total ? 'success' : 'primary'}">
+  <ion-text color="primary">
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
@@ -57,23 +57,16 @@ function renderDays() {
   }).join('');
 }
 
-// Cada toma va en su propia lista inset: filas independientes, no agrupadas.
-const doseRow = (m, slot, isTaken) => `
+// Cada toma va en su propia lista inset: filas independientes. Si ya está tomada, muestra la hora junto a la dosis.
+const doseRow = (m, slot, entry) => `
   <ion-list inset="true">
     <ion-item>
       <ion-button slot="start" fill="clear" data-info="${m.id}" aria-label="Información">
         <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
       </ion-button>
-      <ion-checkbox helper-text="${esc(m.dose)}" data-id="${m.id}" data-slot="${slot}" ${isTaken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
+      <ion-checkbox helper-text="${esc([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
     </ion-item>
   </ion-list>`;
-
-const logRow = e => `
-  <ion-item>
-    <ion-icon slot="start" name="checkmark-circle" color="success"></ion-icon>
-    <ion-label>${esc(e.name)}<p>${SLOTS[e.slot]}</p></ion-label>
-    <ion-note slot="end">${time(e.at)}</ion-note>
-  </ion-item>`;
 
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
@@ -81,14 +74,11 @@ async function renderToma() {
   const day = selectedDay();
   const slot = $('#slot').value || slotNow();
   const rows = doses(slot);
-  const done = rows.filter(m => taken(day, m.id, slot)).length;
+  const entry = m => state.log.find(e => e.day === day && e.id === m.id && e.slot === slot);
+  const pending = rows.filter(m => !entry(m));
+  const taken = rows.filter(m => entry(m));
+  const done = taken.length;
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
-  const entries = state.log.filter(e => e.day === day).sort((a, b) => a.at.localeCompare(b.at));
-  // Registro: un grupo por franja, de arriba abajo Noche, Tarde, Mañana.
-  const registro = Object.keys(SLOTS).reverse().map(s => {
-    const list = entries.filter(e => e.slot === s);
-    return list.length ? `<ion-list inset="true">${list.map(logRow).join('')}</ion-list>` : emptyList(`${SLOTS[s]}: sin tomas`);
-  }).join('');
 
   // Conserva la posición del scroll al volver a pintar (p. ej. al marcar una toma al final de la lista).
   const scroller = await $('#toma').getScrollElement?.();
@@ -103,10 +93,10 @@ async function renderToma() {
         </ion-label>
       </ion-item>
     </ion-list>
+    <ion-list-header><ion-label>Pendiente</ion-label></ion-list-header>
+    ${pending.map(m => doseRow(m, slot)).join('') || emptyList('Nada pendiente.')}
     <ion-list-header><ion-label>Tomas</ion-label></ion-list-header>
-    ${rows.map(m => doseRow(m, slot, taken(day, m.id, slot))).join('') || emptyList(`Sin tomas en ${SLOTS[slot]}.`)}
-    <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
-    ${registro}`;
+    ${taken.map(m => doseRow(m, slot, entry(m))).join('') || emptyList('Sin tomas.')}`;
   if (scroller) { scroller.scrollTop = y; requestAnimationFrame(() => { scroller.scrollTop = y; }); }
 }
 
@@ -282,7 +272,7 @@ $('#manage').onclick = () => manager.present();
 $('#close').onclick = () => manager.dismiss();
 $('#sort').onclick = () => {
   $('#list').disabled = !$('#list').disabled;
-  $('#sort').textContent = $('#list').disabled ? 'Ordenar' : 'Listo';
+  $('#sort ion-icon').name = $('#list').disabled ? 'swap-vertical-outline' : 'checkmark-outline';
 };
 $('#add').onclick = () => openEditor();
 $('#list').addEventListener('click', e => {
