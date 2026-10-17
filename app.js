@@ -64,7 +64,7 @@ const doseRow = (m, slot, entry) => `
       <ion-button slot="start" fill="clear" data-info="${m.id}" aria-label="Información">
         <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
       </ion-button>
-      <ion-checkbox helper-text="${esc([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
+      <ion-checkbox helper-text="${esc([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}><span class="medium">${esc(m.name)}</span></ion-checkbox>
     </ion-item>
   </ion-list>`;
 
@@ -142,11 +142,11 @@ const chip = (m, slot) => m[slot]
 const pautaRow = m => `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap" ${active(m) ? '' : 'color="medium"'}>
-      <h2>${esc(m.name)}</h2>
+      <h2 class="medium">${esc(m.name)}</h2>
+      ${timed(m) ? `<p><ion-text color="rose" class="medium">${active(m) ? `${Number(m.days)} días · hasta el` : 'Finalizada el'} ${lastDay(m).toLocaleDateString('es')}</ion-text></p>` : ''}
       ${m.dose ? `<p>${esc(m.dose)}</p>` : ''}
       <p>${Object.keys(SLOTS).map(slot => chip(m, slot)).join('')}</p>
       ${m.notes ? `<p>${esc(brief(m.notes))}</p>` : ''}
-      ${timed(m) ? `<p>${active(m) ? `${Number(m.days)} días · hasta el` : 'Finalizada el'} ${lastDay(m).toLocaleDateString('es')}</p>` : ''}
     </ion-label>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
@@ -304,3 +304,5 @@ document.addEventListener('visibilitychange', () => document.visibilityState ===
 $('#day').setAttribute('value', today());
 $('#slot').setAttribute('value', slotNow());
 render();
+// Al cargar, hoy (el último día) siempre a la vista.
+$('#day').componentOnReady().then(() => requestAnimationFrame(() => { $('#day').scrollLeft = $('#day').scrollWidth; }));

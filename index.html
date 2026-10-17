@@ -25,7 +25,26 @@
       --ion-color-teal-contrast-rgb: 0, 0, 0;
       --ion-color-teal-shade: #6aa19a;
       --ion-color-teal-tint: #86beb7;
+      --ion-color-rose: #e47969;
+      --ion-color-rose-rgb: 228, 121, 105;
+      --ion-color-rose-contrast: #000000;
+      --ion-color-rose-contrast-rgb: 0, 0, 0;
+      --ion-color-rose-shade: #c96a5c;
+      --ion-color-rose-tint: #e78678;
     }
+    .ion-color-rose {
+      --ion-color-base: var(--ion-color-rose) !important;
+      --ion-color-base-rgb: var(--ion-color-rose-rgb) !important;
+      --ion-color-contrast: var(--ion-color-rose-contrast) !important;
+      --ion-color-contrast-rgb: var(--ion-color-rose-contrast-rgb) !important;
+      --ion-color-shade: var(--ion-color-rose-shade) !important;
+      --ion-color-tint: var(--ion-color-rose-tint) !important;
+    }
+    /* Peso medio para títulos (Ionic no trae utilidad de font-weight) */
+    :root .medium { font-weight: 500; }
+    /* Oculta la barra de scroll del selector de días (la regla de Ionic para ello no se aplica) */
+    #day { scrollbar-width: none; }
+    #day::-webkit-scrollbar { display: none; }
     .ion-color-teal {
       --ion-color-base: var(--ion-color-teal) !important;
       --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
