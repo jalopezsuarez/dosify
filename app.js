@@ -33,7 +33,7 @@ const ring = (done, total, label, size = 44, font = 11) => `
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
-      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" fill="currentColor">${label}</text>
+      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="currentColor">${label}</text>
     </svg>
   </ion-text>`;
 
@@ -63,13 +63,11 @@ const doseRow = (m, slot, isTaken) => `
   </ion-list>`;
 
 const logRow = e => `
-  <ion-list inset="true">
-    <ion-item>
-      <ion-icon slot="start" name="checkmark-circle" color="success"></ion-icon>
-      <ion-label>${esc(e.name)}</ion-label>
-      <ion-note slot="end">${time(e.at)}</ion-note>
-    </ion-item>
-  </ion-list>`;
+  <ion-item>
+    <ion-icon slot="start" name="checkmark-circle" color="success"></ion-icon>
+    <ion-label>${esc(e.name)}<p>${SLOTS[e.slot]}</p></ion-label>
+    <ion-note slot="end">${time(e.at)}</ion-note>
+  </ion-item>`;
 
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
@@ -80,9 +78,11 @@ function renderToma() {
   const done = rows.filter(m => taken(day, m.id, slot)).length;
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
   const entries = state.log.filter(e => e.day === day).sort((a, b) => a.at.localeCompare(b.at));
-  const sections = Object.keys(SLOTS).map(s => `
-    <ion-list-header><ion-label>${SLOTS[s]}</ion-label></ion-list-header>
-    ${entries.filter(e => e.slot === s).map(logRow).join('') || emptyList('Sin tomas')}`).join('');
+  // Registro: un grupo por franja, de arriba abajo Noche, Tarde, Mañana.
+  const registro = Object.keys(SLOTS).reverse().map(s => {
+    const list = entries.filter(e => e.slot === s);
+    return list.length ? `<ion-list inset="true">${list.map(logRow).join('')}</ion-list>` : emptyList(`${SLOTS[s]}: sin tomas`);
+  }).join('');
 
   $('#toma').innerHTML = `
     <ion-list inset="true">
@@ -96,7 +96,8 @@ function renderToma() {
     </ion-list>
     <ion-list-header><ion-label>Tomas</ion-label></ion-list-header>
     ${rows.map(m => doseRow(m, slot, taken(day, m.id, slot))).join('') || emptyList(`Sin tomas en ${SLOTS[slot]}.`)}
-    ${sections}`;
+    <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
+    ${registro}`;
 }
 
 function toggle(id, slot, checked) {
