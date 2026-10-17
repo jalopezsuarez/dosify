@@ -133,7 +133,7 @@ function toggle(id, slot, checked) {
 // ---------- Pautas ----------
 
 const manager = $('#manager');
-const filterSlot = () => $('#filter').value || slotNow();
+const filterSlot = () => $('#filter').value || 'M';
 const visible = slot => state.meds.filter(m => m[slot]);
 
 const chip = (m, slot) => m[slot]
@@ -268,7 +268,7 @@ $('#toma').addEventListener('click', e => {
 });
 $('#info-close').onclick = () => info.dismiss();
 
-$('#manage').onclick = () => { $('#filter').value = $('#slot').value || slotNow(); renderPautas(); manager.present(); };
+$('#manage').onclick = () => { $('#filter').value = 'M'; renderPautas(); manager.present(); };
 $('#close').onclick = () => manager.dismiss();
 $('#filter').addEventListener('ionChange', renderPautas);
 $('#add').onclick = () => openEditor();
