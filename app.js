@@ -1,8 +1,8 @@
 const KEY = 'dosify';
 const SLOTS = { M: 'Mañana', T: 'Tarde', N: 'Noche' };
-const TEXT = ['name', 'dose', 'notes', 'refs'];
-const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'enabled'];
-const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'activa', 'fecha', 'hora', 'momento'];
+const TEXT = ['name', 'dose', 'notes', 'refs', 'days'];
+const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'start', 'days'];
+const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'inicio', 'dias', 'fecha', 'hora', 'momento'];
 const SEP = ';';
 const DAYS = 30;
 const LOG_MAX = 1000;
@@ -18,12 +18,16 @@ const empty = text => `<ion-item lines="none"><ion-label color="medium" class="i
 const slotNow = () => { const h = new Date().getHours(); return h >= 6 && h < 12 ? 'M' : h >= 12 && h < 18 ? 'T' : 'N'; };
 
 const state = { meds: [], log: [], ...JSON.parse(localStorage.getItem(KEY)) };
-for (const m of state.meds) for (const s in SLOTS) m[s] = yes(m[s] ?? ''); // normaliza datos de versiones anteriores
+for (const m of state.meds) { for (const s in SLOTS) m[s] = yes(m[s] ?? ''); m.start ??= ''; m.days ??= ''; } // normaliza datos de versiones anteriores
 for (const e of state.log) e.day ??= dayKey(new Date(e.at));
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 
+// Duración: la pauta está activa hasta cumplir los días desde «start»; sin duración, siempre.
+const lastDay = m => { const d = fromKey(m.start); d.setDate(d.getDate() + Number(m.days) - 1); return d; };
+const timed = m => Number(m.days) > 0 && m.start !== '';
+const active = m => !timed(m) || today() <= dayKey(lastDay(m));
 const selectedDay = () => $('#day').value || today();
-const doses = slot => state.meds.filter(m => m.enabled && m[slot]);
+const doses = slot => state.meds.filter(m => active(m) && m[slot]);
 const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === id && e.slot === slot);
 
 // ---------- Toma ----------
@@ -139,18 +143,18 @@ const manager = $('#manager');
 const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return t.length > 80 ? `${t.slice(0, 80).trimEnd()}…` : t; };
 
 const chip = (m, slot) => m[slot]
-  ? `<ion-chip color="${m.enabled ? 'primary' : 'medium'}"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
+  ? `<ion-chip color="${active(m) ? 'primary' : 'medium'}"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
   : `<ion-chip outline="true" color="medium"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`;
 
 const pautaRow = m => `
   <ion-item button="true" detail="false" data-id="${m.id}">
-    <ion-label class="ion-text-wrap" ${m.enabled ? '' : 'color="medium"'}>
+    <ion-label class="ion-text-wrap" ${active(m) ? '' : 'color="medium"'}>
       <h2>${esc(m.name)}</h2>
       ${m.dose ? `<p>${esc(m.dose)}</p>` : ''}
       <p>${Object.keys(SLOTS).map(slot => chip(m, slot)).join('')}</p>
       ${m.notes ? `<p>${esc(brief(m.notes))}</p>` : ''}
+      ${timed(m) ? `<p>${active(m) ? `${Number(m.days)} días · hasta el` : 'Finalizada el'} ${lastDay(m).toLocaleDateString('es')}</p>` : ''}
     </ion-label>
-    <ion-toggle slot="end" aria-label="Activa" ${m.enabled ? 'checked' : ''}></ion-toggle>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
 
@@ -200,7 +204,7 @@ function download(name, text) {
 const exportCSV = () => csv([
   HEAD,
   ...state.meds.map(m => ['pauta', ...COLS.map(c => m[c]), '', '', '']),
-  ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => ['toma', e.name, '', '', '', '', '', '', '', e.day, time(e.at), SLOTS[e.slot]]),
+  ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => ['toma', e.name, ...Array(COLS.length - 1).fill(''), e.day, time(e.at), SLOTS[e.slot]]),
 ]);
 
 async function importCSV(file) {
@@ -209,11 +213,11 @@ async function importCSV(file) {
   const meds = [], log = [], ids = new Map();
   for (const [tipo, ...r] of rows) {
     if (tipo === 'pauta') {
-      const m = { id: crypto.randomUUID(), ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(r[i] ?? '') : r[i] ?? ''])), enabled: r[7] === undefined || yes(r[7]) };
+      const m = { id: crypto.randomUUID(), ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(r[i] ?? '') : r[i] ?? ''])) };
       meds.push(m);
       if (!ids.has(m.name)) ids.set(m.name, m.id);
     } else if (tipo === 'toma') {
-      const [name, fecha, hora, momento] = [r[0], r[8], r[9], r[10] ?? ''];
+      const [name, fecha, hora, momento] = [r[0], r[COLS.length], r[COLS.length + 1], r[COLS.length + 2] ?? ''];
       const slot = Object.keys(SLOTS).find(s => s === momento.toUpperCase() || SLOTS[s].toLowerCase() === momento.toLowerCase());
       const at = new Date(`${fecha}T${hora || '00:00'}`);
       if (slot && !isNaN(at)) log.push({ at: at.toISOString(), day: fecha, id: ids.get(name) ?? null, name, slot });
@@ -234,6 +238,9 @@ function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
   Object.keys(SLOTS).forEach(s => field(s).checked = !!med[s]);
+  field('days').helperText = timed(med)
+    ? `Desde el ${fromKey(med.start).toLocaleDateString('es')} hasta el ${lastDay(med).toLocaleDateString('es')}.`
+    : 'Al cumplirse los días, la pauta se desactiva sola.';
   $('#delete').classList.toggle('ion-hide', !editing);
   editor.present();
 }
@@ -244,8 +251,10 @@ function saveEditor() {
     ...Object.keys(SLOTS).map(s => [s, field(s).checked]),
   ]);
   if (!med.name) return field('name').setFocus();
-  if (editing) Object.assign(state.meds.find(m => m.id === editing), med);
-  else state.meds.push({ id: crypto.randomUUID(), enabled: true, ...med });
+  const old = state.meds.find(m => m.id === editing);
+  med.start = med.days === (old?.days ?? '') ? old?.start ?? '' : med.days ? today() : ''; // una duración nueva empieza hoy
+  if (old) Object.assign(old, med);
+  else state.meds.push({ id: crypto.randomUUID(), ...med });
   save();
   render();
   editor.dismiss();
@@ -272,14 +281,9 @@ $('#manage').onclick = () => manager.present();
 $('#close').onclick = () => manager.dismiss();
 $('#add').onclick = () => openEditor();
 $('#list').addEventListener('click', e => {
-  if (e.target.closest('ion-toggle, ion-reorder')) return;
+  if (e.target.closest('ion-reorder')) return;
   const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(state.meds.find(m => m.id === id));
-});
-$('#list').addEventListener('ionChange', e => {
-  state.meds.find(m => m.id === e.target.closest('ion-item').dataset.id).enabled = e.detail.checked;
-  save();
-  render();
 });
 $('#list').addEventListener('ionItemReorder', e => {
   state.meds = e.detail.complete(state.meds);
