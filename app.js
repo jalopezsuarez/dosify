@@ -4,7 +4,7 @@ const TEXT = ['name', 'dose', 'notes', 'refs', 'days'];
 const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'start', 'days'];
 const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'inicio', 'dias', 'fecha', 'hora', 'momento'];
 const SEP = ';';
-const DAYS = 30;
+const DAYS = 7;
 const LOG_MAX = 1000;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -41,13 +41,14 @@ const ring = (done, total, label, size = 44, font = 11) => `
     </svg>
   </ion-text>`;
 
-// Últimos DAYS días y hoy, que queda el último y seleccionado al cargar.
+// Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); de antes, solo los días con alguna toma.
+// El día elegido también se mantiene, para que no desaparezca al desmarcar su última toma.
 function renderDays() {
   const all = Object.keys(SLOTS).flatMap(slot => doses(slot).map(m => ({ id: m.id, slot })));
-  $('#day').innerHTML = Array.from({ length: DAYS + 1 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - DAYS + i);
-    const key = dayKey(d);
+  const recent = Array.from({ length: DAYS + 1 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - DAYS + i); return dayKey(d); });
+  const keys = [...new Set([...state.log.map(e => e.day), ...recent, $('#day').value].filter(Boolean))].sort();
+  $('#day').innerHTML = keys.map(key => {
+    const d = fromKey(key);
     const done = all.filter(x => taken(key, x.id, x.slot)).length;
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
