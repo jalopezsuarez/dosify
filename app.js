@@ -136,8 +136,7 @@ function toggle(id, slot, checked) {
 // ---------- Pautas ----------
 
 const manager = $('#manager');
-const filterSlot = () => $('#filter').value || 'M';
-const visible = slot => state.meds.filter(m => m[slot]);
+const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return t.length > 80 ? `${t.slice(0, 80).trimEnd()}…` : t; };
 
 const chip = (m, slot) => m[slot]
   ? `<ion-chip color="${m.enabled ? 'primary' : 'medium'}"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
@@ -149,16 +148,14 @@ const pautaRow = m => `
       <h2>${esc(m.name)}</h2>
       ${m.dose ? `<p>${esc(m.dose)}</p>` : ''}
       <p>${Object.keys(SLOTS).map(slot => chip(m, slot)).join('')}</p>
-      ${m.notes || m.refs ? `<p>${esc([m.notes, m.refs].filter(Boolean).join(' · '))}</p>` : ''}
+      ${m.notes ? `<p>${esc(brief(m.notes))}</p>` : ''}
     </ion-label>
     <ion-toggle slot="end" aria-label="Activa" ${m.enabled ? 'checked' : ''}></ion-toggle>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
 
 function renderPautas() {
-  const slot = filterSlot();
-  $('#list').innerHTML = visible(slot).map(pautaRow).join('')
-    || empty(`Sin pautas en ${SLOTS[slot]}. Pulsa «Añadir» para crear una.`);
+  $('#list').innerHTML = state.meds.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
 }
 
 function ask(header, handler) {
@@ -271,9 +268,8 @@ $('#toma').addEventListener('click', e => {
 });
 $('#info-close').onclick = () => info.dismiss();
 
-$('#manage').onclick = () => { $('#filter').value = 'M'; renderPautas(); manager.present(); };
+$('#manage').onclick = () => manager.present();
 $('#close').onclick = () => manager.dismiss();
-$('#filter').addEventListener('ionChange', renderPautas);
 $('#add').onclick = () => openEditor();
 $('#list').addEventListener('click', e => {
   if (e.target.closest('ion-toggle, ion-reorder')) return;
@@ -286,10 +282,7 @@ $('#list').addEventListener('ionChange', e => {
   render();
 });
 $('#list').addEventListener('ionItemReorder', e => {
-  const shown = visible(filterSlot());
-  const moved = e.detail.complete([...shown]);
-  let i = 0;
-  state.meds = state.meds.map(m => shown.includes(m) ? moved[i++] : m);
+  state.meds = e.detail.complete(state.meds);
   save();
   render();
 });
