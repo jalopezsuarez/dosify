@@ -231,7 +231,6 @@ function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
   Object.keys(SLOTS).forEach(s => field(s).checked = !!med[s]);
-  field('days').helperText = timed(med) ? `Desde el ${fromKey(med.start).toLocaleDateString('es')} hasta el ${lastDay(med).toLocaleDateString('es')}.` : '';
   $('#delete').classList.toggle('ion-hide', !editing);
   editor.present();
 }
