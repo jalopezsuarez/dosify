@@ -58,10 +58,10 @@ function renderDays() {
 const doseRow = (m, slot, isTaken) => `
   <ion-list inset="true">
     <ion-item>
-      <ion-checkbox helper-text="${esc(m.dose)}" data-id="${m.id}" data-slot="${slot}" ${isTaken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
-      <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
+      <ion-button slot="start" fill="clear" data-info="${m.id}" aria-label="Información">
         <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
       </ion-button>
+      <ion-checkbox helper-text="${esc(m.dose)}" data-id="${m.id}" data-slot="${slot}" ${isTaken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
     </ion-item>
   </ion-list>`;
 
@@ -140,7 +140,7 @@ const filterSlot = () => $('#filter').value || 'M';
 const visible = slot => state.meds.filter(m => m[slot]);
 
 const chip = (m, slot) => m[slot]
-  ? `<ion-chip color="${m.enabled ? 'primary' : 'medium'}"><ion-icon name="checkmark"></ion-icon><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
+  ? `<ion-chip color="${m.enabled ? 'primary' : 'medium'}"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
   : `<ion-chip outline="true" color="medium"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`;
 
 const pautaRow = m => `
