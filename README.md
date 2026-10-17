@@ -7,10 +7,10 @@ App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [I
 ## Qué hace
 
 - **Toma** (única pantalla):
-  - Selector de días con scroll horizontal (últimos 30 días). Cada día lleva un anillo de progreso con «tomadas/total» del día. Tocar un día muestra sus tomas y su registro.
+  - Selector de días con scroll horizontal: hoy centrado, los últimos 30 días a la izquierda y los próximos en gris, no seleccionables. Cada día pasado lleva un anillo de progreso con «tomadas/total». Tocar un día muestra sus tomas y su registro.
   - Pestañas Mañana / Tarde / Noche, abiertas en la franja del momento (06–12 Mañana, 12–18 Tarde, 18–06 Noche). Cada franja muestra su porcentaje, «n de m tomadas» y las tomas con un check por fila.
   - **Registro** del día elegido, seccionado por Mañana / Tarde / Noche, con la hora de cada toma. Desmarcar una toma elimina su entrada.
-- **Pautas** (botón arriba a la derecha): lista por Mañana / Tarde / Noche. Cada fila muestra nombre, dosis, en qué franjas se toma (chips Mañana · Tarde · Noche con check), indicaciones y referencias, con un interruptor para activarla o desactivarla (las desactivadas no aparecen en la toma) y un asa para ordenar arrastrando. Tocar la fila la edita; «Añadir» crea una nueva. El editor va en secciones: Medicamento, Tomas, Notas y Eliminar. Al final del gestor, el bloque **Datos**: cargar y exportar un único CSV con pautas y tomas, y borrar el registro de tomas.
+- **Pautas** (botón arriba a la derecha): lista por Mañana / Tarde / Noche. Cada fila muestra nombre, dosis, en qué franjas se toma (chips Mañana · Tarde · Noche con check), indicaciones y referencias, y, a la derecha, un interruptor para activarla o desactivarla (las desactivadas no aparecen en la toma) junto al asa para ordenar arrastrando. Tocar la fila la edita; «Añadir» crea una nueva. El editor va en secciones: Medicamento, Tomas, Notas y Eliminar. Al final del gestor, el bloque **Datos**: cargar y exportar un único CSV con pautas y tomas, y borrar el registro de tomas.
 
 Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
 

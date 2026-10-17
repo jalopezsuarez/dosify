@@ -28,26 +28,28 @@ const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === i
 
 // ---------- Toma ----------
 
-const ring = (done, total) => `
+const ring = (done, total, label) => `
   <ion-text color="primary">
     <svg width="44" height="44" viewBox="0 0 44 44">
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
-      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="11" fill="currentColor">${done}/${total}</text>
+      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="11" fill="currentColor">${label}</text>
     </svg>
   </ion-text>`;
 
+// Días pasados y hoy, seleccionables; los días futuros van deshabilitados y solo sirven para que hoy quede centrado.
 function renderDays() {
   const all = Object.keys(SLOTS).flatMap(slot => doses(slot).map(m => ({ id: m.id, slot })));
-  $('#day').innerHTML = Array.from({ length: DAYS + 1 }, (_, i) => {
+  $('#day').innerHTML = Array.from({ length: 2 * DAYS + 1 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - DAYS + i);
     const key = dayKey(d);
+    const future = i > DAYS;
     const done = all.filter(x => taken(key, x.id, x.slot)).length;
     return `
-      <ion-segment-button value="${key}" layout="icon-bottom">
-        ${ring(done, all.length)}
-        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}</ion-label>
+      <ion-segment-button value="${key}" layout="icon-bottom" ${future ? 'disabled="true"' : ''}>
+        ${future ? ring(0, 0, '') : ring(done, all.length, `${done}/${all.length}`)}
+        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}</ion-label>
       </ion-segment-button>`;
   }).join('');
 }
@@ -120,13 +122,13 @@ const chip = (m, slot) => m[slot]
 
 const pautaRow = m => `
   <ion-item button="true" detail="false" data-id="${m.id}">
-    <ion-toggle slot="start" aria-label="Activa" ${m.enabled ? 'checked' : ''}></ion-toggle>
     <ion-label class="ion-text-wrap" ${m.enabled ? '' : 'color="medium"'}>
       <h2>${esc(m.name)}</h2>
       ${m.dose ? `<p>${esc(m.dose)}</p>` : ''}
       <p>${Object.keys(SLOTS).map(slot => chip(m, slot)).join('')}</p>
       ${m.notes || m.refs ? `<p>${esc([m.notes, m.refs].filter(Boolean).join(' · '))}</p>` : ''}
     </ion-label>
+    <ion-toggle slot="end" aria-label="Activa" ${m.enabled ? 'checked' : ''}></ion-toggle>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
 
