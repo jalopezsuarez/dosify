@@ -1,28 +1,30 @@
 const KEY = 'dosify';
 const SLOTS = { M: 'Mañana', T: 'Tarde', N: 'Noche' };
-const FIELDS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs'];
+const TEXT = ['name', 'dose', 'notes', 'refs'];
+const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'enabled'];
 const HEAD = ['nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'activa'];
 const SEP = ';';
 const LOG_MAX = 1000;
 const LOG_SHOW = 100;
 
-const state = { meds: [], log: [], ...JSON.parse(localStorage.getItem(KEY)) };
-const save = () => localStorage.setItem(KEY, JSON.stringify(state));
-
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const active = v => v !== '' && Number(v.replace(',', '.')) !== 0;
+const yes = v => !['', '0', 'no', 'false'].includes(String(v).toLowerCase());
 const isToday = iso => new Date(iso).toDateString() === new Date().toDateString();
 const when = iso => new Date(iso).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const empty = text => `<ion-text color="medium"><p class="ion-text-center ion-padding">${text}</p></ion-text>`;
 const slotNow = () => { const h = new Date().getHours(); return h < 13 ? 'M' : h < 20 ? 'T' : 'N'; };
 
+const state = { meds: [], log: [], ...JSON.parse(localStorage.getItem(KEY)) };
+for (const m of state.meds) for (const s in SLOTS) m[s] = yes(m[s] ?? ''); // normaliza datos de versiones anteriores
+const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+
 // ---------- Toma ----------
 
-const doseRow = ({ m, slot, taken }) => `
+const doseRow = ({ m, taken }, slot) => `
   <ion-item>
     <ion-checkbox label-placement="end" justify="start" data-id="${m.id}" data-slot="${slot}" ${taken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
-    <ion-note slot="end">${esc([m[slot], m.dose].filter(Boolean).join(' · '))}</ion-note>
+    ${m.dose ? `<ion-note slot="end">${esc(m.dose)}</ion-note>` : ''}
   </ion-item>`;
 
 const logRow = e => `
@@ -35,11 +37,10 @@ const logRow = e => `
 function renderToma() {
   const slot = $('#slot').value || slotNow();
   const todayLog = state.log.filter(e => isToday(e.at));
-  const doses = Object.keys(SLOTS).flatMap(s => state.meds
-    .filter(m => m.enabled && active(m[s]))
-    .map(m => ({ m, slot: s, taken: todayLog.some(e => e.id === m.id && e.slot === s) })));
+  const doses = state.meds
+    .filter(m => m.enabled && m[slot])
+    .map(m => ({ m, taken: todayLog.some(e => e.id === m.id && e.slot === slot) }));
   const done = doses.filter(d => d.taken).length;
-  const rows = doses.filter(d => d.slot === slot);
 
   $('#toma').innerHTML = `
     <ion-card>
@@ -51,7 +52,7 @@ function renderToma() {
         <ion-progress-bar value="${doses.length ? done / doses.length : 0}" color="${doses.length && done === doses.length ? 'success' : 'primary'}"></ion-progress-bar>
       </ion-card-content>
     </ion-card>
-    ${rows.length ? `<ion-list>${rows.map(doseRow).join('')}</ion-list>` : empty(`Sin tomas en ${SLOTS[slot]}.`)}
+    ${doses.length ? `<ion-list>${doses.map(d => doseRow(d, slot)).join('')}</ion-list>` : empty(`Sin tomas en ${SLOTS[slot]}.`)}
     <ion-list>
       <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
       ${state.log.slice(0, LOG_SHOW).map(logRow).join('') || empty('Sin registros.')}
@@ -72,12 +73,13 @@ function toggle(id, slot, checked) {
 
 // ---------- Pautas ----------
 
+const manager = $('#manager');
 const filterSlot = () => $('#filter').value || slotNow();
-const visible = slot => state.meds.filter(m => active(m[slot]));
+const visible = slot => state.meds.filter(m => m[slot]);
 
-const chip = (m, slot) => m.enabled && active(m[slot])
-  ? `<ion-chip color="primary">${SLOTS[slot]} ${esc(m[slot])}</ion-chip>`
-  : `<ion-chip outline="true" color="medium">${SLOTS[slot]} ${esc(m[slot] || '0')}</ion-chip>`;
+const chip = (m, slot) => m[slot]
+  ? `<ion-chip color="${m.enabled ? 'primary' : 'medium'}"><ion-icon name="checkmark"></ion-icon><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
+  : `<ion-chip outline="true" color="medium"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`;
 
 const pautaRow = m => `
   <ion-item button="true" detail="false" data-id="${m.id}">
@@ -93,7 +95,7 @@ const pautaRow = m => `
 
 function renderPautas() {
   const slot = filterSlot();
-  $('#pautas').innerHTML = visible(slot).map(pautaRow).join('')
+  $('#list').innerHTML = visible(slot).map(pautaRow).join('')
     || empty(`Sin pautas en ${SLOTS[slot]}. Pulsa «Añadir» para crear una.`);
 }
 
@@ -106,7 +108,8 @@ function ask(header, handler) {
 
 // ---------- CSV ----------
 
-const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
+const cell = v => typeof v === 'boolean' ? (v ? 'sí' : 'no') : v;
+const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(cell(v)).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
 
 function parseCSV(text) {
   const sep = text.slice(0, text.indexOf('\n')).includes(';') ? ';' : ',';
@@ -139,8 +142,8 @@ async function importCSV(file) {
   if (rows[0]?.[0].toLowerCase() === HEAD[0]) rows.shift();
   const meds = rows.map(r => ({
     id: crypto.randomUUID(),
-    ...Object.fromEntries(FIELDS.map((f, i) => [f, r[i] ?? ''])),
-    enabled: !['no', '0'].includes((r[FIELDS.length] ?? '').toLowerCase()),
+    ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(r[i] ?? '') : r[i] ?? ''])),
+    enabled: r[7] === undefined || yes(r[7]),
   }));
   if (!meds.length) return;
   const apply = () => { state.meds = meds; save(); render(); };
@@ -155,13 +158,17 @@ let editing = null;
 
 function openEditor(med = {}) {
   editing = med.id ?? null;
-  FIELDS.forEach(f => field(f).value = med[f] ?? '');
+  TEXT.forEach(f => field(f).value = med[f] ?? '');
+  Object.keys(SLOTS).forEach(s => field(s).checked = !!med[s]);
   $('#delete').classList.toggle('ion-hide', !editing);
   editor.present();
 }
 
 function saveEditor() {
-  const med = Object.fromEntries(FIELDS.map(f => [f, String(field(f).value ?? '').trim()]));
+  const med = Object.fromEntries([
+    ...TEXT.map(f => [f, String(field(f).value ?? '').trim()]),
+    ...Object.keys(SLOTS).map(s => [s, field(s).checked]),
+  ]);
   if (!med.name) return field('name').setFocus();
   if (editing) Object.assign(state.meds.find(m => m.id === editing), med);
   else state.meds.push({ id: crypto.randomUUID(), enabled: true, ...med });
@@ -180,19 +187,21 @@ function render() {
 $('#slot').addEventListener('ionChange', renderToma);
 $('#toma').addEventListener('ionChange', e => toggle(e.target.dataset.id, e.target.dataset.slot, e.detail.checked));
 
+$('#manage').onclick = () => { $('#filter').value = $('#slot').value || slotNow(); renderPautas(); manager.present(); };
+$('#close').onclick = () => manager.dismiss();
 $('#filter').addEventListener('ionChange', renderPautas);
 $('#add').onclick = () => openEditor();
-$('#pautas').addEventListener('click', e => {
+$('#list').addEventListener('click', e => {
   if (e.target.closest('ion-toggle, ion-reorder')) return;
   const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(state.meds.find(m => m.id === id));
 });
-$('#pautas').addEventListener('ionChange', e => {
+$('#list').addEventListener('ionChange', e => {
   state.meds.find(m => m.id === e.target.closest('ion-item').dataset.id).enabled = e.detail.checked;
   save();
   render();
 });
-$('#pautas').addEventListener('ionItemReorder', e => {
+$('#list').addEventListener('ionItemReorder', e => {
   const shown = visible(filterSlot());
   const moved = e.detail.complete([...shown]);
   let i = 0;
@@ -203,7 +212,7 @@ $('#pautas').addEventListener('ionItemReorder', e => {
 
 $('#import').onclick = () => $('#file').click();
 $('#file').onchange = e => { importCSV(e.target.files[0]); e.target.value = ''; };
-$('#export').onclick = () => download('pautas.csv', csv([HEAD, ...state.meds.map(m => [...FIELDS.map(f => m[f]), m.enabled ? 'sí' : 'no'])]));
+$('#export').onclick = () => download('pautas.csv', csv([HEAD, ...state.meds.map(m => COLS.map(c => m[c]))]));
 $('#export-log').onclick = () => download('registro.csv', csv([['fecha', 'nombre', 'momento'], ...state.log.map(e => [new Date(e.at).toLocaleString('es'), e.name, SLOTS[e.slot]])]));
 $('#clear-log').onclick = () => ask('¿Borrar todo el registro?', () => { state.log = []; save(); render(); });
 
@@ -218,5 +227,4 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
 
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && render());
 $('#slot').setAttribute('value', slotNow());
-$('#filter').setAttribute('value', slotNow());
 render();
