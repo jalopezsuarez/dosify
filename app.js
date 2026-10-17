@@ -152,6 +152,7 @@ const pautaRow = m => `
   </ion-item>`;
 
 function renderPautas() {
+  $('#list-title').textContent = `Pautas (${state.meds.length})`;
   $('#list').innerHTML = state.meds.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
 }
 
