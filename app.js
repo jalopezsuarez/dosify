@@ -61,10 +61,10 @@ function renderDays() {
 const doseRow = (m, slot, entry) => `
   <ion-list inset="true">
     <ion-item>
-      <ion-button slot="start" fill="clear" data-info="${m.id}" aria-label="Información">
+      <ion-checkbox label-placement="end" justify="start" helper-text="${esc([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}><span class="medium">${esc(m.name)}</span></ion-checkbox>
+      <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
         <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
       </ion-button>
-      <ion-checkbox helper-text="${esc([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}><span class="medium">${esc(m.name)}</span></ion-checkbox>
     </ion-item>
   </ion-list>`;
 
