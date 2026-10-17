@@ -60,7 +60,7 @@ const doseRow = (m, slot, isTaken) => `
     <ion-item>
       <ion-checkbox helper-text="${esc(m.dose)}" data-id="${m.id}" data-slot="${slot}" ${isTaken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
       <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
-        <ion-icon slot="icon-only" name="medkit-outline"></ion-icon>
+        <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
       </ion-button>
     </ion-item>
   </ion-list>`;

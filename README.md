@@ -1,6 +1,6 @@
 # Dosify
 
-App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) (web components por CDN) como única dependencia. Sin build, sin frameworks y sin CSS propio, salvo las seis variables de tema de Ionic que fijan el color principal (#56bde3). Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
+App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) (web components por CDN) como única dependencia. Sin build, sin frameworks y sin CSS propio, salvo las variables de tema de Ionic que fijan el color principal (#56bde3) y un color adicional (#78b7af) para el icono de información, definidos como documenta Ionic. Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
 
 **Web:** https://jalopezsuarez.github.io/dosify/
 

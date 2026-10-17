@@ -17,6 +17,23 @@
       --ion-color-primary-shade: #4ca6c8;
       --ion-color-primary-tint: #67c4e6;
     }
+    /* Color propio «teal» (#78b7af) para el icono de información, según «Adding colors» de Ionic */
+    :root {
+      --ion-color-teal: #78b7af;
+      --ion-color-teal-rgb: 120, 183, 175;
+      --ion-color-teal-contrast: #000000;
+      --ion-color-teal-contrast-rgb: 0, 0, 0;
+      --ion-color-teal-shade: #6aa19a;
+      --ion-color-teal-tint: #86beb7;
+    }
+    .ion-color-teal {
+      --ion-color-base: var(--ion-color-teal) !important;
+      --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
+      --ion-color-contrast: var(--ion-color-teal-contrast) !important;
+      --ion-color-contrast-rgb: var(--ion-color-teal-contrast-rgb) !important;
+      --ion-color-shade: var(--ion-color-teal-shade) !important;
+      --ion-color-tint: var(--ion-color-teal-tint) !important;
+    }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core@9.0.8/dist/ionic/ionic.esm.js"></script>
   <script type="module" src="app.js"></script>
