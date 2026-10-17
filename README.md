@@ -1,27 +1,34 @@
 # Dosify
 
-App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) (web components por CDN) como única dependencia. Sin build, sin frameworks, sin CSS propio. Modo oscuro fijo (paleta `dark.always` de Ionic).
+App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) (web components por CDN) como única dependencia. Sin build, sin frameworks, sin CSS propio. Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
 
 **Web:** https://jalopezsuarez.github.io/dosify/
 
 ## Qué hace
 
-- **Toma** (única pantalla): pestañas Mañana / Tarde / Noche, abiertas en la franja del momento. Cada franja muestra su porcentaje tomado, «n de m tomadas» y las tomas con un check por fila. Debajo, el **registro** de tomas marcadas (fecha y hora); desmarcar una toma elimina su entrada.
-- **Pautas** (botón arriba a la derecha): lista por Mañana / Tarde / Noche. Cada fila muestra nombre, dosis, en qué franjas se toma (chips Mañana · Tarde · Noche con check), indicaciones y referencias, con un interruptor para activarla o desactivarla (las desactivadas no aparecen en la toma) y un asa para ordenar arrastrando. Tocar la fila la edita; «Añadir» crea una nueva. Al final, el bloque **Datos**: cargar y exportar pautas en CSV, exportar o borrar el registro.
+- **Toma** (única pantalla):
+  - Selector de días con scroll horizontal (últimos 30 días). Cada día lleva un anillo de progreso con «tomadas/total» del día. Tocar un día muestra sus tomas y su registro.
+  - Pestañas Mañana / Tarde / Noche, abiertas en la franja del momento (06–12 Mañana, 12–18 Tarde, 18–06 Noche). Cada franja muestra su porcentaje, «n de m tomadas» y las tomas con un check por fila.
+  - **Registro** del día elegido, seccionado por Mañana / Tarde / Noche, con la hora de cada toma. Desmarcar una toma elimina su entrada.
+- **Pautas** (botón arriba a la derecha): lista por Mañana / Tarde / Noche. Cada fila muestra nombre, dosis, en qué franjas se toma (chips Mañana · Tarde · Noche con check), indicaciones y referencias, con un interruptor para activarla o desactivarla (las desactivadas no aparecen en la toma) y un asa para ordenar arrastrando. Tocar la fila la edita; «Añadir» crea una nueva. El editor va en secciones: Medicamento, Tomas, Notas y Eliminar. Al final del gestor, el bloque **Datos**: cargar y exportar un único CSV con pautas y tomas, y borrar el registro de tomas.
 
 Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
 
 ## Formato CSV
 
-Separador `;` (también acepta `,` al cargar). Primera fila de cabecera opcional. Columnas, en este orden:
+Un solo fichero con pautas y tomas. Separador `;` (también acepta `,` al cargar), una cabecera, y una columna `tipo` que indica qué es cada fila: primero las filas `pauta`, después las filas `toma`.
 
 ```
-nombre;dosis;mañana;tarde;noche;indicaciones;referencias;activa
-Paracetamol;1 comprimido de 500 mg;sí;sí;sí;Si dolor;;sí
-Omeprazol;20 mg;sí;no;no;En ayunas;Dr. Ruiz;no
+tipo;nombre;dosis;mañana;tarde;noche;indicaciones;referencias;activa;fecha;hora;momento
+pauta;Paracetamol;1 comprimido de 500 mg;sí;sí;sí;Si dolor;;sí;;;
+pauta;Omeprazol;20 mg;sí;no;no;En ayunas;Dr. Ruiz;no;;;
+toma;Paracetamol;;;;;;;;2026-10-17;08:12;Mañana
+toma;Paracetamol;;;;;;;;2026-10-17;15:30;Tarde
 ```
 
-`mañana`, `tarde`, `noche` y `activa` admiten `sí`/`no` (también `1`/`0`; en `activa`, vacío = sí). Cargar un CSV reemplaza las pautas actuales (pide confirmación).
+- Filas `pauta`: `mañana`, `tarde`, `noche` y `activa` admiten `sí`/`no` (también `1`/`0`; en `activa`, vacío = sí).
+- Filas `toma`: `nombre` de la pauta, `fecha` en formato `AAAA-MM-DD`, `hora` en `HH:MM` y `momento` (`Mañana`, `Tarde` o `Noche`). Se enlazan a la pauta por su nombre.
+- Cargar un CSV reemplaza las pautas y las tomas actuales (pide confirmación). «Borrar registro de tomas» elimina solo las tomas.
 
 ## Archivos
 

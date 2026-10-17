@@ -2,70 +2,107 @@ const KEY = 'dosify';
 const SLOTS = { M: 'Mañana', T: 'Tarde', N: 'Noche' };
 const TEXT = ['name', 'dose', 'notes', 'refs'];
 const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'enabled'];
-const HEAD = ['nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'activa'];
+const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'activa', 'fecha', 'hora', 'momento'];
 const SEP = ';';
+const DAYS = 30;
 const LOG_MAX = 1000;
-const LOG_SHOW = 100;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const yes = v => !['', '0', 'no', 'false'].includes(String(v).toLowerCase());
-const isToday = iso => new Date(iso).toDateString() === new Date().toDateString();
-const when = iso => new Date(iso).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-const empty = text => `<ion-text color="medium"><p class="ion-text-center ion-padding">${text}</p></ion-text>`;
-const slotNow = () => { const h = new Date().getHours(); return h < 13 ? 'M' : h < 20 ? 'T' : 'N'; };
+const dayKey = d => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+const fromKey = key => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
+const today = () => dayKey(new Date());
+const time = iso => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+const empty = text => `<ion-item lines="none"><ion-label color="medium" class="ion-text-center">${text}</ion-label></ion-item>`;
+const slotNow = () => { const h = new Date().getHours(); return h >= 6 && h < 12 ? 'M' : h >= 12 && h < 18 ? 'T' : 'N'; };
 
 const state = { meds: [], log: [], ...JSON.parse(localStorage.getItem(KEY)) };
 for (const m of state.meds) for (const s in SLOTS) m[s] = yes(m[s] ?? ''); // normaliza datos de versiones anteriores
+for (const e of state.log) e.day ??= dayKey(new Date(e.at));
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+
+const selectedDay = () => $('#day').value || today();
+const doses = slot => state.meds.filter(m => m.enabled && m[slot]);
+const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === id && e.slot === slot);
 
 // ---------- Toma ----------
 
-const doseRow = ({ m, taken }, slot) => `
+const ring = (done, total) => `
+  <ion-text color="primary">
+    <svg width="44" height="44" viewBox="0 0 44 44">
+      <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
+      <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
+      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="11" fill="currentColor">${done}/${total}</text>
+    </svg>
+  </ion-text>`;
+
+function renderDays() {
+  const all = Object.keys(SLOTS).flatMap(slot => doses(slot).map(m => ({ id: m.id, slot })));
+  $('#day').innerHTML = Array.from({ length: DAYS + 1 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - DAYS + i);
+    const key = dayKey(d);
+    const done = all.filter(x => taken(key, x.id, x.slot)).length;
+    return `
+      <ion-segment-button value="${key}" layout="icon-bottom">
+        ${ring(done, all.length)}
+        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}</ion-label>
+      </ion-segment-button>`;
+  }).join('');
+}
+
+const doseRow = (m, slot, isTaken) => `
   <ion-item>
-    <ion-checkbox label-placement="end" justify="start" data-id="${m.id}" data-slot="${slot}" ${taken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
+    <ion-checkbox label-placement="end" justify="start" data-id="${m.id}" data-slot="${slot}" ${isTaken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
     ${m.dose ? `<ion-note slot="end">${esc(m.dose)}</ion-note>` : ''}
   </ion-item>`;
 
 const logRow = e => `
   <ion-item>
     <ion-icon slot="start" name="checkmark-circle" color="success"></ion-icon>
-    <ion-label>${esc(e.name)}<p>${SLOTS[e.slot]}</p></ion-label>
-    <ion-note slot="end">${when(e.at)}</ion-note>
+    <ion-label>${esc(e.name)}</ion-label>
+    <ion-note slot="end">${time(e.at)}</ion-note>
   </ion-item>`;
 
 function renderToma() {
+  const day = selectedDay();
   const slot = $('#slot').value || slotNow();
-  const todayLog = state.log.filter(e => isToday(e.at));
-  const doses = state.meds
-    .filter(m => m.enabled && m[slot])
-    .map(m => ({ m, taken: todayLog.some(e => e.id === m.id && e.slot === slot) }));
-  const done = doses.filter(d => d.taken).length;
+  const rows = doses(slot);
+  const done = rows.filter(m => taken(day, m.id, slot)).length;
+  const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  const entries = state.log.filter(e => e.day === day).sort((a, b) => a.at.localeCompare(b.at));
+  const registro = Object.keys(SLOTS).map(s => {
+    const list = entries.filter(e => e.slot === s);
+    return list.length ? `<ion-item-divider><ion-label>${SLOTS[s]}</ion-label></ion-item-divider>${list.map(logRow).join('')}` : '';
+  }).join('');
 
   $('#toma').innerHTML = `
-    <ion-card>
-      <ion-card-header>
-        <ion-card-subtitle>${done} de ${doses.length} tomadas · ${new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</ion-card-subtitle>
-        <ion-card-title>${doses.length ? Math.round(done / doses.length * 100) : 0} %</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <ion-progress-bar value="${doses.length ? done / doses.length : 0}" color="${doses.length && done === doses.length ? 'success' : 'primary'}"></ion-progress-bar>
-      </ion-card-content>
-    </ion-card>
-    ${doses.length ? `<ion-list>${doses.map(d => doseRow(d, slot)).join('')}</ion-list>` : empty(`Sin tomas en ${SLOTS[slot]}.`)}
-    <ion-list>
-      <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
-      ${state.log.slice(0, LOG_SHOW).map(logRow).join('') || empty('Sin registros.')}
-    </ion-list>`;
+    <ion-list inset="true">
+      <ion-item lines="none">
+        <ion-label>
+          <h1>${rows.length ? Math.round(done / rows.length * 100) : 0} %</h1>
+          <p>${done} de ${rows.length} tomadas · ${day === today() ? 'hoy, ' : ''}${date}</p>
+        </ion-label>
+      </ion-item>
+      <ion-progress-bar value="${rows.length ? done / rows.length : 0}" color="${rows.length && done === rows.length ? 'success' : 'primary'}"></ion-progress-bar>
+    </ion-list>
+    <ion-list-header><ion-label>Tomas</ion-label></ion-list-header>
+    <ion-list inset="true">
+      ${rows.map(m => doseRow(m, slot, taken(day, m.id, slot))).join('') || empty(`Sin tomas en ${SLOTS[slot]}.`)}
+    </ion-list>
+    <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
+    <ion-list inset="true">${registro || empty('Sin registros.')}</ion-list>`;
 }
 
 function toggle(id, slot, checked) {
+  const day = selectedDay();
   if (checked) {
     const { name } = state.meds.find(m => m.id === id);
-    state.log.unshift({ at: new Date().toISOString(), id, name, slot });
+    state.log.unshift({ at: new Date().toISOString(), day, id, name, slot });
     state.log.length = Math.min(state.log.length, LOG_MAX);
   } else {
-    state.log = state.log.filter(e => !(e.id === id && e.slot === slot && isToday(e.at)));
+    state.log = state.log.filter(e => !(e.day === day && e.id === id && e.slot === slot));
   }
   save();
   render();
@@ -137,17 +174,32 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(a.href));
 }
 
+// Un solo CSV: primero las filas «pauta» (nombre … activa) y después las filas «toma» (nombre, fecha, hora, momento).
+const exportCSV = () => csv([
+  HEAD,
+  ...state.meds.map(m => ['pauta', ...COLS.map(c => m[c]), '', '', '']),
+  ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => ['toma', e.name, '', '', '', '', '', '', '', e.day, time(e.at), SLOTS[e.slot]]),
+]);
+
 async function importCSV(file) {
   const rows = parseCSV(await file.text());
   if (rows[0]?.[0].toLowerCase() === HEAD[0]) rows.shift();
-  const meds = rows.map(r => ({
-    id: crypto.randomUUID(),
-    ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(r[i] ?? '') : r[i] ?? ''])),
-    enabled: r[7] === undefined || yes(r[7]),
-  }));
-  if (!meds.length) return;
-  const apply = () => { state.meds = meds; save(); render(); };
-  state.meds.length ? ask('¿Reemplazar las pautas actuales?', apply) : apply();
+  const meds = [], log = [], ids = new Map();
+  for (const [tipo, ...r] of rows) {
+    if (tipo === 'pauta') {
+      const m = { id: crypto.randomUUID(), ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(r[i] ?? '') : r[i] ?? ''])), enabled: r[7] === undefined || yes(r[7]) };
+      meds.push(m);
+      if (!ids.has(m.name)) ids.set(m.name, m.id);
+    } else if (tipo === 'toma') {
+      const [name, fecha, hora, momento] = [r[0], r[8], r[9], r[10] ?? ''];
+      const slot = Object.keys(SLOTS).find(s => s === momento.toUpperCase() || SLOTS[s].toLowerCase() === momento.toLowerCase());
+      const at = new Date(`${fecha}T${hora || '00:00'}`);
+      if (slot && !isNaN(at)) log.push({ at: at.toISOString(), day: fecha, id: ids.get(name) ?? null, name, slot });
+    }
+  }
+  if (!meds.length && !log.length) return;
+  const apply = () => { state.meds = meds; state.log = log.sort((a, b) => b.at.localeCompare(a.at)); save(); render(); };
+  state.meds.length || state.log.length ? ask('¿Reemplazar las pautas y las tomas actuales?', apply) : apply();
 }
 
 // ---------- Editor ----------
@@ -180,10 +232,12 @@ function saveEditor() {
 // ---------- Wiring ----------
 
 function render() {
+  renderDays();
   renderToma();
   renderPautas();
 }
 
+$('#day').addEventListener('ionChange', renderToma);
 $('#slot').addEventListener('ionChange', renderToma);
 $('#toma').addEventListener('ionChange', e => toggle(e.target.dataset.id, e.target.dataset.slot, e.detail.checked));
 
@@ -212,9 +266,8 @@ $('#list').addEventListener('ionItemReorder', e => {
 
 $('#import').onclick = () => $('#file').click();
 $('#file').onchange = e => { importCSV(e.target.files[0]); e.target.value = ''; };
-$('#export').onclick = () => download('pautas.csv', csv([HEAD, ...state.meds.map(m => COLS.map(c => m[c]))]));
-$('#export-log').onclick = () => download('registro.csv', csv([['fecha', 'nombre', 'momento'], ...state.log.map(e => [new Date(e.at).toLocaleString('es'), e.name, SLOTS[e.slot]])]));
-$('#clear-log').onclick = () => ask('¿Borrar todo el registro?', () => { state.log = []; save(); render(); });
+$('#export').onclick = () => download('dosify.csv', exportCSV());
+$('#clear-log').onclick = () => ask('¿Borrar todas las tomas registradas?', () => { state.log = []; save(); render(); });
 
 $('#cancel').onclick = () => editor.dismiss();
 $('#save').onclick = saveEditor;
@@ -226,5 +279,6 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
 });
 
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && render());
+$('#day').setAttribute('value', today());
 $('#slot').setAttribute('value', slotNow());
 render();
