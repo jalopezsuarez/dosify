@@ -103,12 +103,15 @@ function renderToma() {
     ${registro}`;
 }
 
-// Ficha de la pauta (dosis, indicaciones y referencias) para leerla con calma.
+// Ficha de la pauta (dosis, indicaciones y referencias) para leerla con calma; los enlaces se pueden pulsar.
 const info = $('#info');
+const linkify = text => esc(text)
+  .replace(/\n/g, '<br>')
+  .replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
 const section = (title, text) => `
   <ion-list-header><ion-label>${title}</ion-label></ion-list-header>
   <ion-list inset="true">
-    <ion-item lines="none"><ion-label class="ion-text-wrap">${esc(text).replace(/\n/g, '<br>') || '—'}</ion-label></ion-item>
+    <ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(text) || '—'}</ion-label></ion-item>
   </ion-list>`;
 
 function openInfo(m) {
