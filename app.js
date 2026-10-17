@@ -41,18 +41,17 @@ const ring = (done, total, label, size = 44, font = 11) => `
     </svg>
   </ion-text>`;
 
-// Días pasados y hoy, seleccionables; los días futuros van deshabilitados y solo sirven para que hoy quede centrado.
+// Últimos DAYS días y hoy, que queda el último y seleccionado al cargar.
 function renderDays() {
   const all = Object.keys(SLOTS).flatMap(slot => doses(slot).map(m => ({ id: m.id, slot })));
-  $('#day').innerHTML = Array.from({ length: 2 * DAYS + 1 }, (_, i) => {
+  $('#day').innerHTML = Array.from({ length: DAYS + 1 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - DAYS + i);
     const key = dayKey(d);
-    const future = i > DAYS;
     const done = all.filter(x => taken(key, x.id, x.slot)).length;
     return `
-      <ion-segment-button value="${key}" layout="icon-bottom" ${future ? 'disabled="true"' : ''}>
-        ${future ? ring(0, 0, '') : ring(done, all.length, `${done}/${all.length}`)}
+      <ion-segment-button value="${key}" layout="icon-bottom">
+        ${ring(done, all.length, `${done}/${all.length}`)}
         <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}</ion-label>
       </ion-segment-button>`;
   }).join('');
@@ -78,7 +77,7 @@ const logRow = e => `
 
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
-function renderToma() {
+async function renderToma() {
   const day = selectedDay();
   const slot = $('#slot').value || slotNow();
   const rows = doses(slot);
@@ -91,6 +90,9 @@ function renderToma() {
     return list.length ? `<ion-list inset="true">${list.map(logRow).join('')}</ion-list>` : emptyList(`${SLOTS[s]}: sin tomas`);
   }).join('');
 
+  // Conserva la posición del scroll al volver a pintar (p. ej. al marcar una toma al final de la lista).
+  const scroller = await $('#toma').getScrollElement?.();
+  const y = scroller?.scrollTop ?? 0;
   $('#toma').innerHTML = `
     <ion-list inset="true">
       <ion-item lines="none">
@@ -105,6 +107,7 @@ function renderToma() {
     ${rows.map(m => doseRow(m, slot, taken(day, m.id, slot))).join('') || emptyList(`Sin tomas en ${SLOTS[slot]}.`)}
     <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
     ${registro}`;
+  if (scroller) { scroller.scrollTop = y; requestAnimationFrame(() => { scroller.scrollTop = y; }); }
 }
 
 // Ficha de la pauta (dosis, indicaciones y referencias) para leerla con calma; los enlaces se pueden pulsar.
@@ -238,9 +241,7 @@ function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
   Object.keys(SLOTS).forEach(s => field(s).checked = !!med[s]);
-  field('days').helperText = timed(med)
-    ? `Desde el ${fromKey(med.start).toLocaleDateString('es')} hasta el ${lastDay(med).toLocaleDateString('es')}.`
-    : 'Al cumplirse los días, la pauta se desactiva sola.';
+  field('days').helperText = timed(med) ? `Desde el ${fromKey(med.start).toLocaleDateString('es')} hasta el ${lastDay(med).toLocaleDateString('es')}.` : '';
   $('#delete').classList.toggle('ion-hide', !editing);
   editor.present();
 }
@@ -279,6 +280,10 @@ $('#info-close').onclick = () => info.dismiss();
 
 $('#manage').onclick = () => manager.present();
 $('#close').onclick = () => manager.dismiss();
+$('#sort').onclick = () => {
+  $('#list').disabled = !$('#list').disabled;
+  $('#sort').textContent = $('#list').disabled ? 'Ordenar' : 'Listo';
+};
 $('#add').onclick = () => openEditor();
 $('#list').addEventListener('click', e => {
   if (e.target.closest('ion-reorder')) return;
