@@ -59,6 +59,9 @@ const doseRow = (m, slot, isTaken) => `
   <ion-list inset="true">
     <ion-item>
       <ion-checkbox helper-text="${esc(m.dose)}" data-id="${m.id}" data-slot="${slot}" ${isTaken ? 'checked' : ''}>${esc(m.name)}</ion-checkbox>
+      <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
+        <ion-icon slot="icon-only" name="medkit-outline"></ion-icon>
+      </ion-button>
     </ion-item>
   </ion-list>`;
 
@@ -98,6 +101,20 @@ function renderToma() {
     ${rows.map(m => doseRow(m, slot, taken(day, m.id, slot))).join('') || emptyList(`Sin tomas en ${SLOTS[slot]}.`)}
     <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
     ${registro}`;
+}
+
+// Ficha de la pauta (dosis, indicaciones y referencias) para leerla con calma.
+const info = $('#info');
+const section = (title, text) => `
+  <ion-list-header><ion-label>${title}</ion-label></ion-list-header>
+  <ion-list inset="true">
+    <ion-item lines="none"><ion-label class="ion-text-wrap">${esc(text).replace(/\n/g, '<br>') || '—'}</ion-label></ion-item>
+  </ion-list>`;
+
+function openInfo(m) {
+  $('#info-title').textContent = m.name;
+  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + section('Referencias', m.refs);
+  info.present();
 }
 
 function toggle(id, slot, checked) {
@@ -245,6 +262,11 @@ function render() {
 $('#day').addEventListener('ionChange', renderToma);
 $('#slot').addEventListener('ionChange', renderToma);
 $('#toma').addEventListener('ionChange', e => toggle(e.target.dataset.id, e.target.dataset.slot, e.detail.checked));
+$('#toma').addEventListener('click', e => {
+  const id = e.target.closest('[data-info]')?.dataset.info;
+  if (id) openInfo(state.meds.find(m => m.id === id));
+});
+$('#info-close').onclick = () => info.dismiss();
 
 $('#manage').onclick = () => { $('#filter').value = $('#slot').value || slotNow(); renderPautas(); manager.present(); };
 $('#close').onclick = () => manager.dismiss();
