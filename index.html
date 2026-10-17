@@ -10,12 +10,12 @@
   <style>
     /* Color principal (tint) con las variables de tema de Ionic */
     :root {
-      --ion-color-primary: #56bde3;
-      --ion-color-primary-rgb: 86, 189, 227;
+      --ion-color-primary: #6dd0f9;
+      --ion-color-primary-rgb: 109, 208, 249;
       --ion-color-primary-contrast: #000000;
       --ion-color-primary-contrast-rgb: 0, 0, 0;
-      --ion-color-primary-shade: #4ca6c8;
-      --ion-color-primary-tint: #67c4e6;
+      --ion-color-primary-shade: #60b7db;
+      --ion-color-primary-tint: #7cd5fa;
     }
     /* Color propio «teal» (#78b7af) para el icono de información, según «Adding colors» de Ionic */
     :root {
@@ -45,6 +45,8 @@
     /* Oculta la barra de scroll del selector de días (la regla de Ionic para ello no se aplica) */
     #day { scrollbar-width: none; }
     #day::-webkit-scrollbar { display: none; }
+    /* En móvil Ionic impide seleccionar texto en toda la app; en la ficha de la pauta se permite para poder copiarlo */
+    #info-body { -webkit-user-select: text; user-select: text; }
     .ion-color-teal {
       --ion-color-base: var(--ion-color-teal) !important;
       --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
@@ -123,6 +125,7 @@
       <ion-list inset="true">
         <ion-item><ion-input name="name" label="Nombre" label-placement="stacked" placeholder="Paracetamol"></ion-input></ion-item>
         <ion-item><ion-input name="dose" label="Dosis" label-placement="stacked" placeholder="1 comprimido de 500 mg"></ion-input></ion-item>
+        <ion-item><ion-input name="notes" label="Indicaciones" label-placement="stacked" placeholder="Con comida"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Tiempo</ion-label></ion-list-header>
       <ion-list inset="true">
@@ -136,7 +139,6 @@
       </ion-list>
       <ion-list-header><ion-label>Notas</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item><ion-textarea name="notes" label="Indicaciones" label-placement="stacked" placeholder="Con comida" auto-grow="true"></ion-textarea></ion-item>
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
       </ion-list>
       <ion-list inset="true" id="delete">

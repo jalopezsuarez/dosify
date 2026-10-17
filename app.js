@@ -57,16 +57,38 @@ function renderDays() {
   }).join('');
 }
 
-// Cada toma va en su propia lista inset: filas independientes. Si ya está tomada, muestra la hora junto a la dosis.
+// Texto de una pauta: nombre (medio), dosis (texto principal) e indicaciones (gris, recortadas a unas dos líneas).
+const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return t.length > 80 ? `${t.slice(0, 80).trimEnd()}…` : t; };
+const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
+const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
+
+// Cada toma va en su propia lista inset: filas independientes. Si ya está tomada, muestra la hora encima del (i).
 const doseRow = (m, slot, entry) => `
   <ion-list inset="true">
     <ion-item>
-      <ion-checkbox label-placement="end" justify="start" helper-text="${esc([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}><span class="medium">${esc(m.name)}</span></ion-checkbox>
-      <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
-        <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
-      </ion-button>
+      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}></ion-checkbox>
+      <ion-label class="ion-text-wrap">
+        <h2 class="medium">${esc(m.name)}</h2>
+        ${doseLine(m.dose)}
+        ${notesLine(m)}
+      </ion-label>
+      <div slot="end" class="ion-display-flex ion-flex-column ion-align-items-center">
+        ${entry ? `<ion-note>${time(entry.at)}</ion-note>` : ''}
+        <ion-button fill="clear" data-info="${m.id}" aria-label="Información">
+          <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
+        </ion-button>
+      </div>
     </ion-item>
   </ion-list>`;
+
+// Orden de la sección «Tomas»: el botón de su cabecera pasa por pautas → fecha ascendente → fecha descendente.
+// No se guarda: al abrir la app siempre empieza en el orden de pautas.
+const ORDERS = {
+  pautas: { next: 'asc', icon: 'list-outline', label: 'Orden de pautas' },
+  asc: { next: 'desc', icon: 'arrow-up-outline', label: 'Fecha ascendente' },
+  desc: { next: 'pautas', icon: 'arrow-down-outline', label: 'Fecha descendente' },
+};
+let order = 'pautas';
 
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
@@ -77,6 +99,7 @@ async function renderToma() {
   const entry = m => state.log.find(e => e.day === day && e.id === m.id && e.slot === slot);
   const pending = rows.filter(m => !entry(m));
   const taken = rows.filter(m => entry(m));
+  if (order !== 'pautas') taken.sort((a, b) => entry(a).at.localeCompare(entry(b).at) * (order === 'asc' ? 1 : -1));
   const done = taken.length;
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -95,7 +118,10 @@ async function renderToma() {
     </ion-list>
     <ion-list-header><ion-label>Pendiente</ion-label></ion-list-header>
     ${pending.map(m => doseRow(m, slot)).join('') || emptyList('Nada pendiente.')}
-    <ion-list-header><ion-label>Tomas</ion-label></ion-list-header>
+    <ion-list-header>
+      <ion-label>Tomas</ion-label>
+      <ion-button id="toma-sort" fill="clear" aria-label="${ORDERS[order].label}"><ion-icon slot="icon-only" name="${ORDERS[order].icon}"></ion-icon></ion-button>
+    </ion-list-header>
     ${taken.map(m => doseRow(m, slot, entry(m))).join('') || emptyList('Sin tomas.')}`;
   if (scroller) { scroller.scrollTop = y; requestAnimationFrame(() => { scroller.scrollTop = y; }); }
 }
@@ -133,8 +159,6 @@ function toggle(id, slot, checked) {
 // ---------- Pautas ----------
 
 const manager = $('#manager');
-const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return t.length > 80 ? `${t.slice(0, 80).trimEnd()}…` : t; };
-
 const chip = (m, slot) => m[slot]
   ? `<ion-chip color="${active(m) ? 'primary' : 'medium'}"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`
   : `<ion-chip outline="true" color="medium"><ion-label>${SLOTS[slot]}</ion-label></ion-chip>`;
@@ -144,9 +168,9 @@ const pautaRow = m => `
     <ion-label class="ion-text-wrap" ${active(m) ? '' : 'color="medium"'}>
       <h2 class="medium">${esc(m.name)}</h2>
       ${timed(m) ? `<p><ion-text color="rose" class="medium">${active(m) ? `${Number(m.days)} días · hasta el` : 'Finalizada el'} ${lastDay(m).toLocaleDateString('es')}</ion-text></p>` : ''}
-      ${m.dose ? `<p>${esc(m.dose)}</p>` : ''}
+      ${doseLine(m.dose, active(m))}
+      ${notesLine(m)}
       <p>${Object.keys(SLOTS).map(slot => chip(m, slot)).join('')}</p>
-      ${m.notes ? `<p>${esc(brief(m.notes))}</p>` : ''}
     </ion-label>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
@@ -156,11 +180,12 @@ function renderPautas() {
   $('#list').innerHTML = state.meds.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
 }
 
-function ask(header, handler) {
+function ask(header, handler, onCancel) {
   const alert = $('#confirm');
   alert.header = header;
   alert.buttons = [{ text: 'Cancelar', role: 'cancel' }, { text: 'Aceptar', role: 'destructive', handler }];
   alert.present();
+  if (onCancel) alert.onDidDismiss().then(({ role }) => role !== 'destructive' && onCancel());
 }
 
 // ---------- CSV ----------
@@ -261,10 +286,19 @@ function render() {
 
 $('#day').addEventListener('ionChange', renderToma);
 $('#slot').addEventListener('ionChange', renderToma);
-$('#toma').addEventListener('ionChange', e => toggle(e.target.dataset.id, e.target.dataset.slot, e.detail.checked));
+// Desmarcar (pasar de «Tomas» a «Pendiente») pide confirmación; si se cancela, la casilla vuelve a quedar marcada.
+$('#toma').addEventListener('ionChange', e => {
+  const { id, slot } = e.target.dataset;
+  if (e.detail.checked) return toggle(id, slot, true);
+  const { name } = state.meds.find(m => m.id === id);
+  ask(`¿Pasar «${name}» a pendiente?`, () => toggle(id, slot, false), renderToma);
+});
 $('#toma').addEventListener('click', e => {
   const id = e.target.closest('[data-info]')?.dataset.info;
   if (id) openInfo(state.meds.find(m => m.id === id));
+  // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
+  if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
+  if (e.target.closest('#toma-sort')) { order = ORDERS[order].next; renderToma(); }
 });
 $('#info-close').onclick = () => info.dismiss();
 
