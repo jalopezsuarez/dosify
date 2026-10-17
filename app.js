@@ -15,31 +15,7 @@ const active = v => v !== '' && Number(v.replace(',', '.')) !== 0;
 const isToday = iso => new Date(iso).toDateString() === new Date().toDateString();
 const when = iso => new Date(iso).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const empty = text => `<ion-text color="medium"><p class="ion-text-center ion-padding">${text}</p></ion-text>`;
-
-// ---------- Pautas ----------
-
-const chip = (slot, v) => active(v)
-  ? `<ion-chip color="primary">${slot} ${esc(v)}</ion-chip>`
-  : `<ion-chip outline="true" color="medium">${slot} 0</ion-chip>`;
-
-const card = m => `
-  <ion-card button="true" data-id="${m.id}">
-    <ion-card-header>
-      <ion-card-title>${esc(m.name)}</ion-card-title>
-      <ion-card-subtitle>${m.enabled ? '' : '<ion-badge color="medium">Desactivada</ion-badge> '}${esc(m.dose)}</ion-card-subtitle>
-    </ion-card-header>
-    <ion-card-content>
-      ${m.notes ? `<p>${esc(m.notes)}</p>` : ''}
-      ${m.refs ? `<p><ion-note>${esc(m.refs)}</ion-note></p>` : ''}
-      ${Object.keys(SLOTS).map(s => chip(s, m[s])).join('')}
-    </ion-card-content>
-  </ion-card>`;
-
-function renderPautas() {
-  const filter = $('#filter').value || 'all';
-  const meds = filter === 'all' ? state.meds : state.meds.filter(m => active(m[filter]));
-  $('#pautas').innerHTML = meds.map(card).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
-}
+const slotNow = () => { const h = new Date().getHours(); return h < 13 ? 'M' : h < 20 ? 'T' : 'N'; };
 
 // ---------- Toma ----------
 
@@ -51,55 +27,74 @@ const doseRow = ({ m, slot, taken }) => `
 
 const logRow = e => `
   <ion-item>
-    <ion-icon slot="start" name="${e.taken ? 'checkmark-circle' : 'close-circle'}" color="${e.taken ? 'success' : 'danger'}"></ion-icon>
-    <ion-label>${esc(e.name)}<p>${SLOTS[e.slot]} · ${e.taken ? 'Tomada' : 'No tomada'}</p></ion-label>
+    <ion-icon slot="start" name="checkmark-circle" color="success"></ion-icon>
+    <ion-label>${esc(e.name)}<p>${SLOTS[e.slot]}</p></ion-label>
     <ion-note slot="end">${when(e.at)}</ion-note>
   </ion-item>`;
 
 function renderToma() {
+  const slot = $('#slot').value || slotNow();
   const todayLog = state.log.filter(e => isToday(e.at));
-  const taken = (id, slot) => todayLog.find(e => e.id === id && e.slot === slot)?.taken ?? false;
-  const doses = Object.keys(SLOTS).flatMap(slot =>
-    state.meds.filter(m => m.enabled && active(m[slot])).map(m => ({ m, slot, taken: taken(m.id, slot) })));
+  const doses = Object.keys(SLOTS).flatMap(s => state.meds
+    .filter(m => m.enabled && active(m[s]))
+    .map(m => ({ m, slot: s, taken: todayLog.some(e => e.id === m.id && e.slot === s) })));
   const done = doses.filter(d => d.taken).length;
-  const lists = Object.keys(SLOTS).map(slot => {
-    const rows = doses.filter(d => d.slot === slot);
-    return rows.length ? `<ion-list><ion-list-header><ion-label>${SLOTS[slot]}</ion-label></ion-list-header>${rows.map(doseRow).join('')}</ion-list>` : '';
-  }).join('');
+  const rows = doses.filter(d => d.slot === slot);
 
   $('#toma').innerHTML = `
     <ion-card>
       <ion-card-header>
-        <ion-card-subtitle>${new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</ion-card-subtitle>
-        <ion-card-title>${done} de ${doses.length} tomadas</ion-card-title>
+        <ion-card-subtitle>${done} de ${doses.length} tomadas · ${new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</ion-card-subtitle>
+        <ion-card-title>${doses.length ? Math.round(done / doses.length * 100) : 0} %</ion-card-title>
       </ion-card-header>
       <ion-card-content>
         <ion-progress-bar value="${doses.length ? done / doses.length : 0}" color="${doses.length && done === doses.length ? 'success' : 'primary'}"></ion-progress-bar>
       </ion-card-content>
     </ion-card>
-    ${lists || empty('No hay tomas activas para hoy.')}
+    ${rows.length ? `<ion-list>${rows.map(doseRow).join('')}</ion-list>` : empty(`Sin tomas en ${SLOTS[slot]}.`)}
     <ion-list>
       <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
       ${state.log.slice(0, LOG_SHOW).map(logRow).join('') || empty('Sin registros.')}
     </ion-list>`;
 }
 
-function toggle(id, slot, taken) {
-  const { name } = state.meds.find(m => m.id === id);
-  state.log.unshift({ at: new Date().toISOString(), id, name, slot, taken });
-  state.log.length = Math.min(state.log.length, LOG_MAX);
+function toggle(id, slot, checked) {
+  if (checked) {
+    const { name } = state.meds.find(m => m.id === id);
+    state.log.unshift({ at: new Date().toISOString(), id, name, slot });
+    state.log.length = Math.min(state.log.length, LOG_MAX);
+  } else {
+    state.log = state.log.filter(e => !(e.id === id && e.slot === slot && isToday(e.at)));
+  }
   save();
   render();
 }
 
-// ---------- Ajustes ----------
+// ---------- Pautas ----------
 
-function renderAjustes() {
-  $('#order').innerHTML = state.meds.map(m => `
-    <ion-item>
-      <ion-toggle data-id="${m.id}" ${m.enabled ? 'checked' : ''}>${esc(m.name)}</ion-toggle>
-      <ion-reorder slot="end"></ion-reorder>
-    </ion-item>`).join('') || empty('Sin pautas.');
+const filterSlot = () => $('#filter').value || slotNow();
+const visible = slot => state.meds.filter(m => active(m[slot]));
+
+const chip = (m, slot) => m.enabled && active(m[slot])
+  ? `<ion-chip color="primary">${SLOTS[slot]} ${esc(m[slot])}</ion-chip>`
+  : `<ion-chip outline="true" color="medium">${SLOTS[slot]} ${esc(m[slot] || '0')}</ion-chip>`;
+
+const pautaRow = m => `
+  <ion-item button="true" detail="false" data-id="${m.id}">
+    <ion-toggle slot="start" aria-label="Activa" ${m.enabled ? 'checked' : ''}></ion-toggle>
+    <ion-label class="ion-text-wrap" ${m.enabled ? '' : 'color="medium"'}>
+      <h2>${esc(m.name)}</h2>
+      ${m.dose ? `<p>${esc(m.dose)}</p>` : ''}
+      <p>${Object.keys(SLOTS).map(slot => chip(m, slot)).join('')}</p>
+      ${m.notes || m.refs ? `<p>${esc([m.notes, m.refs].filter(Boolean).join(' · '))}</p>` : ''}
+    </ion-label>
+    <ion-reorder slot="end"></ion-reorder>
+  </ion-item>`;
+
+function renderPautas() {
+  const slot = filterSlot();
+  $('#pautas').innerHTML = visible(slot).map(pautaRow).join('')
+    || empty(`Sin pautas en ${SLOTS[slot]}. Pulsa «Añadir» para crear una.`);
 }
 
 function ask(header, handler) {
@@ -178,27 +173,30 @@ function saveEditor() {
 // ---------- Wiring ----------
 
 function render() {
-  renderPautas();
   renderToma();
-  renderAjustes();
+  renderPautas();
 }
+
+$('#slot').addEventListener('ionChange', renderToma);
+$('#toma').addEventListener('ionChange', e => toggle(e.target.dataset.id, e.target.dataset.slot, e.detail.checked));
 
 $('#filter').addEventListener('ionChange', renderPautas);
 $('#add').onclick = () => openEditor();
 $('#pautas').addEventListener('click', e => {
-  const id = e.target.closest('ion-card')?.dataset.id;
+  if (e.target.closest('ion-toggle, ion-reorder')) return;
+  const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(state.meds.find(m => m.id === id));
 });
-
-$('#toma').addEventListener('ionChange', e => toggle(e.target.dataset.id, e.target.dataset.slot, e.detail.checked));
-
-$('#order').addEventListener('ionChange', e => {
-  state.meds.find(m => m.id === e.target.dataset.id).enabled = e.detail.checked;
+$('#pautas').addEventListener('ionChange', e => {
+  state.meds.find(m => m.id === e.target.closest('ion-item').dataset.id).enabled = e.detail.checked;
   save();
   render();
 });
-$('#order').addEventListener('ionItemReorder', e => {
-  state.meds = e.detail.complete(state.meds);
+$('#pautas').addEventListener('ionItemReorder', e => {
+  const shown = visible(filterSlot());
+  const moved = e.detail.complete([...shown]);
+  let i = 0;
+  state.meds = state.meds.map(m => shown.includes(m) ? moved[i++] : m);
   save();
   render();
 });
@@ -206,7 +204,7 @@ $('#order').addEventListener('ionItemReorder', e => {
 $('#import').onclick = () => $('#file').click();
 $('#file').onchange = e => { importCSV(e.target.files[0]); e.target.value = ''; };
 $('#export').onclick = () => download('pautas.csv', csv([HEAD, ...state.meds.map(m => [...FIELDS.map(f => m[f]), m.enabled ? 'sí' : 'no'])]));
-$('#export-log').onclick = () => download('registro.csv', csv([['fecha', 'nombre', 'momento', 'tomada'], ...state.log.map(e => [new Date(e.at).toLocaleString('es'), e.name, SLOTS[e.slot], e.taken ? 'sí' : 'no'])]));
+$('#export-log').onclick = () => download('registro.csv', csv([['fecha', 'nombre', 'momento'], ...state.log.map(e => [new Date(e.at).toLocaleString('es'), e.name, SLOTS[e.slot]])]));
 $('#clear-log').onclick = () => ask('¿Borrar todo el registro?', () => { state.log = []; save(); render(); });
 
 $('#cancel').onclick = () => editor.dismiss();
@@ -219,4 +217,6 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
 });
 
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && render());
+$('#slot').setAttribute('value', slotNow());
+$('#filter').setAttribute('value', slotNow());
 render();

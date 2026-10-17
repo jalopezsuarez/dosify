@@ -14,6 +14,20 @@
 <ion-app>
   <ion-tabs>
 
+    <ion-tab tab="toma">
+      <ion-header>
+        <ion-toolbar><ion-title>Toma</ion-title></ion-toolbar>
+        <ion-toolbar>
+          <ion-segment id="slot">
+            <ion-segment-button value="M"><ion-label>Mañana</ion-label></ion-segment-button>
+            <ion-segment-button value="T"><ion-label>Tarde</ion-label></ion-segment-button>
+            <ion-segment-button value="N"><ion-label>Noche</ion-label></ion-segment-button>
+          </ion-segment>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content id="toma"></ion-content>
+    </ion-tab>
+
     <ion-tab tab="pautas">
       <ion-header>
         <ion-toolbar>
@@ -23,32 +37,16 @@
           </ion-buttons>
         </ion-toolbar>
         <ion-toolbar>
-          <ion-segment id="filter" value="all">
-            <ion-segment-button value="all"><ion-label>Todas</ion-label></ion-segment-button>
+          <ion-segment id="filter">
             <ion-segment-button value="M"><ion-label>Mañana</ion-label></ion-segment-button>
             <ion-segment-button value="T"><ion-label>Tarde</ion-label></ion-segment-button>
             <ion-segment-button value="N"><ion-label>Noche</ion-label></ion-segment-button>
           </ion-segment>
         </ion-toolbar>
       </ion-header>
-      <ion-content id="pautas"></ion-content>
-    </ion-tab>
-
-    <ion-tab tab="toma">
-      <ion-header>
-        <ion-toolbar><ion-title>Toma</ion-title></ion-toolbar>
-      </ion-header>
-      <ion-content id="toma"></ion-content>
-    </ion-tab>
-
-    <ion-tab tab="ajustes">
-      <ion-header>
-        <ion-toolbar><ion-title>Ajustes</ion-title></ion-toolbar>
-      </ion-header>
       <ion-content>
         <ion-list>
-          <ion-list-header><ion-label>Pautas activas y orden</ion-label></ion-list-header>
-          <ion-reorder-group id="order" disabled="false"></ion-reorder-group>
+          <ion-reorder-group id="pautas" disabled="false"></ion-reorder-group>
         </ion-list>
         <ion-list>
           <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
@@ -62,9 +60,8 @@
     </ion-tab>
 
     <ion-tab-bar slot="bottom">
-      <ion-tab-button tab="pautas"><ion-icon name="list"></ion-icon><ion-label>Pautas</ion-label></ion-tab-button>
       <ion-tab-button tab="toma"><ion-icon name="checkmark-circle"></ion-icon><ion-label>Toma</ion-label></ion-tab-button>
-      <ion-tab-button tab="ajustes"><ion-icon name="settings"></ion-icon><ion-label>Ajustes</ion-label></ion-tab-button>
+      <ion-tab-button tab="pautas"><ion-icon name="list"></ion-icon><ion-label>Pautas</ion-label></ion-tab-button>
     </ion-tab-bar>
 
   </ion-tabs>

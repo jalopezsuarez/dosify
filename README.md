@@ -6,9 +6,8 @@ App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [I
 
 ## Qué hace
 
-- **Pautas**: lista de medicamentos con nombre, dosis, cantidad por toma (M = mañana, T = tarde, N = noche), indicaciones y referencias. Filtro por momento del día. Tocar una tarjeta la edita; «Añadir» crea una nueva.
-- **Toma**: tomas de hoy agrupadas por mañana / tarde / noche, con un check por fila y un resumen de progreso. Debajo, el **registro** con cada marcado y desmarcado (fecha, hora, tomada / no tomada).
-- **Ajustes**: activar o desactivar cada pauta (las desactivadas no aparecen en la toma), ordenar arrastrando, cargar y exportar pautas en CSV, exportar o borrar el registro.
+- **Toma** (pantalla inicial): pestañas Mañana / Tarde / Noche con las tomas de hoy, un check por fila y un resumen con el porcentaje tomado. Debajo, el **registro** de tomas marcadas (fecha y hora); desmarcar una toma elimina su entrada.
+- **Pautas**: lista por Mañana / Tarde / Noche. Cada fila muestra nombre, dosis, la pauta (Mañana · Tarde · Noche), indicaciones y referencias, con un interruptor para activarla o desactivarla (las desactivadas no aparecen en la toma) y un asa para ordenar arrastrando. Tocar la fila la edita; «Añadir» crea una nueva. Al final, el bloque **Datos**: cargar y exportar pautas en CSV, exportar o borrar el registro.
 
 Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
 
