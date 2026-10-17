@@ -63,22 +63,19 @@ const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return
 const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
-// Cada toma va en su propia lista inset: filas independientes. Si ya está tomada, muestra la hora encima del (i).
+// Cada toma va en su propia lista inset: filas independientes. Si ya está tomada, muestra la hora junto a la dosis.
 const doseRow = (m, slot, entry) => `
   <ion-list inset="true">
     <ion-item>
       <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}></ion-checkbox>
       <ion-label class="ion-text-wrap">
         <h2 class="medium">${esc(m.name)}</h2>
-        ${doseLine(m.dose)}
+        ${doseLine([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
       </ion-label>
-      <div slot="end" class="ion-display-flex ion-flex-column ion-align-items-center">
-        ${entry ? `<ion-note>${time(entry.at)}</ion-note>` : ''}
-        <ion-button fill="clear" data-info="${m.id}" aria-label="Información">
-          <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
-        </ion-button>
-      </div>
+      <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
+        <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
+      </ion-button>
     </ion-item>
   </ion-list>`;
 
