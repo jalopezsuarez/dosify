@@ -73,11 +73,7 @@
       <ion-segment id="day" scrollable="true"></ion-segment>
     </ion-toolbar>
     <ion-toolbar>
-      <ion-segment id="slot">
-        <ion-segment-button value="M"><ion-label>Mañana</ion-label></ion-segment-button>
-        <ion-segment-button value="T"><ion-label>Tarde</ion-label></ion-segment-button>
-        <ion-segment-button value="N"><ion-label>Noche</ion-label></ion-segment-button>
-      </ion-segment>
+      <ion-segment id="slot"></ion-segment>
     </ion-toolbar>
   </ion-header>
   <ion-content id="toma" color="light"></ion-content>
@@ -94,17 +90,27 @@
     </ion-header>
     <ion-content color="light">
       <ion-list-header>
-        <ion-label id="list-title">Pautas</ion-label>
+        <ion-label>Pautas (<span id="list-count">0</span>)</ion-label>
         <ion-button id="sort" fill="clear" aria-label="Ordenar"><ion-icon slot="icon-only" name="swap-vertical-outline"></ion-icon></ion-button>
       </ion-list-header>
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
       </ion-list>
+      <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
+      <ion-list inset="true">
+        <ion-reorder-group id="intervals" disabled="false"></ion-reorder-group>
+      </ion-list>
       <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (pautas y tomas)</ion-label></ion-item>
-        <ion-item button id="export"><ion-icon slot="start" name="cloud-download-outline"></ion-icon><ion-label>Exportar CSV (pautas y tomas)</ion-label></ion-item>
+        <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (intervalos, pautas y tomas)</ion-label></ion-item>
+        <ion-item button id="export"><ion-icon slot="start" name="cloud-download-outline"></ion-icon><ion-label>Exportar CSV (intervalos, pautas y tomas)</ion-label></ion-item>
       </ion-list>
+      <ion-list-header><ion-label>Exportar</ion-label></ion-list-header>
+      <ion-list inset="true">
+        <ion-item><ion-select id="pdf-month" label="Exportar mes" interface="action-sheet" cancel-text="Cancelar"></ion-select></ion-item>
+        <ion-item button id="export-pdf"><ion-icon slot="start" name="document-text-outline"></ion-icon><ion-label>Exportar PDF</ion-label></ion-item>
+      </ion-list>
+      <ion-list-header><ion-label>Zona peligrosa</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item button detail="false" id="clear-log"><ion-label color="danger" class="ion-text-center">Borrar registro de tomas</ion-label></ion-item>
       </ion-list>
@@ -132,11 +138,7 @@
         <ion-item><ion-input name="days" label="Duración (días)" label-placement="stacked" placeholder="Sin límite" inputmode="numeric"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Tomas</ion-label></ion-list-header>
-      <ion-list inset="true">
-        <ion-item><ion-checkbox name="M">Mañana</ion-checkbox></ion-item>
-        <ion-item><ion-checkbox name="T">Tarde</ion-checkbox></ion-item>
-        <ion-item><ion-checkbox name="N">Noche</ion-checkbox></ion-item>
-      </ion-list>
+      <ion-list inset="true" id="editor-slots"></ion-list>
       <ion-list-header><ion-label>Notas</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
@@ -150,11 +152,31 @@
   <ion-modal id="info">
     <ion-header>
       <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="info-close">Cerrar</ion-button></ion-buttons>
         <ion-title id="info-title"></ion-title>
-        <ion-buttons slot="end"><ion-button id="info-close">Cerrar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content id="info-body" color="light"></ion-content>
+  </ion-modal>
+
+  <ion-modal id="interval-editor">
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="interval-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-title>Intervalo</ion-title>
+        <ion-buttons slot="end"><ion-button id="interval-save" strong="true">Guardar</ion-button></ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content color="light">
+      <ion-list inset="true">
+        <ion-item><ion-input name="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre"></ion-input></ion-item>
+      </ion-list>
+      <ion-list-header><ion-label>Horas</ion-label></ion-list-header>
+      <ion-list inset="true">
+        <ion-item><ion-input name="start" type="number" min="0" max="24" step="1" inputmode="numeric" label="Hora de inicio" label-placement="stacked" placeholder="Sin hora" helper-text="De 0 a 24" error-text="Pon una hora entera de 0 a 24"></ion-input></ion-item>
+        <ion-item><ion-input name="end" type="number" min="0" max="24" step="1" inputmode="numeric" label="Hora de fin" label-placement="stacked" placeholder="Sin hora" helper-text="De 0 a 24" error-text="Pon una hora entera de 0 a 24"></ion-input></ion-item>
+      </ion-list>
+    </ion-content>
   </ion-modal>
 
   <ion-alert id="confirm"></ion-alert>
