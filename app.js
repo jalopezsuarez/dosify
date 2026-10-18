@@ -536,11 +536,12 @@ function openIntervalEditor(id) {
   intervalEditor.present();
 }
 
-// Las horas son opcionales; si se ponen, enteras de 0 a 24. Una hora no válida se marca con el error de Ionic.
+// Las horas son opcionales; si se ponen, enteras de 0 a 24. Una hora no válida se marca en rojo (Ionic) y recibe el foco.
 function saveIntervalEditor() {
   const [start, end] = ['start', 'end'].map(f => hour(ivField(f).value));
   for (const [f, v] of [['start', start], ['end', end]]) ivField(f).classList.toggle('ion-invalid', v === null);
-  if (start === null || end === null) return ['start', 'end'].forEach(f => ivField(f).classList.add('ion-touched'));
+  const bad = ['start', 'end'].find((f, i) => [start, end][i] === null);
+  if (bad) return ['start', 'end'].forEach(f => ivField(f).classList.add('ion-touched')), ivField(bad).setFocus();
   Object.assign(interval(editingInterval), { name: String(ivField('name').value ?? '').trim(), start, end });
   save();
   render();
