@@ -11,6 +11,8 @@ Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo s
 
 **Web:** https://jalopezsuarez.github.io/dosify/
 
+Se puede instalar como app: en iOS, Safari › Compartir › «Añadir a pantalla de inicio»; en Android, Chrome › «Instalar app».
+
 ## Qué hace
 
 ### Toma (pantalla principal)
@@ -75,7 +77,19 @@ toma;p1;Paracetamol;i2;;;2026-10-17 15:30;;;;;
 - Al cargar, las columnas se buscan por su nombre en la cabecera, así que su orden da igual. No hay compatibilidad con formatos anteriores: lo que falte o no cuadre toma su valor por defecto (intervalos que falten, los de por defecto; fechas u horas mal escritas, vacías) y las filas que no se entienden se ignoran.
 - Cargar un CSV reemplaza los intervalos, las pautas y las tomas actuales (pide confirmación). «Borrar registro de tomas» elimina solo las tomas.
 
+## Iconos
+
+Una cápsula blanca sobre un degradado azul (alrededor del color principal, #6dd0f9), dibujada a partir de `original.svg`:
+
+- `favicon.svg` — navegadores modernos (vectorial).
+- `favicon.ico` — respaldo con 16, 32 y 48 px.
+- `apple-touch-icon.png` — iOS (180×180, cuadrado y opaco: iOS pone las esquinas).
+- `icon-192.png` e `icon-512.png` — Android y Chrome (app instalada y pantalla de arranque).
+- `icon-maskable-512.png` — Android con iconos adaptables: la cápsula queda dentro de la zona segura.
+- `manifest.webmanifest` — nombre, colores, iconos y modo app; con rutas relativas para funcionar bajo `/dosify/`.
+
 ## Archivos
 
 - `index.html` — estructura de la interfaz (toma, gestor de pautas con intervalos, datos, exportar y zona peligrosa, editores de pauta y de intervalo, ficha, alerta y action sheet) y el CSS mínimo.
 - `app.js` — estado, almacenamiento, intervalos, render, orden, CSV y PDF.
+- Iconos y manifest: ver «Iconos».
