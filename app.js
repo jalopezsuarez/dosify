@@ -1,8 +1,9 @@
 const KEY = 'dosify';
 const SLOTS = { M: 'Mañana', T: 'Tarde', N: 'Noche' };
 const TEXT = ['name', 'dose', 'notes', 'refs', 'days'];
-const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'start', 'days'];
-const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'inicio', 'dias', 'fecha', 'hora', 'momento'];
+const ORD = { M: 'oM', T: 'oT', N: 'oN' }; // posición de la pauta en la lista de tomas de cada franja (1, 2, 3…)
+const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'start', 'days', 'oM', 'oT', 'oN'];
+const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'inicio', 'dias', 'orden mañana', 'orden tarde', 'orden noche', 'fecha', 'hora', 'momento'];
 const SEP = ';';
 const DAYS = 7;
 const LOG_MAX = 1000;
@@ -18,7 +19,7 @@ const empty = text => `<ion-item lines="none"><ion-label color="medium" class="i
 const slotNow = () => { const h = new Date().getHours(); return h >= 6 && h < 12 ? 'M' : h >= 12 && h < 18 ? 'T' : 'N'; };
 
 const state = { meds: [], log: [], ...JSON.parse(localStorage.getItem(KEY)) };
-for (const m of state.meds) { for (const s in SLOTS) m[s] = yes(m[s] ?? ''); m.start ??= ''; m.days ??= ''; } // normaliza datos de versiones anteriores
+for (const m of state.meds) { for (const s in SLOTS) m[s] = yes(m[s] ?? ''); m.start ??= ''; m.days ??= ''; for (const o of Object.values(ORD)) m[o] ??= ''; } // normaliza datos de versiones anteriores
 for (const e of state.log) e.day ??= dayKey(new Date(e.at));
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 
@@ -27,7 +28,10 @@ const lastDay = m => { const d = fromKey(m.start); d.setDate(d.getDate() + Numbe
 const timed = m => Number(m.days) > 0 && m.start !== '';
 const active = m => !timed(m) || today() <= dayKey(lastDay(m));
 const selectedDay = () => $('#day').value || today();
-const doses = slot => state.meds.filter(m => active(m) && m[slot]);
+// Orden de tomas de una franja: por su número (oM/oT/oN); las pautas sin número van detrás, en el orden de pautas.
+const pos = (m, slot) => Number(m[ORD[slot]]) || Infinity;
+const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, slot));
+const doses = slot => bySlot(state.meds.filter(m => active(m) && m[slot]), slot);
 const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === id && e.slot === slot);
 
 // ---------- Toma ----------
@@ -63,30 +67,63 @@ const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return
 const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
-// Cada toma va en su propia lista inset: filas independientes. Si ya está tomada, muestra la hora junto a la dosis.
-const doseRow = (m, slot, entry) => `
-  <ion-list inset="true">
-    <ion-item>
-      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''}></ion-checkbox>
+// Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
+const doseItem = (m, slot, entry, sorting) => `
+    <ion-item data-id="${m.id}">
+      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''} ${sorting ? 'disabled' : ''}></ion-checkbox>
       <ion-label class="ion-text-wrap">
         <h2 class="medium">${esc(m.name)}</h2>
         ${doseLine([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
       </ion-label>
+      ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : `
       <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
         <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
-      </ion-button>
-    </ion-item>
-  </ion-list>`;
+      </ion-button>`}
+    </ion-item>`;
+// Cada toma va en su propia lista inset: filas independientes.
+const doseRow = (m, slot, entry) => `<ion-list inset="true">${doseItem(m, slot, entry)}</ion-list>`;
 
-// Orden de la sección «Tomas»: el botón de su cabecera pasa por pautas → fecha ascendente → fecha descendente.
-// No se guarda: al abrir la app siempre empieza en el orden de pautas.
+// Botón de la cabecera de una sección (Pendiente, Tomas).
+const headerButton = (id, icon, label) => `<ion-button id="${id}" fill="clear" aria-label="${label}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
+
+// «Pendiente»: su botón activa el modo ordenar; el orden que se fije vale para esa franja en cualquier día.
+let sortingPending = false;
+
+// «Tomas»: su botón abre un action sheet para elegir el orden; el icono muestra el elegido.
+// No se guarda: al abrir la app siempre empieza en el orden de tomas.
 const ORDERS = {
-  pautas: { next: 'asc', icon: 'list-outline', label: 'Orden de pautas' },
-  asc: { next: 'desc', icon: 'arrow-up-outline', label: 'Fecha ascendente' },
-  desc: { next: 'pautas', icon: 'arrow-down-outline', label: 'Fecha descendente' },
+  tomas: { icon: 'reorder-three-outline', label: 'Orden de tomas' },
+  recent: { icon: 'arrow-up-outline', label: 'Más reciente arriba' },
+  oldest: { icon: 'arrow-down-outline', label: 'Más reciente abajo' },
+  pautas: { icon: 'list-outline', label: 'Orden de pautas' },
 };
-let order = 'pautas';
+let order = 'tomas';
+
+// Action sheet compartido: opciones + «Cancelar»; onCancel se llama si se cierra sin elegir.
+function sheet(header, buttons, onCancel) {
+  const el = $('#sheet');
+  el.header = header;
+  el.buttons = [...buttons, { text: 'Cancelar', role: 'cancel' }];
+  el.present();
+  if (onCancel) el.onDidDismiss().then(({ role }) => role === 'cancel' || role === 'backdrop' ? onCancel() : null);
+}
+
+const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([key, o]) => (
+  { text: o.label, icon: o.icon, role: key === order ? 'selected' : undefined, handler: () => { order = key; renderToma(); } })));
+const sortTaken = (rows, entry) => order === 'tomas' ? rows
+  : order === 'pautas' ? state.meds.filter(m => rows.includes(m))
+  : [...rows].sort((a, b) => entry(a).at.localeCompare(entry(b).at) * (order === 'oldest' ? 1 : -1));
+
+// Ordenar «Pendiente» mueve esas pautas entre los huecos que ocupan en la franja (las ya tomadas no se mueven)
+// y renumera la franja entera: 1, 2, 3…
+function reorderPending(slot, moved) {
+  const all = bySlot(state.meds.filter(m => m[slot]), slot);
+  const ids = new Set(moved.map(m => m.id));
+  let i = 0;
+  all.map(m => ids.has(m.id) ? moved[i++] : m).forEach((m, n) => { m[ORD[slot]] = n + 1; });
+  save();
+}
 
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
@@ -96,8 +133,7 @@ async function renderToma() {
   const rows = doses(slot);
   const entry = m => state.log.find(e => e.day === day && e.id === m.id && e.slot === slot);
   const pending = rows.filter(m => !entry(m));
-  const taken = rows.filter(m => entry(m));
-  if (order !== 'pautas') taken.sort((a, b) => entry(a).at.localeCompare(entry(b).at) * (order === 'asc' ? 1 : -1));
+  const taken = sortTaken(rows.filter(m => entry(m)), entry);
   const done = taken.length;
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -114,11 +150,16 @@ async function renderToma() {
         </ion-label>
       </ion-item>
     </ion-list>
-    <ion-list-header><ion-label>Pendiente</ion-label></ion-list-header>
-    ${pending.map(m => doseRow(m, slot)).join('') || emptyList('Nada pendiente.')}
+    <ion-list-header>
+      <ion-label>Pendiente</ion-label>
+      ${headerButton('pending-sort', sortingPending ? 'checkmark-outline' : 'swap-vertical-outline', sortingPending ? 'Terminar de ordenar' : 'Ordenar')}
+    </ion-list-header>
+    ${!pending.length ? emptyList('Nada pendiente.') : sortingPending
+      ? `<ion-list inset="true"><ion-reorder-group id="pending-list" disabled="false">${pending.map(m => doseItem(m, slot, null, true)).join('')}</ion-reorder-group></ion-list>`
+      : pending.map(m => doseRow(m, slot)).join('')}
     <ion-list-header>
       <ion-label>Tomas</ion-label>
-      <ion-button id="toma-sort" fill="clear" aria-label="${ORDERS[order].label}"><ion-icon slot="icon-only" name="${ORDERS[order].icon}"></ion-icon></ion-button>
+      ${headerButton('toma-sort', ORDERS[order].icon, ORDERS[order].label)}
     </ion-list-header>
     ${taken.map(m => doseRow(m, slot, entry(m))).join('') || emptyList('Sin tomas.')}`;
   if (scroller) { scroller.scrollTop = y; requestAnimationFrame(() => { scroller.scrollTop = y; }); }
@@ -178,12 +219,11 @@ function renderPautas() {
   $('#list').innerHTML = state.meds.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
 }
 
-function ask(header, handler, onCancel) {
+function ask(header, handler) {
   const alert = $('#confirm');
   alert.header = header;
   alert.buttons = [{ text: 'Cancelar', role: 'cancel' }, { text: 'Aceptar', role: 'destructive', handler }];
   alert.present();
-  if (onCancel) alert.onDidDismiss().then(({ role }) => role !== 'destructive' && onCancel());
 }
 
 // ---------- CSV ----------
@@ -217,7 +257,7 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(a.href));
 }
 
-// Un solo CSV: primero las filas «pauta» (nombre … activa) y después las filas «toma» (nombre, fecha, hora, momento).
+// Un solo CSV: primero las filas «pauta» (nombre … orden noche) y después las filas «toma» (nombre, fecha, hora, momento).
 const exportCSV = () => csv([
   HEAD,
   ...state.meds.map(m => ['pauta', ...COLS.map(c => m[c]), '', '', '']),
@@ -226,15 +266,18 @@ const exportCSV = () => csv([
 
 async function importCSV(file) {
   const rows = parseCSV(await file.text());
-  if (rows[0]?.[0].toLowerCase() === HEAD[0]) rows.shift();
+  // Las columnas se buscan por su nombre en la cabecera, así un CSV con columnas de menos o en otro orden también vale.
+  const head = rows[0]?.[0].toLowerCase() === HEAD[0] ? rows.shift().map(h => h.toLowerCase()) : HEAD;
+  const get = (r, i) => r[head.indexOf(HEAD[i])] ?? '';
   const meds = [], log = [], ids = new Map();
-  for (const [tipo, ...r] of rows) {
+  for (const r of rows) {
+    const tipo = r[0];
     if (tipo === 'pauta') {
-      const m = { id: crypto.randomUUID(), ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(r[i] ?? '') : r[i] ?? ''])) };
+      const m = { id: crypto.randomUUID(), ...Object.fromEntries(COLS.map((c, i) => [c, c in SLOTS ? yes(get(r, i + 1)) : get(r, i + 1)])) };
       meds.push(m);
       if (!ids.has(m.name)) ids.set(m.name, m.id);
     } else if (tipo === 'toma') {
-      const [name, fecha, hora, momento] = [r[0], r[COLS.length], r[COLS.length + 1], r[COLS.length + 2] ?? ''];
+      const [name, fecha, hora, momento] = [get(r, 1), get(r, COLS.length + 1), get(r, COLS.length + 2), get(r, COLS.length + 3)];
       const slot = Object.keys(SLOTS).find(s => s === momento.toUpperCase() || SLOTS[s].toLowerCase() === momento.toLowerCase());
       const at = new Date(`${fecha}T${hora || '00:00'}`);
       if (slot && !isNaN(at)) log.push({ at: at.toISOString(), day: fecha, id: ids.get(name) ?? null, name, slot });
@@ -284,19 +327,26 @@ function render() {
 
 $('#day').addEventListener('ionChange', renderToma);
 $('#slot').addEventListener('ionChange', renderToma);
-// Desmarcar (pasar de «Tomas» a «Pendiente») pide confirmación; si se cancela, la casilla vuelve a quedar marcada.
+// Marcar o desmarcar se confirma en un action sheet; si se cancela, la casilla vuelve a como estaba.
 $('#toma').addEventListener('ionChange', e => {
   const { id, slot } = e.target.dataset;
-  if (e.detail.checked) return toggle(id, slot, true);
+  const { checked } = e.detail;
   const { name } = state.meds.find(m => m.id === id);
-  ask(`¿Pasar «${name}» a pendiente?`, () => toggle(id, slot, false), renderToma);
+  sheet(name, [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
 });
 $('#toma').addEventListener('click', e => {
   const id = e.target.closest('[data-info]')?.dataset.info;
   if (id) openInfo(state.meds.find(m => m.id === id));
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
-  if (e.target.closest('#toma-sort')) { order = ORDERS[order].next; renderToma(); }
+  if (e.target.closest('#toma-sort')) chooseOrder();
+  if (e.target.closest('#pending-sort')) { sortingPending = !sortingPending; renderToma(); }
+});
+$('#toma').addEventListener('ionItemReorder', e => {
+  const slot = $('#slot').value || slotNow();
+  const moved = e.detail.complete([...e.target.children].map(el => state.meds.find(m => m.id === el.dataset.id)));
+  reorderPending(slot, moved);
+  render();
 });
 $('#info-close').onclick = () => info.dismiss();
 
