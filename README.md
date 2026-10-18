@@ -15,7 +15,7 @@ Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo s
 
 ### Toma (pantalla principal)
 
-- **Días:** selector con scroll horizontal. Siempre muestra hoy y los 7 días anteriores; de antes, solo los días con al menos una toma registrada. Hoy queda el último y seleccionado al cargar. Cada día lleva un anillo de progreso con «tomadas/total».
+- **Días:** selector con scroll horizontal. Siempre muestra hoy y los 7 días anteriores; de antes, hasta 30 días atrás, solo los días con al menos una toma registrada. Hoy queda el último y seleccionado al cargar. Cada día lleva un anillo de progreso con «tomadas/total».
 - **Franjas:** pestañas Mañana / Tarde / Noche, abiertas en la del momento (06–12 Mañana, 12–18 Tarde, 18–06 Noche). Cada franja muestra un círculo con su porcentaje y «n de m tomadas».
 - **Filas:** cada toma va en su propia tarjeta con la casilla a la izquierda, el nombre (peso medio), la dosis, las indicaciones en gris (recortadas a unas dos líneas) y el icono (i) a la derecha. En las tomas ya hechas, la hora va delante de la dosis («09:00 · 1 comprimido»).
 - **Marcar y desmarcar:** pulsar la casilla o el texto abre un action sheet: desde Pendiente, «Marcar como tomado»; desde Tomas, «Marcar como pendiente». «Cancelar» (o tocar fuera) deja la toma como estaba.

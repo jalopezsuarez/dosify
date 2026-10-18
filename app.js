@@ -5,7 +5,8 @@ const ORD = { M: 'oM', T: 'oT', N: 'oN' }; // posición de la pauta en la lista 
 const COLS = ['name', 'dose', 'M', 'T', 'N', 'notes', 'refs', 'start', 'days', 'oM', 'oT', 'oN'];
 const HEAD = ['tipo', 'nombre', 'dosis', 'mañana', 'tarde', 'noche', 'indicaciones', 'referencias', 'inicio', 'dias', 'orden mañana', 'orden tarde', 'orden noche', 'fecha', 'hora', 'momento'];
 const SEP = ';';
-const DAYS = 7;
+const DAYS = 7; // días anteriores que siempre se muestran
+const DAYS_MAX = 30; // hasta cuántos días atrás se muestran los que tienen tomas
 const LOG_MAX = 1000;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -45,12 +46,14 @@ const ring = (done, total, label, size = 44, font = 11) => `
     </svg>
   </ion-text>`;
 
-// Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); de antes, solo los días con alguna toma.
-// El día elegido también se mantiene, para que no desaparezca al desmarcar su última toma.
+// Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); hasta DAYS_MAX días atrás, también los días
+// con alguna toma. El día elegido se mantiene, para que no desaparezca al desmarcar su última toma.
+const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return dayKey(d); };
 function renderDays() {
   const all = Object.keys(SLOTS).flatMap(slot => doses(slot).map(m => ({ id: m.id, slot })));
-  const recent = Array.from({ length: DAYS + 1 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - DAYS + i); return dayKey(d); });
-  const keys = [...new Set([...state.log.map(e => e.day), ...recent, $('#day').value].filter(Boolean))].sort();
+  const recent = Array.from({ length: DAYS + 1 }, (_, i) => daysAgo(DAYS - i));
+  const logged = state.log.map(e => e.day).filter(day => day >= daysAgo(DAYS_MAX));
+  const keys = [...new Set([...logged, ...recent, $('#day').value].filter(Boolean))].sort();
   $('#day').innerHTML = keys.map(key => {
     const d = fromKey(key);
     const done = all.filter(x => taken(key, x.id, x.slot)).length;
