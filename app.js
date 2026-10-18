@@ -110,10 +110,13 @@ function sheet(header, buttons, onCancel) {
 }
 
 const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([key, o]) => (
-  { text: o.label, icon: o.icon, role: key === order ? 'selected' : undefined, handler: () => { order = key; renderToma(); } })));
+  { text: o.label, role: key === order ? 'selected' : undefined, handler: () => { order = key; renderToma(); } })));
 const sortTaken = (rows, entry) => order === 'tomas' ? rows
   : order === 'pautas' ? state.meds.filter(m => rows.includes(m))
   : [...rows].sort((a, b) => entry(a).at.localeCompare(entry(b).at) * (order === 'oldest' ? 1 : -1));
+
+// Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
+const move = (list, { from, to = from }) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l; };
 
 // Ordenar «Pendiente» mueve esas pautas entre los huecos que ocupan en la franja (las ya tomadas no se mueven)
 // y renumera la franja entera: 1, 2, 3…
@@ -342,11 +345,11 @@ $('#toma').addEventListener('click', e => {
   if (e.target.closest('#toma-sort')) chooseOrder();
   if (e.target.closest('#pending-sort')) { sortingPending = !sortingPending; renderToma(); }
 });
-$('#toma').addEventListener('ionItemReorder', e => {
+// Al soltar, complete() deja la fila en su sitio en pantalla: solo se guarda el orden, sin repintar ni mover el scroll.
+$('#toma').addEventListener('ionReorderEnd', e => {
   const slot = $('#slot').value || slotNow();
-  const moved = e.detail.complete([...e.target.children].map(el => state.meds.find(m => m.id === el.dataset.id)));
-  reorderPending(slot, moved);
-  render();
+  reorderPending(slot, move([...e.target.children].map(el => state.meds.find(m => m.id === el.dataset.id)), e.detail));
+  e.detail.complete();
 });
 $('#info-close').onclick = () => info.dismiss();
 
@@ -362,10 +365,12 @@ $('#list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(state.meds.find(m => m.id === id));
 });
-$('#list').addEventListener('ionItemReorder', e => {
-  state.meds = e.detail.complete(state.meds);
+// Igual en Pautas: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
+$('#list').addEventListener('ionReorderEnd', e => {
+  state.meds = move(state.meds, e.detail);
+  e.detail.complete();
   save();
-  render();
+  renderToma();
 });
 
 $('#import').onclick = () => $('#file').click();
