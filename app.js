@@ -290,7 +290,6 @@ const cell = v => typeof v === 'boolean' ? (v ? 'sí' : 'no') : v;
 const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(cell(v)).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
 
 function parseCSV(text) {
-  const sep = text.slice(0, text.indexOf('\n')).includes(';') ? ';' : ',';
   const rows = [[]];
   let cell = '', quoted = false;
   for (let i = 0; i < text.length; i++) {
@@ -301,7 +300,7 @@ function parseCSV(text) {
       else cell += c;
     }
     else if (c === '"') quoted = true;
-    else if (c === sep) { rows.at(-1).push(cell); cell = ''; }
+    else if (c === SEP) { rows.at(-1).push(cell); cell = ''; }
     else if (c === '\n') { rows.at(-1).push(cell); cell = ''; rows.push([]); }
     else if (c !== '\r') cell += c;
   }
@@ -338,19 +337,21 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     const list = text => text.split(/\s+/).filter(Boolean);
+    const date = text => /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
     if (c.tipo === 'intervalo' && IDS.includes(c.id) && !intervals.some(x => x.id === c.id)) {
       intervals.push({ id: c.id, name: c.nombre, start: hour(c.desde) ?? '', end: hour(c.hasta) ?? '', visible: yes(c.visible), order: list(c.orden) });
     } else if (c.tipo === 'pauta') {
-      meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, slots: IDS.filter(id => list(c.intervalos).includes(id)), from: c.desde, to: c.hasta });
+      meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, slots: IDS.filter(id => list(c.intervalos).includes(id)), from: date(c.desde), to: date(c.hasta) });
     } else if (c.tipo === 'toma') {
       const [day, hhmm = '00:00'] = c.fecha.split(' ');
       const at = new Date(`${day}T${hhmm}`);
-      if (IDS.includes(c.intervalos) && !isNaN(at)) log.push({ at: at.toISOString(), day, id: c.id || null, name: c.nombre, slot: c.intervalos });
+      if (IDS.includes(c.intervalos) && date(day) && !isNaN(at)) log.push({ at: at.toISOString(), day, id: c.id || null, name: c.nombre, slot: c.intervalos });
     }
   }
   if (!intervals.length && !meds.length && !log.length) return;
-  // Los intervalos que falten se completan con los actuales; en los órdenes solo quedan pautas que existen.
-  for (const iv of state.intervals) if (!intervals.some(x => x.id === iv.id)) intervals.push(iv);
+  // Lo que falte o no cuadre toma su valor por defecto: los intervalos que falten son los de por defecto y en los
+  // órdenes solo quedan pautas que existen.
+  for (const iv of DEFAULT_INTERVALS) if (!intervals.some(x => x.id === iv.id)) intervals.push(structuredClone(iv));
   for (const iv of intervals) iv.order = iv.order.filter(id => meds.some(m => m.id === id));
   const apply = () => { state.intervals = intervals; state.meds = meds; state.log = log.sort((a, b) => b.at.localeCompare(a.at)); save(); render(); };
   state.meds.length || state.log.length ? ask('¿Reemplazar los intervalos, las pautas y las tomas actuales?', apply) : apply();

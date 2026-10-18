@@ -55,7 +55,7 @@ El nombre que se ve de cada intervalo es el configurado, así que renombrarlos o
 
 ## Formato CSV
 
-Un solo fichero con todo: intervalos, pautas y tomas. Separador `;` (también acepta `,` al cargar), una cabecera y 12 columnas compartidas; cada tipo de fila usa las suyas y deja las demás vacías.
+Un solo fichero con todo: intervalos, pautas y tomas. Separador `;`, una cabecera y 12 columnas compartidas; cada tipo de fila usa las suyas y deja las demás vacías.
 
 ```
 tipo;id;nombre;intervalos;desde;hasta;fecha;dosis;indicaciones;referencias;visible;orden
@@ -72,7 +72,7 @@ toma;p1;Paracetamol;i2;;;2026-10-17 15:30;;;;;
 - `intervalo`: `id` (código), `nombre` (puede ir vacío), `desde` y `hasta` (horas enteras de 0 a 24, opcionales), `visible` (`sí`/`no`) y `orden` (los `id` de pauta en el orden de tomas, separados por espacios). El orden de estas filas es el de los intervalos.
 - `pauta`: `id`, `nombre`, `intervalos` (sus códigos, separados por espacios), `desde` y `hasta` (días de vigencia en `AAAA-MM-DD`; vacíos, sin límite), `dosis`, `indicaciones` y `referencias`. El orden de estas filas es el orden de pautas. En el ejemplo, el Omeprazol cambió de dosis «a partir de hoy»: `p2` terminó el 16 y `p3` empezó el 17, con 14 días de duración.
 - `toma`: `id` de la pauta, `nombre`, `intervalos` (el de la toma) y `fecha` (`AAAA-MM-DD HH:MM`).
-- Al cargar, las columnas se buscan por su nombre en la cabecera, así que su orden da igual. Si el CSV no trae algún intervalo, se conserva el actual.
+- Al cargar, las columnas se buscan por su nombre en la cabecera, así que su orden da igual. No hay compatibilidad con formatos anteriores: lo que falte o no cuadre toma su valor por defecto (intervalos que falten, los de por defecto; fechas u horas mal escritas, vacías) y las filas que no se entienden se ignoran.
 - Cargar un CSV reemplaza los intervalos, las pautas y las tomas actuales (pide confirmación). «Borrar registro de tomas» elimina solo las tomas.
 
 ## Archivos
