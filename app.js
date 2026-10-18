@@ -203,6 +203,16 @@ function reorderPending(slot, moved) {
   save();
 }
 
+// Conserva el scroll de un ion-content al repintarlo: lo guarda, pinta y lo restaura cuando Ionic ha dibujado las filas.
+async function keepScroll(content, paint) {
+  const scroller = await content.getScrollElement();
+  const y = scroller.scrollTop;
+  paint();
+  await Promise.all([...content.querySelectorAll('ion-item')].map(el => el.componentOnReady?.()));
+  scroller.scrollTop = y;
+  requestAnimationFrame(() => { scroller.scrollTop = y; });
+}
+
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
 async function renderToma() {
@@ -215,9 +225,7 @@ async function renderToma() {
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // Conserva la posición del scroll al volver a pintar (p. ej. al marcar una toma al final de la lista).
-  const scroller = await $('#toma').getScrollElement?.();
-  const y = scroller?.scrollTop ?? 0;
-  $('#toma').innerHTML = `
+  await keepScroll($('#toma'), () => { $('#toma').innerHTML = `
     <ion-list inset="true">
       <ion-item lines="none">
         <div slot="start">${ring(done, total, `${total ? Math.round(done / total * 100) : 0}%`, 88, 8.5)}</div>
@@ -238,8 +246,7 @@ async function renderToma() {
       <ion-label>Tomas</ion-label>
       ${headerButton('toma-sort', ORDERS[order].icon, ORDERS[order].label)}
     </ion-list-header>
-    ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`;
-  if (scroller) { scroller.scrollTop = y; requestAnimationFrame(() => { scroller.scrollTop = y; }); }
+    ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`; });
 }
 
 // Ficha de la pauta (dosis, indicaciones y referencias) para leerla con calma; los enlaces se pueden pulsar.
@@ -498,6 +505,12 @@ const exportPdfMonth = () => exportPDF(Number(pdfMonth.value.slice(0, 4)), Numbe
 
 // ---------- Editor ----------
 
+// Al cerrar un editor (guardar o cancelar), la lista de Pautas vuelve a la posición en que estaba al abrirlo.
+let managerY = 0;
+const managerScroller = () => $('#manager ion-content').getScrollElement();
+const rememberScroll = async () => { managerY = (await managerScroller()).scrollTop; };
+const restoreScroll = async () => { const sc = await managerScroller(); sc.scrollTop = managerY; requestAnimationFrame(() => { sc.scrollTop = managerY; }); };
+
 const editor = $('#editor');
 const field = name => $(`[name="${name}"]`, editor);
 let editing = null;
@@ -510,6 +523,7 @@ function openEditor(med = {}) {
   $('#editor-slots').innerHTML = visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${iv.id}" ${med.slots?.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('')
     || empty('No hay intervalos visibles.');
   $('#delete').classList.toggle('ion-hide', !editing);
+  rememberScroll();
   editor.present();
 }
 
@@ -549,6 +563,7 @@ function openIntervalEditor(id) {
   const iv = interval(id);
   ivField('name').value = iv.name;
   for (const f of ['start', 'end']) { ivField(f).value = iv[f]; ivField(f).classList.remove('ion-invalid', 'ion-touched'); }
+  rememberScroll();
   intervalEditor.present();
 }
 
@@ -570,9 +585,7 @@ function render() {
   renderSlots();
   renderDays();
   renderToma();
-  renderPautas();
-  renderIntervals();
-  renderPdfMonths();
+  keepScroll($('#manager ion-content'), () => { renderPautas(); renderIntervals(); renderPdfMonths(); });
 }
 
 $('#day').addEventListener('ionChange', renderToma);
@@ -643,6 +656,7 @@ $('#intervals').addEventListener('ionReorderEnd', e => {
   renderPautas();
 });
 $('#interval-cancel').onclick = () => intervalEditor.dismiss();
+intervalEditor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#interval-save').onclick = saveIntervalEditor;
 for (const f of ['start', 'end']) ivField(f).addEventListener('ionInput', () => ivField(f).classList.remove('ion-invalid'));
 
@@ -653,6 +667,7 @@ $('#export-pdf').onclick = exportPdfMonth;
 $('#clear-log').onclick = () => ask('¿Borrar todas las tomas registradas?', () => { state.log = []; save(); render(); });
 
 $('#cancel').onclick = () => editor.dismiss();
+editor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#save').onclick = saveEditor;
 $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
   state.meds = state.meds.filter(m => m.id !== editing);
