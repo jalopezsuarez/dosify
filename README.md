@@ -27,7 +27,7 @@ Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo s
 
 - Un único listado, «Pautas (N)». Cada fila muestra el nombre, la duración si la tiene en rosa bajo el nombre («7 días · hasta el …» o «Finalizada el …»), la dosis, las indicaciones en gris y un chip por intervalo visible (coloreados los de la pauta).
 - Tocar una fila la edita; «Añadir» crea una nueva. El botón ↕ de la cabecera muestra las asas para ordenar las pautas (✓ para terminar). Este *orden de pautas* es independiente del orden de tomas de cada intervalo.
-- **Editor**, en secciones: Medicamento (nombre, dosis, indicaciones), Tiempo (duración en días: al cumplirse, la pauta se desactiva sola y deja de aparecer en la toma; sin duración no caduca), Tomas (una casilla por intervalo visible; los ocultos conservan su valor), Notas (referencias) y Eliminar.
+- **Editor**, en secciones: Medicamento (nombre, dosis, indicaciones), Tiempo (duración en días: al cumplirse, la pauta se desactiva sola y deja de aparecer en la toma; sin duración no caduca), Tomas (una casilla por intervalo visible; los ocultos conservan su valor), Notas (referencias) y Eliminar. Al guardar cambios de una pauta que afectan a lo que se ve en el registro (nombre, dosis, indicaciones, referencias o intervalos), un action sheet pregunta si se aplican **a partir de hoy** (los días anteriores siguen mostrando la pauta como era) o **a todo el registro** (todos los días muestran la pauta nueva). Los demás cambios, como la duración, se guardan directamente.
 - **Intervalos:** los tres intervalos de toma, con una casilla a la izquierda para mostrarlos u ocultarlos y un asa a la derecha para reordenarlos. Tocar la fila abre su editor: nombre (puede quedar vacío; entonces se muestran sus horas o «Sin nombre»), hora de inicio y hora de fin, opcionales, en horas enteras de 0 a 24 (por ejemplo, 18 y 21). Un intervalo puede pasar de medianoche (22 a 6). Por defecto: Desayuno (6–12), Almuerzo (12–18) y Cena (18–24). Su nombre, orden y visibilidad se reflejan en las pestañas de la toma, en los chips y en el editor de pautas.
 - **Datos:** cargar y exportar un único CSV con intervalos, pautas y tomas.
 - **Exportar:** «Exportar mes» abre un action sheet con los meses de los últimos 6 que tienen al menos una toma (del más reciente, elegido por defecto, al más antiguo; si no hay ninguno, la exportación queda desactivada) y «Exportar PDF» descarga el registro de ese mes en PDF (A4) con la plantilla *Medication log*: título, mes y una tabla con fecha, hora, medicamento, dosis y notas (las indicaciones de la pauta). Cada celda ocupa como mucho dos líneas; lo que no cabe se recorta con «…». Si hay más tomas de las que caben, sigue en más páginas. El PDF se genera en el navegador, sin librerías, con las fuentes estándar Helvetica.
@@ -41,6 +41,10 @@ Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
 
 Internamente hay siempre tres intervalos fijos, identificados por su código: `i1`, `i2` e `i3`. Las pautas, las tomas, el orden y el CSV usan solo esos códigos; el nombre que se ve es el configurado en cada intervalo, así que renombrarlos o reordenarlos no cambia ningún dato. Los datos guardados por versiones anteriores no se convierten: lo que les falte (intervalos, campos de las pautas) toma su valor por defecto.
 
+## Historial de pautas
+
+Cada pauta guarda sus versiones anteriores en `versions`: una lista, de la más antigua a la más reciente, con el nombre, la dosis, las indicaciones, las referencias y los intervalos que tenía y `to`, su último día de vigencia. «Aplicar a partir de hoy» añade la versión de la pauta hasta ayer (si ya se cambió hoy, no añade otra); «Aplicar a todo el registro» borra el historial. Cada día de la toma, sus anillos de progreso, la ficha (i) y el PDF usan la versión que tocaba ese día.
+
 ## Orden
 
 Hay tres órdenes, guardados en los propios datos:
@@ -51,21 +55,23 @@ Hay tres órdenes, guardados en los propios datos:
 
 ## Formato CSV
 
-Un solo fichero con todo. Separador `;` (también acepta `,` al cargar), una cabecera, y una columna `tipo` que indica qué es cada fila: primero las filas `intervalo`, luego las filas `pauta` y al final las filas `toma`. Cada tipo usa solo sus columnas; las demás van vacías.
+Un solo fichero con todo. Separador `;` (también acepta `,` al cargar), una cabecera, y una columna `tipo` que indica qué es cada fila: primero las filas `intervalo`, luego las filas `pauta` (cada una seguida de sus filas `version`) y al final las filas `toma`. Cada tipo usa solo sus columnas; las demás van vacías.
 
 ```
-tipo;nombre;intervalo;hora inicio;hora fin;visible;dosis;i1;i2;i3;indicaciones;referencias;inicio;dias;orden i1;orden i2;orden i3;fecha;hora
-intervalo;Desayuno;i1;6;12;sí;;;;;;;;;;;;;
-intervalo;Almuerzo;i2;12;18;sí;;;;;;;;;;;;;
-intervalo;Cena;i3;18;24;sí;;;;;;;;;;;;;
-pauta;Paracetamol;;;;;1 comprimido de 500 mg;sí;sí;sí;Si dolor;;;;2;1;1;;
-pauta;Omeprazol;;;;;20 mg;sí;no;no;En ayunas;Dr. Ruiz;2026-10-17;14;1;;;;
-toma;Paracetamol;i1;;;;;;;;;;;;;;;2026-10-17;08:12
-toma;Paracetamol;i2;;;;;;;;;;;;;;;2026-10-17;15:30
+tipo;nombre;intervalo;hora inicio;hora fin;visible;dosis;i1;i2;i3;indicaciones;referencias;inicio;dias;orden i1;orden i2;orden i3;hasta;fecha;hora
+intervalo;Desayuno;i1;6;12;sí;;;;;;;;;;;;;;
+intervalo;Almuerzo;i2;12;18;sí;;;;;;;;;;;;;;
+intervalo;Cena;i3;18;24;sí;;;;;;;;;;;;;;
+pauta;Paracetamol;;;;;1 comprimido de 500 mg;sí;sí;sí;Si dolor;;;;2;1;1;;;
+pauta;Omeprazol;;;;;20 mg;sí;no;no;En ayunas;Dr. Ruiz;2026-10-17;14;1;;;;;
+version;Omeprazol;;;;;40 mg;sí;no;no;En ayunas;Dr. Ruiz;;;;;;2026-10-16;;
+toma;Paracetamol;i1;;;;;;;;;;;;;;;;2026-10-17;08:12
+toma;Paracetamol;i2;;;;;;;;;;;;;;;;2026-10-17;15:30
 ```
 
 - Filas `intervalo`: `intervalo` es el código (`i1`, `i2` o `i3`); `nombre` (puede ir vacío), `hora inicio` y `hora fin` (horas enteras de 0 a 24, opcionales) y `visible` (`sí`/`no`). El orden de estas filas es el orden de los intervalos.
 - Filas `pauta`: `i1`, `i2` e `i3` indican en qué intervalos se toma (`sí`/`no`, también `1`/`0`). `inicio` (`AAAA-MM-DD`) y `dias` definen la duración; vacíos, la pauta no caduca. `orden i1`, `orden i2` y `orden i3` son la posición de la pauta en el orden de tomas de cada intervalo; vacías, va al final. El orden de las filas `pauta` es el orden de pautas.
+- Filas `version`: versión anterior de la pauta de la fila `pauta` que la precede: `nombre`, `dosis`, `i1`, `i2`, `i3`, `indicaciones`, `referencias` y `hasta` (`AAAA-MM-DD`, su último día de vigencia).
 - Filas `toma`: `nombre` de la pauta, `intervalo` (código), `fecha` en formato `AAAA-MM-DD` y `hora` en `HH:MM`. Se enlazan a la pauta por su nombre.
 - Al cargar, las columnas se buscan por su nombre en la cabecera, así que el orden de las columnas da igual. Si el CSV no trae filas `intervalo`, se conservan los intervalos actuales.
 - Cargar un CSV reemplaza los intervalos, las pautas y las tomas actuales (pide confirmación). «Borrar registro de tomas» elimina solo las tomas.

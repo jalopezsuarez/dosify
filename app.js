@@ -55,7 +55,11 @@ const selectedDay = () => $('#day').value || today();
 // Orden de tomas de un intervalo: por su número (o1/o2/o3); las pautas sin número van detrás, en el orden de pautas.
 const pos = (m, slot) => Number(m[ORD[slot]]) || Infinity;
 const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, slot));
-const doses = slot => bySlot(state.meds.filter(m => active(m) && m[slot]), slot);
+// Historial: al guardar cambios «a partir de hoy», la pauta guarda cómo era hasta ayer en «versions» ([{ to, …campos }],
+// de la más antigua a la más reciente; «to» es su último día). Cada día se pinta con la versión que tocaba.
+const VERSIONED = ['name', 'dose', 'notes', 'refs', ...IDS];
+const asOf = (m, day) => { const v = m.versions?.find(v => day <= v.to); return v ? { ...m, ...v } : m; };
+const doses = (slot, day = selectedDay()) => bySlot(state.meds.map(m => asOf(m, day)).filter(m => active(m) && m[slot]), slot);
 const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === id && e.slot === slot);
 
 // ---------- Toma ----------
@@ -73,12 +77,12 @@ const ring = (done, total, label, size = 44, font = 11) => `
 // con alguna toma. El día elegido se mantiene, para que no desaparezca al desmarcar su última toma.
 const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return dayKey(d); };
 function renderDays() {
-  const all = visibleIntervals().flatMap(iv => doses(iv.id).map(m => ({ id: m.id, slot: iv.id })));
   const recent = Array.from({ length: DAYS + 1 }, (_, i) => daysAgo(DAYS - i));
   const logged = state.log.map(e => e.day).filter(day => day >= daysAgo(DAYS_MAX));
   const keys = [...new Set([...logged, ...recent, $('#day').value].filter(Boolean))].sort();
   $('#day').innerHTML = keys.map(key => {
     const d = fromKey(key);
+    const all = visibleIntervals().flatMap(iv => doses(iv.id, key).map(m => ({ id: m.id, slot: iv.id })));
     const done = all.filter(x => taken(key, x.id, x.slot)).length;
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
@@ -146,7 +150,7 @@ function sheet(header, buttons, onCancel) {
 const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([key, o]) => (
   { text: o.label, role: key === order ? 'selected' : undefined, handler: () => { order = key; renderToma(); } })));
 const sortTaken = (rows, entry) => order === 'tomas' ? rows
-  : order === 'pautas' ? state.meds.filter(m => rows.includes(m))
+  : order === 'pautas' ? state.meds.map(m => rows.find(r => r.id === m.id)).filter(Boolean)
   : [...rows].sort((a, b) => entry(a).at.localeCompare(entry(b).at) * (order === 'oldest' ? 1 : -1));
 
 // Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
@@ -168,7 +172,7 @@ async function renderToma() {
   const day = selectedDay();
   const slot = selectedSlot();
   if (!slot) { $('#toma').innerHTML = emptyList('No hay intervalos visibles. Actívalos en Pautas › Intervalos.'); return; }
-  const rows = doses(slot);
+  const rows = doses(slot, day);
   const entry = m => state.log.find(e => e.day === day && e.id === m.id && e.slot === slot);
   const pending = rows.filter(m => !entry(m));
   const taken = sortTaken(rows.filter(m => entry(m)), entry);
@@ -223,7 +227,7 @@ function openInfo(m) {
 function toggle(id, slot, checked) {
   const day = selectedDay();
   if (checked) {
-    const { name } = state.meds.find(m => m.id === id);
+    const { name } = asOf(state.meds.find(m => m.id === id), day);
     state.log.unshift({ at: new Date().toISOString(), day, id, name, slot });
     state.log.length = Math.min(state.log.length, LOG_MAX);
   } else {
@@ -308,12 +312,14 @@ function download(name, data, type = 'text/csv') {
   setTimeout(() => URL.revokeObjectURL(a.href));
 }
 
-// Un solo CSV con todo: filas «intervalo» (en su orden), «pauta» (en el orden de pautas) y «toma».
+// Un solo CSV con todo: filas «intervalo» (en su orden), «pauta» (en el orden de pautas, cada una seguida de sus
+// filas «version», las versiones anteriores) y «toma».
 // Cada tipo usa sus columnas: [campo interno, columna del CSV].
 const CSV_COLS = {
   intervalo: [['name', 'nombre'], ['id', 'intervalo'], ['start', 'hora inicio'], ['end', 'hora fin'], ['visible', 'visible']],
   pauta: [['name', 'nombre'], ['dose', 'dosis'], ...IDS.map(id => [id, id]), ['notes', 'indicaciones'], ['refs', 'referencias'],
     ['start', 'inicio'], ['days', 'dias'], ...IDS.map(id => [ORD[id], `orden ${id}`])],
+  version: [['name', 'nombre'], ['dose', 'dosis'], ...IDS.map(id => [id, id]), ['notes', 'indicaciones'], ['refs', 'referencias'], ['to', 'hasta']],
   toma: [['name', 'nombre'], ['day', 'fecha'], ['time', 'hora'], ['slot', 'intervalo']],
 };
 const HEAD = ['tipo', ...new Set(Object.values(CSV_COLS).flat().map(([, col]) => col))];
@@ -322,7 +328,7 @@ const csvRow = (tipo, obj) => HEAD.map(col => col === 'tipo' ? tipo : obj[CSV_CO
 const exportCSV = () => csv([
   HEAD,
   ...state.intervals.map(iv => csvRow('intervalo', iv)),
-  ...state.meds.map(m => csvRow('pauta', m)),
+  ...state.meds.flatMap(m => [csvRow('pauta', m), ...(m.versions ?? []).map(v => csvRow('version', v))]),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => csvRow('toma', { ...e, time: time(e.at) })),
 ]);
 
@@ -342,6 +348,11 @@ async function importCSV(file) {
       for (const id of IDS) m[id] = yes(m[id]);
       meds.push(m);
       if (!ids.has(m.name)) ids.set(m.name, m.id);
+    } else if (tipo === 'version' && meds.length) {
+      // Versión anterior de la pauta de la fila «pauta» que la precede.
+      const v = read(tipo, r);
+      for (const id of IDS) v[id] = yes(v[id]);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v.to)) (meds.at(-1).versions ??= []).push(v), meds.at(-1).versions.sort((a, b) => a.to.localeCompare(b.to));
     } else if (tipo === 'toma') {
       const t = read(tipo, r);
       const at = new Date(`${t.day}T${t.time || '00:00'}`);
@@ -454,7 +465,8 @@ const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es
 function exportPDF(y, m) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
   const rows = state.log.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.at.localeCompare(b.at)).map(e => {
-    const med = state.meds.find(x => x.id === e.id) ?? state.meds.find(x => x.name === e.name);
+    const found = state.meds.find(x => x.id === e.id) ?? state.meds.find(x => x.name === e.name);
+    const med = found && asOf(found, e.day);
     return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), e.name, med?.dose ?? '', med?.notes ?? ''];
   });
   download(`dosify-${prefix}.pdf`, pdfFile(pdfPages(monthName(y, m), rows)), 'application/pdf');
@@ -497,11 +509,27 @@ function saveEditor() {
   if (!med.name) return field('name').setFocus();
   const old = state.meds.find(m => m.id === editing);
   med.start = med.days === (old?.days ?? '') ? old?.start ?? '' : med.days ? today() : ''; // una duración nueva empieza hoy
-  if (old) Object.assign(old, med);
-  else state.meds.push({ id: crypto.randomUUID(), ...Object.fromEntries(IDS.flatMap(id => [[id, false], [ORD[id], '']])), ...med });
-  save();
-  render();
-  editor.dismiss();
+  const apply = fromToday => {
+    if (old && fromToday) {
+      // Guarda cómo era la pauta hasta ayer, salvo que ya haya una versión hasta ayer (otro cambio hecho hoy).
+      const to = daysAgo(1);
+      old.versions ??= [];
+      if (!old.versions.some(v => v.to >= to)) old.versions.push({ to, ...Object.fromEntries(VERSIONED.map(k => [k, old[k]])) });
+    }
+    if (old && fromToday === false) delete old.versions;
+    if (old) Object.assign(old, med);
+    else state.meds.push({ id: crypto.randomUUID(), ...Object.fromEntries(IDS.flatMap(id => [[id, false], [ORD[id], '']])), ...med });
+    save();
+    render();
+    editor.dismiss();
+  };
+  // Si cambia algo de lo que se ve en el registro, se elige si vale desde hoy o para todo el registro.
+  if (old && VERSIONED.some(k => (k in med) && med[k] !== old[k])) {
+    sheet('¿A qué se aplican los cambios?', [
+      { text: 'Aplicar a partir de hoy', handler: () => apply(true) },
+      { text: 'Aplicar a todo el registro', handler: () => apply(false) },
+    ]);
+  } else apply(null); // sin cambios en lo que se ve en el registro: se guarda tal cual, sin tocar el historial
 }
 
 // ---------- Editor de intervalo ----------
@@ -546,12 +574,12 @@ $('#slot').addEventListener('ionChange', renderToma);
 $('#toma').addEventListener('ionChange', e => {
   const { id, slot } = e.target.dataset;
   const { checked } = e.detail;
-  const { name } = state.meds.find(m => m.id === id);
+  const { name } = asOf(state.meds.find(m => m.id === id), selectedDay());
   sheet(name, [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
 });
 $('#toma').addEventListener('click', e => {
   const id = e.target.closest('[data-info]')?.dataset.info;
-  if (id) openInfo(state.meds.find(m => m.id === id));
+  if (id) openInfo(asOf(state.meds.find(m => m.id === id), selectedDay()));
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#toma-sort')) chooseOrder();
