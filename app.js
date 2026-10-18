@@ -3,7 +3,7 @@ const KEY = 'dosify';
 // · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), en su orden:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
 // · meds: pautas, en el orden de pautas: { id, name, dose, notes, refs, slots: [ids de intervalo], from, to (días de vigencia) }
-// · log: tomas: { at, day, id (de la pauta), name, slot (id de intervalo) }
+// · log: tomas: { at, day, id (de la pauta), slot (id de intervalo), name, dose, notes (la pauta tal como se tomó) }
 const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
   { id: 'i2', name: 'Almuerzo', start: 12, end: 18, visible: true, order: [] },
@@ -63,7 +63,18 @@ const selectedDay = () => $('#day').value || today();
 const pos = (m, slot) => { const i = interval(slot).order.indexOf(m.id); return i < 0 ? Infinity : i; };
 const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, slot));
 const doses = (slot, day = selectedDay()) => bySlot(state.meds.filter(m => activeOn(m, day) && m.slots.includes(slot)), slot);
-const taken = (day, id, slot) => state.log.some(e => e.day === day && e.id === id && e.slot === slot);
+// Cada toma guarda nombre, dosis e indicaciones de la pauta al tomarla; así el registro muestra lo que se tomó aunque la
+// pauta cambie o se borre. Si a una toma le falta algo, se usa lo de la pauta.
+const SNAP = ['name', 'dose', 'notes'];
+const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
+const takenAs = e => { const m = state.meds.find(x => x.id === e.id) ?? {}; return { ...m, id: e.id, ...Object.fromEntries(SNAP.map(k => [k, e[k] ?? m[k] ?? ''])) }; };
+// Filas de un día e intervalo: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
+// no están en el intervalo o se borraron).
+function dayRows(slot, day) {
+  const entries = state.log.filter(e => e.day === day && e.slot === slot);
+  const pending = doses(slot, day).filter(m => !entries.some(e => e.id === m.id));
+  return { pending, taken: entries.map(e => ({ ...takenAs(e), entry: e })) };
+}
 
 // ---------- Toma ----------
 
@@ -85,11 +96,11 @@ function renderDays() {
   const keys = [...new Set([...logged, ...recent, $('#day').value].filter(Boolean))].sort();
   $('#day').innerHTML = keys.map(key => {
     const d = fromKey(key);
-    const all = visibleIntervals().flatMap(iv => doses(iv.id, key).map(m => ({ id: m.id, slot: iv.id })));
-    const done = all.filter(x => taken(key, x.id, x.slot)).length;
+    const rows = visibleIntervals().map(iv => dayRows(iv.id, key));
+    const done = rows.reduce((n, r) => n + r.taken.length, 0), total = rows.reduce((n, r) => n + r.taken.length + r.pending.length, 0);
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
-        ${ring(done, all.length, `${done}/${all.length}`)}
+        ${ring(done, total, `${done}/${total}`)}
         <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}</ion-label>
       </ion-segment-button>`;
   }).join('');
@@ -152,9 +163,13 @@ function sheet(header, buttons, onCancel) {
 
 const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([key, o]) => (
   { text: o.label, role: key === order ? 'selected' : undefined, handler: () => { order = key; renderToma(); } })));
-const sortTaken = (rows, entry) => order === 'tomas' ? rows
-  : order === 'pautas' ? state.meds.map(m => rows.find(r => r.id === m.id)).filter(Boolean)
-  : [...rows].sort((a, b) => entry(a).at.localeCompare(entry(b).at) * (order === 'oldest' ? 1 : -1));
+// Posición en el orden de pautas; las tomas de pautas borradas van al final.
+const medIndex = id => { const i = state.meds.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
+const byPautas = (a, b) => (medIndex(a.id) - medIndex(b.id)) || 0;
+const sortTaken = (rows, slot) => [...rows].sort(
+  order === 'tomas' ? (a, b) => (pos(a, slot) - pos(b, slot)) || byPautas(a, b)
+  : order === 'pautas' ? byPautas
+  : (a, b) => a.entry.at.localeCompare(b.entry.at) * (order === 'oldest' ? 1 : -1));
 
 // Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
 const move = (list, { from, to = from }) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l; };
@@ -175,11 +190,9 @@ async function renderToma() {
   const day = selectedDay();
   const slot = selectedSlot();
   if (!slot) { $('#toma').innerHTML = emptyList('No hay intervalos visibles. Actívalos en Pautas › Intervalos.'); return; }
-  const rows = doses(slot, day);
-  const entry = m => state.log.find(e => e.day === day && e.id === m.id && e.slot === slot);
-  const pending = rows.filter(m => !entry(m));
-  const taken = sortTaken(rows.filter(m => entry(m)), entry);
-  const done = taken.length;
+  const { pending, taken: takenRows } = dayRows(slot, day);
+  const taken = sortTaken(takenRows, slot);
+  const done = taken.length, total = pending.length + taken.length;
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // Conserva la posición del scroll al volver a pintar (p. ej. al marcar una toma al final de la lista).
@@ -188,9 +201,9 @@ async function renderToma() {
   $('#toma').innerHTML = `
     <ion-list inset="true">
       <ion-item lines="none">
-        <div slot="start">${ring(done, rows.length, `${rows.length ? Math.round(done / rows.length * 100) : 0}%`, 88, 8.5)}</div>
+        <div slot="start">${ring(done, total, `${total ? Math.round(done / total * 100) : 0}%`, 88, 8.5)}</div>
         <ion-label>
-          <h2>${done} de ${rows.length} tomadas</h2>
+          <h2>${done} de ${total} tomadas</h2>
           <p>${day === today() ? 'hoy, ' : ''}${date}</p>
         </ion-label>
       </ion-item>
@@ -206,7 +219,7 @@ async function renderToma() {
       <ion-label>Tomas</ion-label>
       ${headerButton('toma-sort', ORDERS[order].icon, ORDERS[order].label)}
     </ion-list-header>
-    ${taken.map(m => doseRow(m, slot, entry(m))).join('') || emptyList('Sin tomas.')}`;
+    ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`;
   if (scroller) { scroller.scrollTop = y; requestAnimationFrame(() => { scroller.scrollTop = y; }); }
 }
 
@@ -230,11 +243,10 @@ function openInfo(m) {
 function toggle(id, slot, checked) {
   const day = selectedDay();
   if (checked) {
-    const { name } = state.meds.find(m => m.id === id);
-    state.log.unshift({ at: new Date().toISOString(), day, id, name, slot });
+    state.log.unshift({ at: new Date().toISOString(), day, id, slot, ...snap(state.meds.find(m => m.id === id)) });
     state.log.length = Math.min(state.log.length, LOG_MAX);
   } else {
-    state.log = state.log.filter(e => !(e.day === day && e.id === id && e.slot === slot));
+    state.log = state.log.filter(e => !(e.day === day && String(e.id) === id && e.slot === slot));
   }
   save();
   render();
@@ -318,7 +330,8 @@ function download(name, data, type = 'text/csv') {
 // · intervalo: id, nombre, desde y hasta (horas), visible y orden (ids de pauta separados por espacios). En su orden.
 // · pauta: id, nombre, intervalos (ids separados por espacios), desde y hasta (días de vigencia), dosis, indicaciones
 //   y referencias. En el orden de pautas.
-// · toma: id de la pauta, nombre, intervalos (el de la toma) y fecha («AAAA-MM-DD HH:MM»).
+// · toma: id de la pauta, intervalos (el de la toma), fecha («AAAA-MM-DD HH:MM») y la pauta como se tomó: nombre,
+//   dosis e indicaciones.
 const HEAD = ['tipo', 'id', 'nombre', 'intervalos', 'desde', 'hasta', 'fecha', 'dosis', 'indicaciones', 'referencias', 'visible', 'orden'];
 const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
 
@@ -327,7 +340,7 @@ const exportCSV = () => csv([
   ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
   ...state.meds.map(m => csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), desde: m.from, hasta: m.to, dosis: m.dose, indicaciones: m.notes, referencias: m.refs })),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}` })),
+    .map(e => { const m = takenAs(e); return csvRow('toma', { id: e.id ?? '', nombre: m.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: m.dose, indicaciones: m.notes }); }),
 ]);
 
 async function importCSV(file) {
@@ -345,7 +358,7 @@ async function importCSV(file) {
     } else if (c.tipo === 'toma') {
       const [day, hhmm = '00:00'] = c.fecha.split(' ');
       const at = new Date(`${day}T${hhmm}`);
-      if (IDS.includes(c.intervalos) && date(day) && !isNaN(at)) log.push({ at: at.toISOString(), day, id: c.id || null, name: c.nombre, slot: c.intervalos });
+      if (IDS.includes(c.intervalos) && date(day) && !isNaN(at)) log.push({ at: at.toISOString(), day, id: c.id || null, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones });
     }
   }
   if (!intervals.length && !meds.length && !log.length) return;
@@ -452,12 +465,12 @@ function pdfFile(pages) {
 
 const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es', { month: 'long' }); return `${t[0].toUpperCase()}${t.slice(1)} ${y}`; };
 
-// Tomas del mes por fecha y hora: fecha, hora, pauta, y de la pauta su dosis y, en notas, sus indicaciones.
+// Tomas del mes por fecha y hora: fecha, hora, y la pauta tal como se tomó: nombre, dosis y, en notas, indicaciones.
 function exportPDF(y, m) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
   const rows = state.log.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.at.localeCompare(b.at)).map(e => {
-    const med = state.meds.find(x => x.id === e.id);
-    return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), e.name, med?.dose ?? '', med?.notes ?? ''];
+    const m = takenAs(e);
+    return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), m.name, m.dose, m.notes];
   });
   download(`dosify-${prefix}.pdf`, pdfFile(pdfPages(monthName(y, m), rows)), 'application/pdf');
 }
@@ -502,24 +515,21 @@ function saveEditor() {
   Object.assign(med, days === span(old ?? {}) ? { from: old?.from ?? '', to: old?.to ?? '' } : { from: days ? today() : old?.from ?? '', to: days ? addDays(today(), days - 1) : '' });
   const done = () => { save(); render(); editor.dismiss(); };
   if (!old) return state.meds.push({ id: newId(), ...med }), done();
-  // Si cambia algo de lo que se ve en el registro, se elige desde cuándo vale; no hace falta si la pauta empezó hoy
-  // o ya terminó (entonces el cambio solo afecta a sus propios días).
-  const changed = ['name', 'dose', 'notes', 'refs', 'slots'].some(k => String(med[k]) !== String(old[k]));
-  if (!changed || old.from >= today() || (old.to && old.to < today())) return Object.assign(old, med), done();
+  // Cambiar la pauta: las tomas de hoy en adelante pasan a mostrarla nueva; si cambia lo que se ve en el registro
+  // (nombre, dosis, indicaciones) y hay tomas anteriores, se elige si también se cambian esas.
+  const apply = all => {
+    // Las tomas anteriores se quedan como estaban (si les faltaba algo, se fija con la pauta de antes del cambio).
+    if (!all) for (const e of state.log) if (e.id === old.id && e.day < today()) Object.assign(e, snap(takenAs(e)));
+    Object.assign(old, med);
+    for (const e of state.log) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snap(old));
+    done();
+  };
+  const changed = SNAP.some(k => med[k] !== old[k]);
+  if (!changed || !state.log.some(e => e.id === old.id && e.day < today())) return apply(false);
   sheet('¿A qué se aplican los cambios?', [
-    { text: 'Aplicar a partir de hoy', handler: () => { splitMed(old, med); done(); } },
-    { text: 'Aplicar a todo el registro', handler: () => { Object.assign(old, med); done(); } },
+    { text: 'Aplicar a partir de hoy', handler: () => apply(false) },
+    { text: 'Aplicar a todo el registro', handler: () => apply(true) },
   ]);
-}
-
-// «A partir de hoy»: la pauta actual termina ayer (los días anteriores la siguen mostrando como era) y una pauta
-// nueva con los cambios empieza hoy, justo detrás en las listas; las tomas de hoy en adelante pasan a la nueva.
-function splitMed(old, med) {
-  const next = { id: newId(), ...med, from: today() };
-  old.to = addDays(today(), -1);
-  state.meds.splice(state.meds.indexOf(old) + 1, 0, next);
-  for (const iv of state.intervals) { const i = iv.order.indexOf(old.id); if (i >= 0) iv.order.splice(i + 1, 0, next.id); }
-  for (const e of state.log) if (e.id === old.id && e.day >= today()) Object.assign(e, { id: next.id, name: next.name });
 }
 
 // ---------- Editor de intervalo ----------
@@ -561,16 +571,18 @@ function render() {
 
 $('#day').addEventListener('ionChange', renderToma);
 $('#slot').addEventListener('ionChange', renderToma);
+// La pauta de una fila de la toma: si ese día ya está tomada, como se tomó; si no, la pauta actual.
+const rowMed = id => { const e = state.log.find(e => e.day === selectedDay() && e.slot === selectedSlot() && String(e.id) === id); return e ? takenAs(e) : state.meds.find(m => m.id === id); };
 // Marcar o desmarcar se confirma en un action sheet; si se cancela, la casilla vuelve a como estaba.
 $('#toma').addEventListener('ionChange', e => {
   const { id, slot } = e.target.dataset;
   const { checked } = e.detail;
-  const { name } = state.meds.find(m => m.id === id);
+  const { name } = rowMed(id);
   sheet(name, [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
 });
 $('#toma').addEventListener('click', e => {
   const id = e.target.closest('[data-info]')?.dataset.info;
-  if (id) openInfo(state.meds.find(m => m.id === id));
+  if (id) openInfo(rowMed(id));
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#toma-sort')) chooseOrder();
@@ -637,6 +649,7 @@ $('#clear-log').onclick = () => ask('¿Borrar todas las tomas registradas?', () 
 $('#cancel').onclick = () => editor.dismiss();
 $('#save').onclick = saveEditor;
 $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
+  for (const e of state.log) if (e.id === editing) Object.assign(e, snap(takenAs(e))); // sus tomas siguen viéndose como eran
   state.meds = state.meds.filter(m => m.id !== editing);
   for (const iv of state.intervals) iv.order = iv.order.filter(id => id !== editing);
   save();
