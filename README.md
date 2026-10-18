@@ -45,9 +45,11 @@ Tres listas en el `localStorage`:
 
 - **Intervalos**, en su orden: `id` (código fijo: `i1`, `i2`, `i3`), `name`, `start` y `end` (horas), `visible` y `order` (los `id` de pauta en el orden de tomas de ese intervalo). Los intervalos salen de una lista en el código, así que para tener 4 o 5 basta con añadirlos allí; todo lo demás (pestañas, chips, editor, orden, CSV) los recorre.
 - **Pautas**, en el orden de pautas: `id`, `name`, `dose`, `notes` (indicaciones), `refs` (referencias), `slots` (los `id` de sus intervalos) y `from` y `to`, el primer y el último día en que está vigente (vacíos, sin límite; una pauta sin `from` aparece también en los días anteriores a su creación).
-- **Tomas**: `at` (cuándo se marcó), `day` (el día de la toma), `id` (de la pauta), `slot` (`id` del intervalo) y `name`, `dose` y `notes`: la pauta tal como se tomó. Así el registro (la toma, el PDF, el CSV) muestra lo que se tomó aunque la pauta cambie, cambie de intervalo o se borre; si a una toma le falta alguno, se usa el de la pauta.
+- **Tomas**: `at` (cuándo se marcó), `day` (el día de la toma), `id` (de la pauta), `slot` (`id` del intervalo) y `name`, `dose` y `notes`: la pauta tal como se tomó. Así el registro (la toma, el PDF, el CSV) muestra lo que se tomó aunque la pauta cambie, cambie de intervalo o se borre.
 
-El nombre que se ve de cada intervalo es el configurado, así que renombrarlos o reordenarlos no cambia ningún dato. Cada día de la toma muestra como pendientes las pautas vigentes ese día y como tomadas sus tomas. Si a los datos guardados les falta algo, toma su valor por defecto.
+El nombre que se ve de cada intervalo es el configurado, así que renombrarlos o reordenarlos no cambia ningún dato. Cada día de la toma muestra como pendientes las pautas vigentes ese día y como tomadas sus tomas.
+
+No hay compatibilidad con formatos anteriores. Al abrir la app y al cargar un CSV, los datos pasan por la misma limpieza: lo que falte o no cuadre toma su valor por defecto (intervalos que falten, los de por defecto; textos, fechas u horas no válidos, vacíos; intervalos inexistentes, quitados) y se descartan las pautas sin nombre y las tomas que no se entienden.
 
 ## Orden
 

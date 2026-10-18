@@ -28,12 +28,31 @@ const empty = text => `<ion-item lines="none"><ion-label color="medium" class="i
 // Hora entera de 0 a 24 o '' (sin hora); null si no es válida.
 const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d{1,2}$/.test(t) && Number(t) <= 24 ? Number(t) : null; };
 
-const state = { meds: [], log: [], intervals: structuredClone(DEFAULT_INTERVALS), ...JSON.parse(localStorage.getItem(KEY)) };
-// Lo que falte en los datos guardados toma su valor por defecto.
-for (const m of state.meds) { m.slots = Array.isArray(m.slots) ? m.slots : []; m.from ??= ''; m.to ??= ''; }
-for (const e of state.log) e.day ??= dayKey(new Date(e.at));
-for (const iv of DEFAULT_INTERVALS) if (!state.intervals.some(x => x.id === iv.id)) state.intervals.push(structuredClone(iv));
-for (const iv of state.intervals) iv.order = Array.isArray(iv.order) ? iv.order : [];
+// Limpia datos guardados o importados: lo que falte o no cuadre toma su valor por defecto y las tomas que no se
+// entienden se descartan. No hay compatibilidad con formatos anteriores.
+const text = v => typeof v === 'string' ? v : '';
+const date = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+const list = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+function clean(raw) {
+  const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
+  const meds = arr(raw?.meds).filter(m => text(m.id) && text(m.name)).map(m => ({
+    id: m.id, name: m.name, dose: text(m.dose), notes: text(m.notes), refs: text(m.refs),
+    slots: IDS.filter(id => list(m.slots).includes(id)), from: date(m.from), to: date(m.to),
+  }));
+  const saved = arr(raw?.intervals);
+  const intervals = DEFAULT_INTERVALS.map(d => {
+    const iv = saved.find(x => x.id === d.id) ?? d;
+    const at = saved.indexOf(iv);
+    return { at: at < 0 ? Infinity : at, id: d.id, name: typeof iv.name === 'string' ? iv.name : d.name, start: hour(iv.start) ?? d.start,
+      end: hour(iv.end) ?? d.end, visible: typeof iv.visible === 'boolean' ? iv.visible : d.visible, order: list(iv.order).filter(id => meds.some(m => m.id === id)) };
+  }).sort((a, b) => a.at - b.at).map(({ at, ...iv }) => iv);
+  const log = arr(raw?.log).filter(e => date(e.day) && IDS.includes(e.slot) && !isNaN(new Date(e.at)))
+    .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, slot: e.slot, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
+    .sort((a, b) => b.at.localeCompare(a.at));
+  return { intervals, meds, log };
+}
+const stored = (() => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } })();
+const state = clean(stored);
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 
 // ---------- Intervalos ----------
@@ -64,10 +83,10 @@ const pos = (m, slot) => { const i = interval(slot).order.indexOf(m.id); return 
 const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, slot));
 const doses = (slot, day = selectedDay()) => bySlot(state.meds.filter(m => activeOn(m, day) && m.slots.includes(slot)), slot);
 // Cada toma guarda nombre, dosis e indicaciones de la pauta al tomarla; así el registro muestra lo que se tomó aunque la
-// pauta cambie o se borre. Si a una toma le falta algo, se usa lo de la pauta.
+// pauta cambie o se borre.
 const SNAP = ['name', 'dose', 'notes'];
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
-const takenAs = e => { const m = state.meds.find(x => x.id === e.id) ?? {}; return { ...m, id: e.id, ...Object.fromEntries(SNAP.map(k => [k, e[k] ?? m[k] ?? ''])) }; };
+const takenAs = e => ({ refs: state.meds.find(m => m.id === e.id)?.refs ?? '', id: e.id, ...snap(e) });
 // Filas de un día e intervalo: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
 // no están en el intervalo o se borraron).
 function dayRows(slot, day) {
@@ -340,33 +359,23 @@ const exportCSV = () => csv([
   ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
   ...state.meds.map(m => csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), desde: m.from, hasta: m.to, dosis: m.dose, indicaciones: m.notes, referencias: m.refs })),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => { const m = takenAs(e); return csvRow('toma', { id: e.id ?? '', nombre: m.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: m.dose, indicaciones: m.notes }); }),
+    .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
 ]);
 
+// Lee las filas a objetos y los limpia con clean(), como los datos guardados.
 async function importCSV(file) {
   const rows = parseCSV(await file.text());
   const head = rows.shift()?.map(h => h.toLowerCase()) ?? [];
-  const intervals = [], meds = [], log = [];
+  const raw = { intervals: [], meds: [], log: [] };
+  const words = v => v.split(/\s+/).filter(Boolean);
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
-    const list = text => text.split(/\s+/).filter(Boolean);
-    const date = text => /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
-    if (c.tipo === 'intervalo' && IDS.includes(c.id) && !intervals.some(x => x.id === c.id)) {
-      intervals.push({ id: c.id, name: c.nombre, start: hour(c.desde) ?? '', end: hour(c.hasta) ?? '', visible: yes(c.visible), order: list(c.orden) });
-    } else if (c.tipo === 'pauta') {
-      meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, slots: IDS.filter(id => list(c.intervalos).includes(id)), from: date(c.desde), to: date(c.hasta) });
-    } else if (c.tipo === 'toma') {
-      const [day, hhmm = '00:00'] = c.fecha.split(' ');
-      const at = new Date(`${day}T${hhmm}`);
-      if (IDS.includes(c.intervalos) && date(day) && !isNaN(at)) log.push({ at: at.toISOString(), day, id: c.id || null, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones });
-    }
+    if (c.tipo === 'intervalo') raw.intervals.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
+    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, slots: words(c.intervalos), from: c.desde, to: c.hasta });
+    if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
   }
-  if (!intervals.length && !meds.length && !log.length) return;
-  // Lo que falte o no cuadre toma su valor por defecto: los intervalos que falten son los de por defecto y en los
-  // órdenes solo quedan pautas que existen.
-  for (const iv of DEFAULT_INTERVALS) if (!intervals.some(x => x.id === iv.id)) intervals.push(structuredClone(iv));
-  for (const iv of intervals) iv.order = iv.order.filter(id => meds.some(m => m.id === id));
-  const apply = () => { state.intervals = intervals; state.meds = meds; state.log = log.sort((a, b) => b.at.localeCompare(a.at)); save(); render(); };
+  if (!raw.intervals.length && !raw.meds.length && !raw.log.length) return;
+  const apply = () => { Object.assign(state, clean(raw)); save(); render(); };
   state.meds.length || state.log.length ? ask('¿Reemplazar los intervalos, las pautas y las tomas actuales?', apply) : apply();
 }
 
@@ -469,8 +478,7 @@ const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es
 function exportPDF(y, m) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
   const rows = state.log.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.at.localeCompare(b.at)).map(e => {
-    const m = takenAs(e);
-    return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), m.name, m.dose, m.notes];
+    return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), e.name, e.dose, e.notes];
   });
   download(`dosify-${prefix}.pdf`, pdfFile(pdfPages(monthName(y, m), rows)), 'application/pdf');
 }
@@ -518,8 +526,6 @@ function saveEditor() {
   // Cambiar la pauta: las tomas de hoy en adelante pasan a mostrarla nueva; si cambia lo que se ve en el registro
   // (nombre, dosis, indicaciones) y hay tomas anteriores, se elige si también se cambian esas.
   const apply = all => {
-    // Las tomas anteriores se quedan como estaban (si les faltaba algo, se fija con la pauta de antes del cambio).
-    if (!all) for (const e of state.log) if (e.id === old.id && e.day < today()) Object.assign(e, snap(takenAs(e)));
     Object.assign(old, med);
     for (const e of state.log) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snap(old));
     done();
@@ -649,7 +655,6 @@ $('#clear-log').onclick = () => ask('¿Borrar todas las tomas registradas?', () 
 $('#cancel').onclick = () => editor.dismiss();
 $('#save').onclick = saveEditor;
 $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
-  for (const e of state.log) if (e.id === editing) Object.assign(e, snap(takenAs(e))); // sus tomas siguen viéndose como eran
   state.meds = state.meds.filter(m => m.id !== editing);
   for (const iv of state.intervals) iv.order = iv.order.filter(id => id !== editing);
   save();
