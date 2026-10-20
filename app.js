@@ -101,18 +101,24 @@ function dayRows(slot, day) {
 
 // ---------- Toma ----------
 
-const ring = (done, total, label, size = 44, font = 11, color = 'primary') => `
-  <ion-text color="${color}">
+// Anillo de progreso en SVG. «color» es un color de Ionic (el fondo es el mismo con transparencia) o
+// { fg, bg }, dos colores fijos para el progreso y el fondo.
+const ring = (done, total, label, size = 44, font = 11, color = 'primary') => {
+  const [fg, bg, opacity] = typeof color === 'string' ? ['currentColor', 'currentColor', 0.25] : [color.fg, color.bg, 1];
+  return `
+  <ion-text${typeof color === 'string' ? ` color="${color}"` : ''}>
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
-      <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
-      <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
-      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="currentColor">${label}</text>
+      <circle cx="22" cy="22" r="15.915" fill="none" stroke="${bg}" stroke-opacity="${opacity}" stroke-width="4"></circle>
+      <circle cx="22" cy="22" r="15.915" fill="none" stroke="${fg}" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
+      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="${fg}">${label}</text>
     </svg>
   </ion-text>`;
+};
 
-// Color del anillo de un día en el selector: hoy, el verde del (i) mientras falten tomas y verde al completarlas;
-// los demás, azul.
-const dayColor = (day, done, total) => day === today() && total ? (done === total ? 'success' : 'teal') : 'primary';
+// Color del anillo de un día en el selector: hoy, amarillo (#f8d348 sobre #f4e8b8) mientras falten tomas y verde al
+// completarlas; los demás, azul.
+const TODAY_RING = { fg: '#f8d348', bg: '#f4e8b8' };
+const dayColor = (day, done, total) => day === today() && total ? (done === total ? 'success' : TODAY_RING) : 'primary';
 
 // Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); hasta DAYS_MAX días atrás, también los días
 // con alguna toma. El día elegido se mantiene, para que no desaparezca al desmarcar su última toma.
