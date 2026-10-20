@@ -85,7 +85,7 @@ const doses = (slot, day = selectedDay()) => bySlot(state.meds.filter(m => m.slo
 // pauta cambie o se borre.
 const SNAP = ['name', 'dose', 'notes'];
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
-const takenAs = e => ({ refs: state.meds.find(m => m.id === e.id)?.refs ?? '', id: e.id, ...snap(e) });
+const takenAs = e => { const m = state.meds.find(x => x.id === e.id); return { refs: m?.refs ?? '', memo: m?.memo ?? '', id: e.id, ...snap(e) }; };
 // Filas de un día e intervalo: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
 // no están en el intervalo o se borraron).
 function dayRows(slot, day) {
@@ -257,7 +257,7 @@ async function renderToma() {
     ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`; });
 }
 
-// Ficha de la pauta (dosis, indicaciones y referencias) para leerla con calma; los enlaces se pueden pulsar.
+// Ficha de la pauta (dosis, indicaciones, referencias y notas) para leerla con calma; los enlaces se pueden pulsar.
 const info = $('#info');
 const linkify = text => esc(text)
   .replace(/\n/g, '<br>')
@@ -270,7 +270,7 @@ const section = (title, text) => `
 
 function openInfo(m) {
   $('#info-title').textContent = m.name;
-  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + section('Referencias', m.refs);
+  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + section('Referencias', m.refs) + section('Notas', m.memo);
   info.present();
 }
 
