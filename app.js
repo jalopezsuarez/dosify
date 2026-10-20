@@ -3,7 +3,8 @@ const KEY = 'dosify';
 // · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), en su orden:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
 // · meds: pautas, en el orden de pautas: { id, name, dose (empieza por la cantidad de cada toma), notes (indicaciones),
-//   refs (referencias), memo (notas), slots: [ids de intervalo], cost (€ por envase) y units (dosis por envase), enteros o vacíos }
+//   refs (referencias), memo (notas), slots: [ids de intervalo], cost (€ por envase) y units (dosis por envase), enteros o vacíos,
+//   y start (día en que se empezó el envase, AAAA-MM-DD o vacío) }
 // · log: tomas: { at, day, id (de la pauta), slot (id de intervalo), name, dose, notes (la pauta tal como se tomó) }
 const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
@@ -40,7 +41,7 @@ function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   const meds = arr(raw?.meds).filter(m => text(m.id) && text(m.name)).map(m => ({
     id: m.id, name: m.name, dose: text(m.dose), notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
-    slots: IDS.filter(id => list(m.slots).includes(id)), cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '',
+    slots: IDS.filter(id => list(m.slots).includes(id)), cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', start: date(m.start),
   }));
   const saved = arr(raw?.intervals);
   const intervals = DEFAULT_INTERVALS.map(d => {
@@ -74,7 +75,6 @@ function intervalNow() {
 }
 const selectedSlot = () => $('#slot').value;
 
-// Duración: la pauta está activa hasta cumplir los días desde «start»; sin duración, siempre.
 const addDays = (key, n) => { const d = fromKey(key); d.setDate(d.getDate() + n); return dayKey(d); };
 const selectedDay = () => $('#day').value || today();
 // Orden de tomas de un intervalo: su lista «order»; las pautas que no están en ella van detrás, en el orden de pautas.
@@ -96,23 +96,15 @@ function dayRows(slot, day) {
 
 // ---------- Toma ----------
 
-// Anillo de progreso en SVG. «color» es un color de Ionic (el fondo es el mismo con transparencia) o
-// { fg, bg }, dos colores fijos para el progreso y el fondo.
-const ring = (done, total, label, size = 44, font = 11, color = 'primary') => {
-  const [fg, bg, opacity] = typeof color === 'string' ? ['currentColor', 'currentColor', 0.25] : [color.fg, color.bg, 1];
-  return `
-  <ion-text${typeof color === 'string' ? ` color="${color}"` : ''}>
+const ring = (done, total, label, size = 44, font = 11, color = 'primary') => `
+  <ion-text color="${color}">
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
-      <circle cx="22" cy="22" r="15.915" fill="none" stroke="${bg}" stroke-opacity="${opacity}" stroke-width="4"></circle>
-      <circle cx="22" cy="22" r="15.915" fill="none" stroke="${fg}" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
-      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="${fg}">${label}</text>
+      <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
+      <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
+      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="currentColor">${label}</text>
     </svg>
   </ion-text>`;
-};
 
-// Color del anillo de un día en el selector: hoy, amarillo mientras falten tomas y verde al completarlas; los demás, azul.
-const TODAY_RING = { fg: '#f8d348', bg: '#fefcf4' }, DONE_RING = { fg: '#65d8a1', bg: '#effaf4' };
-const dayColor = (day, done, total) => day === today() && total ? (done === total ? DONE_RING : TODAY_RING) : 'primary';
 
 // Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); hasta DAYS_MAX días atrás, también los días
 // con alguna toma. El día elegido se mantiene, para que no desaparezca al desmarcar su última toma.
@@ -127,7 +119,7 @@ function renderDays() {
     const done = rows.reduce((n, r) => n + r.taken.length, 0), total = rows.reduce((n, r) => n + r.taken.length + r.pending.length, 0);
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
-        ${ring(done, total, `${done}/${total}`, 44, 11, dayColor(key, done, total))}
+        ${ring(done, total, `${done}/${total}`)}
         <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}</ion-label>
       </ion-segment-button>`;
   }).join('');
@@ -157,7 +149,7 @@ const doseItem = (m, slot, entry, sorting) => `
       </ion-label>
       ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : `
       <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
-        <ion-icon slot="icon-only" name="information-circle" color="teal" size="large"></ion-icon>
+        <ion-icon slot="icon-only" name="information-circle" color="${supplyColor(m.id)}" size="large"></ion-icon>
       </ion-button>`}
     </ion-item>`;
 // Cada toma va en su propia lista inset: filas independientes.
@@ -296,8 +288,9 @@ const chip = (m, slot) => m.slots.includes(slot)
 const pautaRow = m => `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap">
+      ${endNote(m.id)}
       <h2 class="medium">${esc(m.name)}</h2>
-      ${costLine(m) ? `<p><ion-text color="rose" class="medium">${costLine(m)}</ion-text></p>` : ''}
+      ${costLine(m) ? `<p><ion-text color="teal" class="medium">${costLine(m)}</ion-text></p>` : ''}
       ${doseLine(m.dose)}
       ${notesLine(m)}
       <p>${visibleIntervals().map(iv => chip(m, iv.id)).join('')}</p>
@@ -313,23 +306,31 @@ const perDay = m => m.cost / m.units * perDayUnits(m);
 const monthDays = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
 const euros = (n, digits = 2) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: digits, maximumFractionDigits: digits });
 const per = (n, unit) => `${euros(n, Number.isInteger(n) ? 0 : 2).replace(/\s*€/, '')} €/${unit}`;
-// Hasta cuándo dura el envase: se suman las dosis registradas de la pauta y, como al acabarse un envase se empieza
-// otro, cuenta lo que queda del actual (el resto). Las tomas que faltan hoy se descuentan antes de pasar a mañana.
+// Hasta cuándo dura el envase (solo con fecha de inicio): sus dosis menos las registradas desde ese día y las que faltan
+// hoy, repartidas entre las dosis al día. Si ya se acabó, sale un día pasado.
 function runsOut(m) {
   const daily = perDayUnits(m);
-  if (!m.units || !daily) return '';
-  const used = state.log.filter(e => e.id === m.id).reduce((n, e) => n + (amount(e.dose) || amount(m.dose)), 0);
-  const takenToday = state.log.filter(e => e.id === m.id && e.day === today()).reduce((n, e) => n + (amount(e.dose) || amount(m.dose)), 0);
-  const left = m.units - used % m.units - Math.max(0, daily - takenToday);
-  return addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
+  if (!m.start || !m.units || !daily) return '';
+  if (today() < m.start) return addDays(m.start, Math.max(0, Math.floor(m.units / daily) - 1));
+  const taken = state.log.filter(e => e.id === m.id && e.day >= m.start);
+  const sum = list => list.reduce((n, e) => n + (amount(e.dose) || amount(m.dose)), 0);
+  const pendingToday = Math.max(0, daily - sum(taken.filter(e => e.day === today())));
+  return addDays(today(), Math.floor((m.units - sum(taken) - pendingToday) / daily));
 }
-// Línea de la fila de una pauta: «30 €/ud · 15 €/mes · 1 €/día · hasta 15/12/2026», con lo que se pueda calcular.
+// Color del (i) de una toma: rosa si a su envase le quedan menos de 7 días (o ya se acabó); si no, teal.
+const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
+const supplyColor = id => { const m = state.meds.find(x => x.id === id), end = m && runsOut(m); return end && daysLeft(end) < 7 ? 'rose' : 'teal'; };
+// Fin del envase («5/01») a la derecha de la fila de la pauta, a la altura del nombre: en gris; si ya pasó, en rosa y peso medio.
+const endNote = id => {
+  const m = state.meds.find(x => x.id === id), end = m && runsOut(m);
+  if (!end) return '';
+  return `<ion-note ${end < today() ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${Number(end.slice(8))}/${end.slice(5, 7)}</ion-note>`;
+};
+// Línea de costes de la fila de una pauta: «30 €/ud · 15 €/mes · 1 €/día», con lo que se pueda calcular.
 function costLine(m) {
   const parts = [];
   if (m.cost !== '') parts.push(per(m.cost, 'ud'));
   if (m.cost !== '' && m.units && perDayUnits(m)) parts.push(per(perDay(m) * monthDays(), 'mes'), per(perDay(m), 'día'));
-  const end = runsOut(m);
-  if (end) parts.push(`hasta ${fromKey(end).toLocaleDateString('es')}`);
   return parts.join(' · ');
 }
 function renderCosts() {
@@ -403,7 +404,7 @@ function download(name, data, type = 'text/csv') {
 // Un solo CSV con columnas compartidas; cada tipo de fila usa las suyas:
 // · intervalo: id, nombre, desde y hasta (horas), visible y orden (ids de pauta separados por espacios). En su orden.
 // · pauta: id, nombre, intervalos (ids separados por espacios), dosis, indicaciones, referencias, notas, coste (€ por
-//   envase) y envase (dosis por envase). En el orden de pautas.
+//   envase), envase (dosis por envase) y desde (día en que se empezó el envase). En el orden de pautas.
 // · toma: id de la pauta, intervalos (el de la toma), fecha («AAAA-MM-DD HH:MM») y la pauta como se tomó: nombre,
 //   dosis e indicaciones.
 const HEAD = ['tipo', 'id', 'nombre', 'intervalos', 'desde', 'hasta', 'fecha', 'dosis', 'indicaciones', 'referencias', 'notas', 'coste', 'envase', 'visible', 'orden'];
@@ -412,7 +413,7 @@ const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
 const exportCSV = () => csv([
   HEAD,
   ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
-  ...state.meds.map(m => csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), dosis: m.dose, indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units })),
+  ...state.meds.map(m => csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), dosis: m.dose, indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units, desde: m.start })),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
     .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
 ]);
@@ -426,7 +427,7 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     if (c.tipo === 'intervalo') raw.intervals.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
-    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, memo: c.notas, slots: words(c.intervalos), cost: c.coste, units: c.envase });
+    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, memo: c.notas, slots: words(c.intervalos), cost: c.coste, units: c.envase, start: c.desde });
     if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
   }
   if (!raw.intervals.length && !raw.meds.length && !raw.log.length) return;
@@ -567,7 +568,7 @@ let editing = null;
 function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
-  for (const f of ['cost', 'units']) field(f).value = med[f] ?? '';
+  for (const f of ['cost', 'units', 'start']) field(f).value = med[f] ?? '';
   for (const f of ['dose', 'cost', 'units']) field(f).classList.remove('ion-invalid', 'ion-touched');
   $('#editor-slots').innerHTML = visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${iv.id}" ${med.slots?.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('')
     || empty('No hay intervalos visibles.');
@@ -585,7 +586,7 @@ function saveEditor() {
   field('dose').classList.toggle('ion-invalid', !amount(med.dose));
   if (!amount(med.dose)) return field('dose').classList.add('ion-touched'), field('dose').setFocus();
   // Coste y dosis por envase: enteros (las dosis, al menos 1) o vacíos; un valor no válido se marca en rojo.
-  med.cost = int(field('cost').value); med.units = int(field('units').value, 1);
+  med.cost = int(field('cost').value); med.units = int(field('units').value, 1); med.start = date(field('start').value ?? '');
   for (const f of ['cost', 'units']) field(f).classList.toggle('ion-invalid', med[f] === null);
   const bad = ['cost', 'units'].find(f => med[f] === null);
   if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
