@@ -115,9 +115,9 @@ const ring = (done, total, label, size = 44, font = 11, color = 'primary') => {
   </ion-text>`;
 };
 
-// Color del anillo de un día en el selector: hoy, amarillo (#f8d348 sobre #f4e8b8) mientras falten tomas y verde al
+// Color del anillo de un día en el selector: hoy, amarillo (#f8d348 sobre #faf4dc) mientras falten tomas y verde al
 // completarlas; los demás, azul.
-const TODAY_RING = { fg: '#f8d348', bg: '#f4e8b8' };
+const TODAY_RING = { fg: '#f8d348', bg: '#faf4dc' };
 const dayColor = (day, done, total) => day === today() && total ? (done === total ? 'success' : TODAY_RING) : 'primary';
 
 // Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); hasta DAYS_MAX días atrás, también los días
