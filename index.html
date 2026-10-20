@@ -137,18 +137,17 @@
       <ion-list-header><ion-label>Producto</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-input name="name" label="Nombre" label-placement="stacked" placeholder="Paracetamol"></ion-input></ion-item>
-        <ion-item><ion-input name="dose" label="Dosis" label-placement="stacked" placeholder="1 comprimido de 500 mg"></ion-input></ion-item>
+        <ion-item><ion-input name="dose" label="Dosis (empieza por un número)" label-placement="stacked" placeholder="1 comprimido de 500 mg"></ion-input></ion-item>
         <ion-item><ion-input name="notes" label="Indicaciones" label-placement="stacked" placeholder="Con comida"></ion-input></ion-item>
-      </ion-list>
-      <ion-list-header><ion-label>Tiempo</ion-label></ion-list-header>
-      <ion-list inset="true">
-        <ion-item><ion-input name="days" label="Duración (días)" label-placement="stacked" placeholder="Sin límite" inputmode="numeric"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
       <ion-list inset="true" id="editor-slots"></ion-list>
       <ion-list-header><ion-label>Otros datos</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
+        <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Médico, enlaces…" auto-grow="true"></ion-textarea></ion-item>
+        <ion-item><ion-textarea name="memo" label="Notas" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
+      </ion-list>
+      <ion-list inset="true">
         <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
         <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
       </ion-list>
