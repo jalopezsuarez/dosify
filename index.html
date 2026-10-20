@@ -102,6 +102,7 @@
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
       </ion-list>
+      <div id="costs"></div>
       <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-reorder-group id="intervals" disabled="false"></ion-reorder-group>
@@ -133,7 +134,7 @@
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
-      <ion-list-header><ion-label>Medicamento</ion-label></ion-list-header>
+      <ion-list-header><ion-label>Producto</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-input name="name" label="Nombre" label-placement="stacked" placeholder="Paracetamol"></ion-input></ion-item>
         <ion-item><ion-input name="dose" label="Dosis" label-placement="stacked" placeholder="1 comprimido de 500 mg"></ion-input></ion-item>
@@ -143,11 +144,13 @@
       <ion-list inset="true">
         <ion-item><ion-input name="days" label="Duración (días)" label-placement="stacked" placeholder="Sin límite" inputmode="numeric"></ion-input></ion-item>
       </ion-list>
-      <ion-list-header><ion-label>Tomas</ion-label></ion-list-header>
+      <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
       <ion-list inset="true" id="editor-slots"></ion-list>
       <ion-list-header><ion-label>Notas</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
+        <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
+        <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
       </ion-list>
       <ion-list inset="true" id="delete">
         <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar pauta</ion-label></ion-item>

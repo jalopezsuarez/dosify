@@ -2,7 +2,8 @@ const KEY = 'dosify';
 // Modelo:
 // · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), en su orden:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
-// · meds: pautas, en el orden de pautas: { id, name, dose, notes, refs, slots: [ids de intervalo], from, to (días de vigencia) }
+// · meds: pautas, en el orden de pautas: { id, name, dose, notes, refs, slots: [ids de intervalo], from, to (días de vigencia),
+//   cost (€ por envase) y units (dosis por envase), enteros o vacíos }
 // · log: tomas: { at, day, id (de la pauta), slot (id de intervalo), name, dose, notes (la pauta tal como se tomó) }
 const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
@@ -33,11 +34,14 @@ const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\
 const text = v => typeof v === 'string' ? v : '';
 const date = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
 const list = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+// Entero ≥ min o '' (vacío); null si se escribió algo que no lo es.
+const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d+$/.test(t) && Number(t) >= min ? Number(t) : null; };
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   const meds = arr(raw?.meds).filter(m => text(m.id) && text(m.name)).map(m => ({
     id: m.id, name: m.name, dose: text(m.dose), notes: text(m.notes), refs: text(m.refs),
     slots: IDS.filter(id => list(m.slots).includes(id)), from: date(m.from), to: date(m.to),
+    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '',
   }));
   const saved = arr(raw?.intervals);
   const intervals = DEFAULT_INTERVALS.map(d => {
@@ -97,14 +101,18 @@ function dayRows(slot, day) {
 
 // ---------- Toma ----------
 
-const ring = (done, total, label, size = 44, font = 11) => `
-  <ion-text color="primary">
+const ring = (done, total, label, size = 44, font = 11, color = 'primary') => `
+  <ion-text color="${color}">
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
       <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="currentColor">${label}</text>
     </svg>
   </ion-text>`;
+
+// Color del anillo de un día en el selector: hoy, el verde del (i) mientras falten tomas y verde al completarlas;
+// los demás, azul.
+const dayColor = (day, done, total) => day === today() && total ? (done === total ? 'success' : 'teal') : 'primary';
 
 // Siempre los últimos DAYS días y hoy (último y seleccionado al cargar); hasta DAYS_MAX días atrás, también los días
 // con alguna toma. El día elegido se mantiene, para que no desaparezca al desmarcar su última toma.
@@ -119,7 +127,7 @@ function renderDays() {
     const done = rows.reduce((n, r) => n + r.taken.length, 0), total = rows.reduce((n, r) => n + r.taken.length + r.pending.length, 0);
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
-        ${ring(done, total, `${done}/${total}`)}
+        ${ring(done, total, `${done}/${total}`, 44, 11, dayColor(key, done, total))}
         <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}</ion-label>
       </ion-segment-button>`;
   }).join('');
@@ -297,6 +305,22 @@ const pautaRow = m => `
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
 
+// Costes de las pautas vigentes: total de los envases y, con las dosis por envase, coste al día (según sus intervalos
+// visibles) y al mes (30 días), con cuántas pautas tienen esos datos. La sección solo sale si alguna pauta vigente tiene coste.
+const euros = (n, digits = 2) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: digits, maximumFractionDigits: digits });
+const perDay = m => m.cost / m.units * m.slots.filter(id => interval(id).visible).length;
+function renderCosts() {
+  const meds = state.meds.filter(active), priced = meds.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
+  const row = (title, text) => `<ion-item><ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
+  const daily = full.reduce((sum, m) => sum + perDay(m), 0);
+  $('#costs').innerHTML = priced.length ? `
+    <ion-list-header><ion-label>Costes</ion-label></ion-list-header>
+    <ion-list inset="true">
+      ${row(`${euros(priced.reduce((sum, m) => sum + m.cost, 0), 0)} en total`, `${priced.length} de ${meds.length} productos con coste`)}
+      ${row(`${euros(daily * 30)} al mes`, `${euros(daily)} al día · ${full.length} de ${meds.length} productos con coste y dosis por envase`)}
+    </ion-list>` : '';
+}
+
 function renderPautas() {
   $('#list-count').textContent = state.meds.length;
   $('#list').innerHTML = state.meds.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
@@ -354,17 +378,17 @@ function download(name, data, type = 'text/csv') {
 
 // Un solo CSV con columnas compartidas; cada tipo de fila usa las suyas:
 // · intervalo: id, nombre, desde y hasta (horas), visible y orden (ids de pauta separados por espacios). En su orden.
-// · pauta: id, nombre, intervalos (ids separados por espacios), desde y hasta (días de vigencia), dosis, indicaciones
-//   y referencias. En el orden de pautas.
+// · pauta: id, nombre, intervalos (ids separados por espacios), desde y hasta (días de vigencia), dosis, indicaciones,
+//   referencias, coste (€ por envase) y envase (dosis por envase). En el orden de pautas.
 // · toma: id de la pauta, intervalos (el de la toma), fecha («AAAA-MM-DD HH:MM») y la pauta como se tomó: nombre,
 //   dosis e indicaciones.
-const HEAD = ['tipo', 'id', 'nombre', 'intervalos', 'desde', 'hasta', 'fecha', 'dosis', 'indicaciones', 'referencias', 'visible', 'orden'];
+const HEAD = ['tipo', 'id', 'nombre', 'intervalos', 'desde', 'hasta', 'fecha', 'dosis', 'indicaciones', 'referencias', 'coste', 'envase', 'visible', 'orden'];
 const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
 
 const exportCSV = () => csv([
   HEAD,
   ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
-  ...state.meds.map(m => csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), desde: m.from, hasta: m.to, dosis: m.dose, indicaciones: m.notes, referencias: m.refs })),
+  ...state.meds.map(m => csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), desde: m.from, hasta: m.to, dosis: m.dose, indicaciones: m.notes, referencias: m.refs, coste: m.cost, envase: m.units })),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
     .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
 ]);
@@ -378,7 +402,7 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     if (c.tipo === 'intervalo') raw.intervals.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
-    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, slots: words(c.intervalos), from: c.desde, to: c.hasta });
+    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, slots: words(c.intervalos), from: c.desde, to: c.hasta, cost: c.coste, units: c.envase });
     if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
   }
   if (!raw.intervals.length && !raw.meds.length && !raw.log.length) return;
@@ -520,6 +544,7 @@ function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
   field('days').value = span(med);
+  for (const f of ['cost', 'units']) { field(f).value = med[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
   $('#editor-slots').innerHTML = visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${iv.id}" ${med.slots?.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('')
     || empty('No hay intervalos visibles.');
   $('#delete').classList.toggle('ion-hide', !editing);
@@ -532,6 +557,11 @@ function saveEditor() {
   const med = Object.fromEntries(TEXT.map(f => [f, String(field(f).value ?? '').trim()]));
   med.slots = IDS.filter(id => interval(id).visible ? field(id).checked : old?.slots.includes(id));
   if (!med.name) return field('name').setFocus();
+  // Coste y dosis por envase: enteros (las dosis, al menos 1) o vacíos; un valor no válido se marca en rojo.
+  med.cost = int(field('cost').value); med.units = int(field('units').value, 1);
+  for (const f of ['cost', 'units']) field(f).classList.toggle('ion-invalid', med[f] === null);
+  const bad = ['cost', 'units'].find(f => med[f] === null);
+  if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
   // Duración: si cambia, empieza hoy (vacía, sin fin); si no, se conservan las fechas.
   const days = Number(field('days').value) || '';
   Object.assign(med, days === span(old ?? {}) ? { from: old?.from ?? '', to: old?.to ?? '' } : { from: days ? today() : old?.from ?? '', to: days ? addDays(today(), days - 1) : '' });
@@ -585,7 +615,7 @@ function render() {
   renderSlots();
   renderDays();
   renderToma();
-  keepScroll($('#manager ion-content'), () => { renderPautas(); renderIntervals(); renderPdfMonths(); });
+  keepScroll($('#manager ion-content'), () => { renderPautas(); renderCosts(); renderIntervals(); renderPdfMonths(); });
 }
 
 $('#day').addEventListener('ionChange', renderToma);
