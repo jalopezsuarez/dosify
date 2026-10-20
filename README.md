@@ -27,16 +27,16 @@ Se puede instalar como app: en iOS, Safari › Compartir › «Añadir a pantall
 
 ### Pautas (botón arriba a la derecha)
 
-- Un único listado, «Pautas (N)». Cada fila muestra el nombre, su fin de vigencia si lo tiene, en rosa bajo el nombre («7 días · hasta el …», o «Finalizada el …» en gris si ya terminó), la dosis, las indicaciones en gris y un chip por intervalo visible (coloreados los de la pauta).
+- Un único listado, «Pautas (N)». Cada fila muestra el nombre, su fin de vigencia si lo tiene, en rosa bajo el nombre («7 días · hasta el …», o «Finalizada el …» si ya terminó; entonces el resto de la fila va en gris), la dosis, las indicaciones en gris y un chip por intervalo visible (coloreados los de la pauta).
 - Tocar una fila la edita; «Añadir» crea una nueva. El botón ↕ de la cabecera muestra las asas para ordenar las pautas (✓ para terminar). Este *orden de pautas* es independiente del orden de tomas de cada intervalo.
 - **Editor**, en secciones: Producto (nombre, dosis, indicaciones), Tiempo (duración en días desde hoy: al cumplirse, la pauta termina y deja de aparecer en la toma de los días siguientes; sin duración no caduca), Intervalos (una casilla por intervalo visible; los ocultos conservan su valor), Notas (referencias, coste del envase en euros y dosis por envase, ambos enteros y opcionales) y Eliminar. La pauta siempre se cambia en su sitio (no se duplica). Si cambian el nombre, la dosis o las indicaciones y la pauta tiene tomas de días anteriores, un action sheet pregunta si se aplica **a partir de hoy** (las tomas anteriores siguen mostrando cómo se tomaron) o **a todo el registro** (también se cambian las tomas anteriores). Las tomas de hoy siempre pasan a mostrar la pauta nueva.
 - **Costes** (solo si alguna pauta vigente tiene coste): dos filas con las pautas vigentes. La primera, el coste total de sus envases y cuántas tienen coste. La segunda, el coste al mes (30 días) y al día, calculado con las que tienen coste y dosis por envase: coste ÷ dosis por envase × tomas al día (sus intervalos visibles).
 - **Intervalos:** los tres intervalos de toma, con una casilla a la izquierda para mostrarlos u ocultarlos y un asa a la derecha para reordenarlos. Tocar la fila abre su editor: nombre (puede quedar vacío; entonces se muestran sus horas o «Sin nombre»), hora de inicio y hora de fin, opcionales, en horas enteras de 0 a 24 (por ejemplo, 18 y 21). Un intervalo puede pasar de medianoche (22 a 6). Por defecto: Desayuno (6–12), Almuerzo (12–18) y Cena (18–24). Su nombre, orden y visibilidad se reflejan en las pestañas de la toma, en los chips y en el editor de pautas.
 - **Datos:** cargar y exportar un único CSV con intervalos, pautas y tomas.
-- **Exportar:** «Seleccionar mes» abre un action sheet con los meses de los últimos 6 que tienen al menos una toma (del más reciente, elegido por defecto, al más antiguo; si no hay ninguno, la exportación queda desactivada) y «Exportar PDF» descarga el registro de ese mes en PDF (A4) con la plantilla *Medication log*: título, mes y una tabla con fecha, hora, medicamento, dosis y notas (las indicaciones de la pauta). Cada celda ocupa como mucho dos líneas; lo que no cabe se recorta con «…». Si hay más tomas de las que caben, sigue en más páginas. El PDF se genera en el navegador, sin librerías, con las fuentes estándar Helvetica.
+- **Exportar:** «Seleccionar mes» abre un action sheet con los meses de los últimos 6 que tienen al menos una toma (del más reciente, elegido por defecto, al más antiguo; si no hay ninguno, la exportación queda desactivada) y «Exportar PDF» descarga el registro de ese mes en PDF (A4) con la plantilla *Medication log*: título, mes y una tabla con fecha, hora, medicamento, dosis y notas (las indicaciones), tal como se tomó cada toma. Cada celda ocupa como mucho dos líneas; lo que no cabe se recorta con «…». Si hay más tomas de las que caben, sigue en más páginas. El PDF se genera en el navegador, sin librerías, con las fuentes estándar Helvetica.
 - **Zona peligrosa:** «Borrar registro de tomas».
 
-Al soltar una fila tras arrastrarla, solo se guarda el nuevo orden: la lista no se repinta, así el scroll no salta.
+Al soltar una fila tras arrastrarla, solo se guarda el nuevo orden: la lista no se repinta, así el scroll no salta. Al cerrar el editor de una pauta o de un intervalo (guardando o cancelando), la lista vuelve a la posición en que estaba.
 
 Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
 
@@ -93,6 +93,6 @@ Una cápsula blanca sobre un degradado azul (alrededor del color principal, #6dd
 
 ## Archivos
 
-- `index.html` — estructura de la interfaz (toma, gestor de pautas con intervalos, datos, exportar y zona peligrosa, editores de pauta y de intervalo, ficha, alerta y action sheet) y el CSS mínimo.
-- `app.js` — estado, almacenamiento, intervalos, render, orden, CSV y PDF.
+- `index.html` — estructura de la interfaz (toma, gestor de pautas con costes, intervalos, datos, exportar y zona peligrosa, editores de pauta y de intervalo, ficha, alerta y action sheet) y el CSS mínimo.
+- `app.js` — estado, limpieza y almacenamiento de datos, intervalos, render, orden, costes, CSV y PDF.
 - Iconos y manifest: ver «Iconos».
