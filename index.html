@@ -53,9 +53,10 @@
     #day::-webkit-scrollbar { display: none; }
     /* En móvil Ionic impide seleccionar texto en toda la app; en la ficha de la pauta se permite para poder copiarlo */
     #info-body { -webkit-user-select: text; user-select: text; }
-    /* Asistente: margen de la caja de escribir (variables de ion-textarea) y letra de los mensajes 1 px mayor */
+    /* Ficha (i): letra 1 px mayor */
+    #info-body ion-item ion-label { font-size: calc(1em + 1px); }
+    /* Asistente: margen de la caja de escribir (variables de ion-textarea) */
     #chat-input { --padding-start: 8px; --padding-end: 8px; }
-    #chat-body ion-label { font-size: calc(1em + 1px); }
     /* Respuestas en Markdown: tablas con bordes finos y scroll horizontal si no caben; las gráficas, con alto fijo */
     #chat-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; margin: 6px 0; }
     #chat-body .md-chart { position: relative; height: 220px; margin: 6px 0; }
@@ -112,6 +113,9 @@
       </ion-list-header>
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
+      </ion-list>
+      <ion-list inset="true" id="finished-row">
+        <ion-item button="true" id="open-finished"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Finalizadas</ion-label><ion-note slot="end" id="finished-count"></ion-note></ion-item>
       </ion-list>
       <div id="costs"></div>
       <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
@@ -207,6 +211,18 @@
         <ion-buttons slot="end"><ion-button id="chat-send" aria-label="Enviar"><ion-icon slot="icon-only" name="send"></ion-icon></ion-button></ion-buttons>
       </ion-toolbar>
     </ion-footer>
+  </ion-modal>
+
+  <ion-modal id="finished">
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="finished-close">Cerrar</ion-button></ion-buttons>
+        <ion-title>Finalizadas</ion-title>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content color="light">
+      <ion-list inset="true" id="finished-list"></ion-list>
+    </ion-content>
   </ion-modal>
 
   <ion-modal id="record">

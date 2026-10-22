@@ -384,9 +384,16 @@ function renderCosts() {
     </ion-list>` : '';
 }
 
+// Lista de pautas: solo las activas; las finalizadas van aparte, en la fila «Finalizadas» (solo si hay alguna), que
+// abre su propia lista. Desde allí se editan y, con una programación nueva, vuelven a las activas.
+const finishedModal = $('#finished');
 function renderPautas() {
-  $('#list-count').textContent = state.meds.length;
-  $('#list').innerHTML = state.meds.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
+  const live = state.meds.filter(m => !finished(m)), done = state.meds.filter(finished);
+  $('#list-count').textContent = live.length;
+  $('#list').innerHTML = live.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
+  $('#finished-row').classList.toggle('ion-hide', !done.length);
+  $('#finished-count').textContent = done.length;
+  $('#finished-list').innerHTML = done.map(pautaRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay pautas finalizadas.');
 }
 
 // Intervalos: casilla de visible a la izquierda, asa de ordenar a la derecha; tocar la fila abre su editor.
@@ -1017,6 +1024,12 @@ $('#sort').onclick = () => {
   $('#sort ion-icon').name = $('#list').disabled ? 'swap-vertical-outline' : 'checkmark-outline';
 };
 $('#add').onclick = () => openEditor();
+$('#open-finished').onclick = () => finishedModal.present();
+$('#finished-close').onclick = () => finishedModal.dismiss();
+$('#finished-list').addEventListener('click', e => {
+  const id = e.target.closest('ion-item')?.dataset.id;
+  if (id) openEditor(state.meds.find(m => m.id === id));
+});
 $('#list').addEventListener('click', e => {
   if (e.target.closest('ion-reorder')) return;
   const id = e.target.closest('ion-item')?.dataset.id;
@@ -1024,7 +1037,8 @@ $('#list').addEventListener('click', e => {
 });
 // Igual en Pautas: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
 $('#list').addEventListener('ionReorderEnd', e => {
-  state.meds = move(state.meds, e.detail);
+  // Se ordenan las activas (las de la lista); las finalizadas quedan detrás.
+  state.meds = [...move(state.meds.filter(m => !finished(m)), e.detail), ...state.meds.filter(finished)];
   e.detail.complete();
   save();
   renderToma();
