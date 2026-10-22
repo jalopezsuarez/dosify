@@ -53,6 +53,9 @@
     #day::-webkit-scrollbar { display: none; }
     /* En móvil Ionic impide seleccionar texto en toda la app; en la ficha de la pauta se permite para poder copiarlo */
     #info-body { -webkit-user-select: text; user-select: text; }
+    /* Asistente: margen de la caja de escribir (variables de ion-textarea) y letra de los mensajes 1 px mayor */
+    #chat-input { --padding-start: 8px; --padding-end: 8px; }
+    #chat-body ion-label { font-size: calc(1em + 1px); }
     .ion-color-teal {
       --ion-color-base: var(--ion-color-teal) !important;
       --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
@@ -195,7 +198,7 @@
     <ion-content id="chat-body" color="light"></ion-content>
     <ion-footer>
       <ion-toolbar>
-        <ion-textarea id="chat-input" class="ion-padding-horizontal" aria-label="Mensaje" placeholder="Pregunta sobre tus pautas…" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
+        <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta sobre tus pautas…" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
         <ion-buttons slot="end"><ion-button id="chat-send" aria-label="Enviar"><ion-icon slot="icon-only" name="send"></ion-icon></ion-button></ion-buttons>
       </ion-toolbar>
     </ion-footer>

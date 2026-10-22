@@ -5,7 +5,8 @@ App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [I
 - las variables de tema de Ionic para el color principal (#6dd0f9) y dos colores adicionales definidos como documenta Ionic: `teal` (#78b7af, icono de información, costes de cada pauta y tus mensajes en el asistente) y `rose` (#e47969, envase al que le quedan menos de 7 días);
 - una clase de peso medio para los títulos (Ionic no trae utilidad de `font-weight`);
 - ocultar la barra de scroll del selector de días;
-- permitir seleccionar texto en la ficha de la pauta (en móvil Ionic lo impide en toda la app).
+- permitir seleccionar texto en la ficha de la pauta (en móvil Ionic lo impide en toda la app);
+- en el asistente, el margen de la caja de escribir (con las variables `--padding-start` y `--padding-end` de `ion-textarea`) y la letra de los mensajes 1 px mayor (Ionic no trae utilidades para ninguna de las dos cosas).
 
 Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
 
