@@ -140,6 +140,8 @@
         <ion-item><ion-input name="dose" label="Dosis (empieza por un número)" label-placement="stacked" placeholder="1 comprimido de 500 mg"></ion-input></ion-item>
         <ion-item><ion-input name="notes" label="Indicaciones" label-placement="stacked" placeholder="Con comida"></ion-input></ion-item>
       </ion-list>
+      <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
+      <ion-list inset="true" id="plan-list"></ion-list>
       <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
       <ion-list inset="true" id="editor-slots"></ion-list>
       <ion-list-header><ion-label>Otros datos</ion-label></ion-list-header>
@@ -152,6 +154,12 @@
         <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
         <ion-item><ion-input name="start" type="date" label="Fecha de inicio" label-placement="stacked"></ion-input></ion-item>
       </ion-list>
+      <div id="record-section">
+        <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
+        <ion-list inset="true">
+          <ion-item button="true" id="open-record"><ion-label>Ver registro</ion-label><ion-note slot="end" id="record-count"></ion-note></ion-item>
+        </ion-list>
+      </div>
       <ion-list inset="true" id="delete">
         <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar pauta</ion-label></ion-item>
       </ion-list>
@@ -166,6 +174,36 @@
       </ion-toolbar>
     </ion-header>
     <ion-content id="info-body" color="light"></ion-content>
+  </ion-modal>
+
+  <ion-modal id="record">
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="record-close">Cerrar</ion-button></ion-buttons>
+        <ion-title id="record-title">Registro</ion-title>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content id="record-body" color="light"></ion-content>
+  </ion-modal>
+
+  <ion-modal id="plan-editor">
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="plan-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-title>Programación</ion-title>
+        <ion-buttons slot="end"><ion-button id="plan-save" strong="true">Guardar</ion-button></ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content color="light">
+      <ion-list inset="true">
+        <ion-item><ion-input name="dose" label="Dosis (empieza por un número)" label-placement="stacked" placeholder="1 comprimido"></ion-input></ion-item>
+        <ion-item><ion-input name="start" type="date" label="Fecha de inicio" label-placement="stacked"></ion-input></ion-item>
+        <ion-item><ion-input name="days" type="number" min="1" inputmode="numeric" label="Duración (días)" label-placement="stacked" placeholder="7"></ion-input></ion-item>
+      </ion-list>
+      <ion-list inset="true" id="plan-delete">
+        <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar programación</ion-label></ion-item>
+      </ion-list>
+    </ion-content>
   </ion-modal>
 
   <ion-modal id="interval-editor">
