@@ -758,10 +758,12 @@ const AI_KEY = 'dosify-asistente';
 const AI_FIELDS = ['url', 'key', 'model'];
 const ai = (() => { let v = {}; try { v = JSON.parse(localStorage.getItem(AI_KEY)) ?? {}; } catch {} return Object.fromEntries(AI_FIELDS.map(k => [k, text(v[k]).trim()])); })();
 const aiField = name => $(`#assistant-settings [name="${name}"]`);
-for (const k of AI_FIELDS) {
-  aiField(k).value = ai[k];
-  aiField(k).addEventListener('ionChange', () => { ai[k] = String(aiField(k).value ?? '').trim(); localStorage.setItem(AI_KEY, JSON.stringify(ai)); });
-}
+// Se guarda al escribir (no solo al salir del campo, que en iOS puede no ocurrir al cerrar Pautas) y los campos se
+// rellenan con lo guardado cada vez que se abre Pautas.
+const showAi = () => AI_FIELDS.forEach(k => { aiField(k).value = ai[k]; });
+for (const k of AI_FIELDS) aiField(k).addEventListener('ionInput', () => { ai[k] = String(aiField(k).value ?? '').trim(); localStorage.setItem(AI_KEY, JSON.stringify(ai)); });
+showAi();
+manager.addEventListener('ionModalWillPresent', showAi);
 
 const chatModal = $('#chat'), chatBody = $('#chat-body'), chatInput = $('#chat-input');
 // La conversación se guarda (aparte de los datos y fuera del CSV) hasta pulsar «Limpiar».
