@@ -2,9 +2,9 @@ const KEY = 'dosify';
 // Modelo:
 // · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), en su orden:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
-// · meds: pautas, en el orden de pautas: { id, name, dose (empieza por la cantidad de cada toma), notes (indicaciones),
-//   refs (referencias), memo (notas), slots: [ids de intervalo], cost (€ por envase) y units (dosis por envase), enteros o vacíos,
-//   start (día en que se empezó el envase, AAAA-MM-DD o vacío) y plan: [programaciones { dose, start, days }] }
+// · meds: pautas, en el orden de pautas: { id, name, notes (indicaciones), refs (referencias), memo (notas),
+//   slots: [ids de intervalo], cost (€ por envase) y units (dosis por envase), enteros o vacíos, y
+//   plan: [programaciones { dose (empieza por la cantidad de cada toma), start, days }] }
 // · log: tomas: { at, day, id (de la pauta), slot (id de intervalo), name, dose, notes (la pauta tal como se tomó) }
 const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
@@ -13,7 +13,7 @@ const DEFAULT_INTERVALS = [
 ];
 const IDS = DEFAULT_INTERVALS.map(iv => iv.id);
 const newId = () => crypto.randomUUID().slice(0, 8);
-const TEXT = ['name', 'dose', 'notes', 'refs', 'memo'];
+const TEXT = ['name', 'notes', 'refs', 'memo'];
 const SEP = ';';
 const DAYS = 7; // días anteriores que siempre se muestran
 const DAYS_MAX = 30; // hasta cuántos días atrás se muestran los que tienen tomas
@@ -45,8 +45,8 @@ const cleanPlan = v => (Array.isArray(v) ? v : []).filter(p => p && amount(p.dos
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   const meds = arr(raw?.meds).filter(m => text(m.id) && text(m.name)).map(m => ({
-    id: m.id, name: m.name, dose: text(m.dose), notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
-    slots: IDS.filter(id => list(m.slots).includes(id)), cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', start: date(m.start),
+    id: m.id, name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
+    slots: IDS.filter(id => list(m.slots).includes(id)), cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '',
     plan: cleanPlan(m.plan),
   }));
   const saved = arr(raw?.intervals);
@@ -88,15 +88,16 @@ const pos = (m, slot) => { const i = interval(slot).order.indexOf(m.id); return 
 const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, slot));
 // Programación de un día: la última que empezó ese día o antes (una fecha de inicio posterior corta a la anterior),
 // si su duración llega a ese día. Una pauta con programaciones solo sale en la toma los días que alguna cubre, y con
-// su dosis; sin programaciones, todos los días con la dosis de la pauta.
+// su dosis; sin programaciones, todos los días, sin dosis.
 const planEnd = p => addDays(p.start, p.days - 1);
 const planOn = (m, day) => { const p = m.plan.filter(p => p.start <= day).at(-1); return p && day <= planEnd(p) ? p : null; };
 const onDay = (m, day) => !m.plan.length || !!planOn(m, day);
-const doseOn = (m, day) => planOn(m, day)?.dose ?? m.dose;
+const doseOn = (m, day) => planOn(m, day)?.dose ?? '';
 const doses = (slot, day = selectedDay()) => bySlot(state.meds.filter(m => m.slots.includes(slot) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), slot);
 // Cada toma guarda nombre, dosis e indicaciones de la pauta al tomarla; así el registro muestra lo que se tomó aunque la
 // pauta cambie o se borre.
 const SNAP = ['name', 'dose', 'notes'];
+const EDITED = ['name', 'notes']; // lo que el editor de pauta cambia de lo que guarda cada toma
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
 const snapOn = (m, day) => ({ ...snap(m), dose: doseOn(m, day) }); // la pauta tal como se toma ese día
 const takenAs = e => { const m = state.meds.find(x => x.id === e.id); return { refs: m?.refs ?? '', memo: m?.memo ?? '', id: e.id, ...snap(e) }; };
@@ -332,25 +333,27 @@ const perDay = m => m.cost / m.units * perDayUnits(m);
 const monthDays = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
 const euros = (n, digits = 2) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: digits, maximumFractionDigits: digits });
 const per = (n, unit) => `${euros(n, Number.isInteger(n) ? 0 : 2).replace(/\s*€/, '')} €/${unit}`;
-// Hasta cuándo dura el envase (solo con fecha de inicio): sus dosis menos las registradas desde ese día y las que faltan
-// hoy, repartidas entre las dosis al día. Si ya se acabó, sale un día pasado.
+// Hasta cuándo dura el envase actual. Se suman todas las dosis registradas de la pauta y, cada vez que completan un
+// envase, se empieza otro: lo que queda del actual es el resto. Se descuentan las que faltan hoy y se reparte lo que
+// queda entre las dosis al día (las de la programación vigente). Si el envase no llega a cubrir hoy, se acaba hoy.
 function runsOut(m) {
   const daily = perDayUnits(m);
-  if (!m.start || !m.units || !daily) return '';
-  if (today() < m.start) return addDays(m.start, Math.max(0, Math.floor(m.units / daily) - 1));
-  const taken = state.log.filter(e => e.id === m.id && e.day >= m.start);
-  const sum = list => list.reduce((n, e) => n + (amount(e.dose) || amount(m.dose)), 0);
+  if (!m.units || !daily) return '';
+  const taken = state.log.filter(e => e.id === m.id);
+  const sum = list => list.reduce((n, e) => n + amount(e.dose), 0);
   const pendingToday = Math.max(0, daily - sum(taken.filter(e => e.day === today())));
-  return addDays(today(), Math.floor((m.units - sum(taken) - pendingToday) / daily));
+  const left = m.units - sum(taken) % m.units - pendingToday;
+  return addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
 }
-// Color del (i) de una toma: rosa si a su envase le quedan menos de 7 días (o ya se acabó); si no, teal.
+// Aviso de que el envase se acaba: menos de 7 días. Pone en rosa el (i) de la toma y la fecha de fin de la pauta.
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
-const supplyColor = id => { const m = state.meds.find(x => x.id === id), end = m && runsOut(m); return end && daysLeft(end) < 7 ? 'rose' : 'teal'; };
-// Fin del envase («5/01») a la derecha de la fila de la pauta, a la altura del nombre: en gris; si ya pasó, en rosa y peso medio.
+const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
+const supplyColor = id => { const m = state.meds.find(x => x.id === id); return m && runningOut(m) ? 'rose' : 'teal'; };
+// Fin del envase («5/01») a la derecha de la fila de la pauta, a la altura del nombre: en gris; si se acaba, en rosa y peso medio.
 const endNote = id => {
   const m = state.meds.find(x => x.id === id), end = m && runsOut(m);
   if (!end) return '';
-  return `<ion-note ${end < today() ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${Number(end.slice(8))}/${end.slice(5, 7)}</ion-note>`;
+  return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${Number(end.slice(8))}/${end.slice(5, 7)}</ion-note>`;
 };
 // Línea de costes de la fila de una pauta: «30 €/ud · 15 €/mes · 1 €/día», con lo que se pueda calcular.
 function costLine(m) {
@@ -429,9 +432,9 @@ function download(name, data, type = 'text/csv') {
 
 // Un solo CSV con columnas compartidas; cada tipo de fila usa las suyas:
 // · intervalo: id, nombre, desde y hasta (horas), visible y orden (ids de pauta separados por espacios). En su orden.
-// · pauta: id, nombre, intervalos (ids separados por espacios), dosis, indicaciones, referencias, notas, coste (€ por
-//   envase), envase (dosis por envase) y desde (día en que se empezó el envase). En el orden de pautas, cada una seguida
-//   de sus filas «programacion»: id de la pauta, dosis, desde (fecha de inicio) y dias (duración).
+// · pauta: id, nombre, intervalos (ids separados por espacios), indicaciones, referencias, notas, coste (€ por envase) y
+//   envase (dosis por envase). En el orden de pautas, cada una seguida de sus filas «programacion»: id de la pauta,
+//   dosis, desde (fecha de inicio) y dias (duración).
 // · toma: id de la pauta, intervalos (el de la toma), fecha («AAAA-MM-DD HH:MM») y la pauta como se tomó: nombre,
 //   dosis e indicaciones.
 const HEAD = ['tipo', 'id', 'nombre', 'intervalos', 'desde', 'hasta', 'fecha', 'dias', 'dosis', 'indicaciones', 'referencias', 'notas', 'coste', 'envase', 'visible', 'orden'];
@@ -440,7 +443,7 @@ const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
 const exportCSV = () => csv([
   HEAD,
   ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
-  ...state.meds.flatMap(m => [csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), dosis: m.dose, indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units, desde: m.start }),
+  ...state.meds.flatMap(m => [csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units }),
     ...m.plan.map(p => csvRow('programacion', { id: m.id, dosis: p.dose, desde: p.start, dias: p.days }))]),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
     .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
@@ -455,7 +458,7 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     if (c.tipo === 'intervalo') raw.intervals.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
-    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, dose: c.dosis, notes: c.indicaciones, refs: c.referencias, memo: c.notas, slots: words(c.intervalos), cost: c.coste, units: c.envase, start: c.desde, plan: [] });
+    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, notes: c.indicaciones, refs: c.referencias, memo: c.notas, slots: words(c.intervalos), cost: c.coste, units: c.envase, plan: [] });
     if (c.tipo === 'programacion') raw.meds.find(m => m.id === c.id)?.plan.push({ dose: c.dosis, start: c.desde, days: int(c.dias, 1) });
     if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
   }
@@ -597,8 +600,7 @@ let editing = null;
 function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
-  for (const f of ['cost', 'units', 'start']) field(f).value = med[f] ?? '';
-  for (const f of ['dose', 'cost', 'units']) field(f).classList.remove('ion-invalid', 'ion-touched');
+  for (const f of ['cost', 'units']) { field(f).value = med[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
   $('#editor-slots').innerHTML = visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${iv.id}" ${med.slots?.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('')
     || empty('No hay intervalos visibles.');
   plan = structuredClone(med.plan ?? []);
@@ -615,11 +617,8 @@ function saveEditor() {
   const med = Object.fromEntries(TEXT.map(f => [f, String(field(f).value ?? '').trim()]));
   med.slots = IDS.filter(id => interval(id).visible ? field(id).checked : old?.slots.includes(id));
   if (!med.name) return field('name').setFocus();
-  // La dosis tiene que empezar por un número (la cantidad de cada toma, para los cálculos del envase).
-  field('dose').classList.toggle('ion-invalid', !amount(med.dose));
-  if (!amount(med.dose)) return field('dose').classList.add('ion-touched'), field('dose').setFocus();
   // Coste y dosis por envase: enteros (las dosis, al menos 1) o vacíos; un valor no válido se marca en rojo.
-  med.cost = int(field('cost').value); med.units = int(field('units').value, 1); med.start = date(field('start').value ?? '');
+  med.cost = int(field('cost').value); med.units = int(field('units').value, 1);
   for (const f of ['cost', 'units']) field(f).classList.toggle('ion-invalid', med[f] === null);
   const bad = ['cost', 'units'].find(f => med[f] === null);
   if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
@@ -627,13 +626,13 @@ function saveEditor() {
   const done = () => { save(); render(); editor.dismiss(); };
   if (!old) return state.meds.push({ id: newId(), ...med }), done();
   // Cambiar la pauta: las tomas de hoy en adelante pasan a mostrarla nueva; si cambia lo que se ve en el registro
-  // (nombre, dosis, indicaciones) y hay tomas anteriores, se elige si también se cambian esas.
+  // (nombre, indicaciones) y hay tomas anteriores, se elige si también se cambian esas. La dosis va en la programación.
   const apply = all => {
     Object.assign(old, med);
     for (const e of state.log) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snapOn(old, e.day));
     done();
   };
-  const changed = SNAP.some(k => med[k] !== old[k]);
+  const changed = EDITED.some(k => med[k] !== old[k]);
   if (!changed || !state.log.some(e => e.id === old.id && e.day < today())) return apply(false);
   sheet('¿A qué se aplican los cambios?', [
     { text: 'Aplicar a partir de hoy', handler: () => apply(false) },
@@ -664,7 +663,7 @@ function renderPlan() {
 
 function openPlan(i) {
   editingPlan = i;
-  const p = plan[i] ?? { dose: field('dose').value ?? '', start: today(), days: '' };
+  const p = plan[i] ?? { dose: plan.at(-1)?.dose ?? '', start: today(), days: '' };
   for (const f of ['dose', 'start', 'days']) { planField(f).value = p[f]; planField(f).classList.remove('ion-invalid', 'ion-touched'); }
   $('#plan-delete').classList.toggle('ion-hide', i === null);
   planEditor.present();
