@@ -775,7 +775,7 @@ function systemPrompt() {
   const now = new Date();
   const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), terminada: finished(m),
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
-  return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en texto plano sin Markdown. Usa solo los datos que te doy; si algo no está, dilo. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
+  return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - intervals: intervalos de toma (id fijo i1, i2, i3; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
@@ -837,19 +837,85 @@ const confirmChange = message => new Promise(resolve => {
   alert.onDidDismiss().then(({ role }) => role === 'backdrop' && resolve(false));
 });
 
+// Markdown (marked) y gráficas (Chart.js) de las respuestas: se cargan desde CDN la primera vez que se abre el
+// asistente. Del Markdown no se deja pasar HTML ni enlaces que no sean http(s); un bloque ```chart con JSON
+// { "type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{ "label": "...", "data": [...] }] }
+// se dibuja como gráfica. Si no cargan, el texto sale tal cual.
+const MARKED = 'https://cdn.jsdelivr.net/npm/marked@18.0.14/lib/marked.esm.js';
+const CHARTJS = 'https://cdn.jsdelivr.net/npm/chart.js@4.5.1/auto/+esm';
+const CHART_COLORS = ['#6dd0f9', '#78b7af', '#e47969', '#f5a142', '#9b8bd6', '#7cc576'];
+let marked = null, Chart = null, charts = [], libs = null;
+const loadLibs = () => libs ??= Promise.all([import(MARKED), import(CHARTJS)]).then(([m, c]) => {
+  marked = new m.Marked({ gfm: true, breaks: true, renderer: {
+    html: ({ text }) => esc(text),
+    heading(token) { return `<h2 class="medium">${this.parser.parseInline(token.tokens)}</h2>`; },
+    paragraph(token) { return `<div class="md-p">${this.parser.parseInline(token.tokens)}</div>`; }, // un <p> en ion-label sale gris y pequeño
+    image: ({ text }) => esc(text),
+    link(token) { const label = this.parser.parseInline(token.tokens); return /^https?:\/\//.test(token.href) ? `<a href="${esc(token.href)}" target="_blank" rel="noopener">${label}</a>` : label; },
+    code: ({ text, lang }) => lang === 'chart' ? `<div class="md-chart"><canvas data-chart="${esc(text)}"></canvas></div>` : false,
+  } });
+  Chart = c.default;
+}).catch(() => {});
+const markdown = text => marked ? marked.parse(String(text)) : linkify(text);
+
+// Dibuja las gráficas de los bloques ```chart; si el JSON no vale, deja un aviso en su lugar.
+function drawCharts() {
+  if (!Chart) return;
+  Chart.defaults.color = getComputedStyle(chatBody).color;
+  for (const canvas of chatBody.querySelectorAll('canvas[data-chart]')) {
+    try {
+      const spec = JSON.parse(canvas.dataset.chart);
+      const round = ['pie', 'doughnut'].includes(spec.type);
+      if (!['bar', 'line', 'pie', 'doughnut'].includes(spec.type) || !Array.isArray(spec.labels) || !Array.isArray(spec.datasets)) throw new Error();
+      charts.push(new Chart(canvas, {
+        type: spec.type,
+        data: { labels: spec.labels.map(String), datasets: spec.datasets.map((d, i) => ({
+          label: String(d.label ?? ''), data: (d.data ?? []).map(Number),
+          backgroundColor: round ? spec.labels.map((_, j) => CHART_COLORS[j % CHART_COLORS.length]) : CHART_COLORS[i % CHART_COLORS.length],
+          borderColor: round ? undefined : CHART_COLORS[i % CHART_COLORS.length],
+        })) },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: round || spec.datasets.length > 1 } } },
+      }));
+    } catch {
+      canvas.parentElement.outerHTML = '<ion-text color="medium">(Gráfica no válida)</ion-text>';
+    }
+  }
+}
+
+// Preguntas sugeridas, hechas con tus datos (sin llamar al servicio); no repite las ya preguntadas.
+function suggestions(count) {
+  const meds = state.meds.filter(m => !finished(m)), asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content));
+  const list = [
+    '¿Qué me falta por tomar hoy?',
+    ...meds.filter(m => runsOut(m)).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
+    ...(state.meds.some(m => m.cost !== '') ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por pauta.'] : []),
+    ...(state.log.length ? ['¿Cómo he cumplido las tomas esta semana? Hazme una tabla por día.', '¿Qué tomas se me olvidaron en los últimos 7 días?'] : []),
+    ...meds.filter(m => m.plan.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus programaciones?`),
+    ...meds.filter(m => state.log.some(e => e.id === m.id)).map(m => `Resume el registro de ${m.name} en una tabla.`),
+    ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, intervalos, coste y fin del envase.'] : ['Ayúdame a crear mi primera pauta.']),
+  ];
+  return [...new Set(list)].filter(q => !asked.has(q)).slice(0, count);
+}
+const suggestionList = qs => qs.length ? `
+  <ion-list-header><ion-label>Sugerencias</ion-label></ion-list-header>
+  <ion-list inset="true">${qs.map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')}</ion-list>` : '';
+
 const bubble = v => ({
   user: `<ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>`,
-  assistant: `<ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(v.text)}</ion-label></ion-item>`,
+  assistant: `<ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>`,
   action: `<ion-item lines="none"><ion-icon slot="start" name="${v.ok ? 'checkmark-circle' : 'close-circle'}" color="${v.ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(v.text)}</ion-label></ion-item>`,
   error: `<ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item>`,
 }[v.who]);
 function renderChat() {
   saveChat();
   const ready = ai.key && ai.model && ai.url;
+  charts.forEach(c => c.destroy()); charts = [];
   chatBody.innerHTML = (chatView.length ? chatView.map(v => `<ion-list inset="true">${bubble(v)}</ion-list>`).join('')
     : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus pautas, tomas, consumos o costes. También puedo cambiar datos (te pediré confirmación).' : 'Configura el asistente en Pautas › Asistente (URL base, API key y modelo).')}</ion-list>`)
-    + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>' : '');
+    + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
+      : ready ? suggestionList(suggestions(chatView.length ? 3 : 4)) : '');
   $('#chat-send').disabled = chatBusy || !ready;
+  drawCharts();
   chatBody.scrollToBottom(200);
 }
 
@@ -1013,10 +1079,11 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
   editor.dismiss();
 });
 
-$('#assistant').onclick = () => { renderChat(); chatModal.present(); };
+$('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
 $('#chat-new').onclick = () => { chat = []; chatView = []; renderChat(); };
 $('#chat-send').onclick = sendChat;
+chatBody.addEventListener('click', e => { const q = e.target.closest('[data-suggest]')?.dataset.suggest; if (q) { chatInput.value = q; sendChat(); } });
 // Intro envía; Mayúsculas + Intro hace un salto de línea.
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 

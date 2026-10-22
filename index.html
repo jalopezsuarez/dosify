@@ -56,6 +56,11 @@
     /* Asistente: margen de la caja de escribir (variables de ion-textarea) y letra de los mensajes 1 px mayor */
     #chat-input { --padding-start: 8px; --padding-end: 8px; }
     #chat-body ion-label { font-size: calc(1em + 1px); }
+    /* Respuestas en Markdown: tablas con bordes finos y scroll horizontal si no caben; las gráficas, con alto fijo */
+    #chat-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; margin: 6px 0; }
+    #chat-body .md-chart { position: relative; height: 220px; margin: 6px 0; }
+    #chat-body .md-p { margin: 0 0 6px; }
+    #chat-body th, #chat-body td { border: 1px solid var(--ion-color-step-250, #d0d0d0); padding: 4px 8px; text-align: left; white-space: nowrap; }
     .ion-color-teal {
       --ion-color-base: var(--ion-color-teal) !important;
       --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;

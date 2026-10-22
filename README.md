@@ -1,12 +1,12 @@
 # Dosify
 
-App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) 9 (web components por CDN) como única dependencia. Sin build y sin frameworks; lo único externo es, si se configura, el servicio de IA del asistente. Todo se dibuja con componentes, propiedades y clases de utilidad de Ionic; el CSS propio es solo el estrictamente necesario:
+App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con tres dependencias por CDN: [Ionic Framework](https://ionicframework.com) 9 (web components) para toda la interfaz y, solo en el asistente, [marked](https://marked.js.org) (Markdown) y [Chart.js](https://www.chartjs.org) (gráficas), que se descargan la primera vez que se abre. Sin build y sin frameworks; lo único externo además es, si se configura, el servicio de IA del asistente. Todo se dibuja con componentes, propiedades y clases de utilidad de Ionic; el CSS propio es solo el estrictamente necesario:
 
 - las variables de tema de Ionic para el color principal (#6dd0f9) y dos colores adicionales definidos como documenta Ionic: `teal` (#78b7af, icono de información, costes de cada pauta y tus mensajes en el asistente) y `rose` (#e47969, envase al que le quedan menos de 7 días);
 - una clase de peso medio para los títulos (Ionic no trae utilidad de `font-weight`);
 - ocultar la barra de scroll del selector de días;
 - permitir seleccionar texto en la ficha de la pauta (en móvil Ionic lo impide en toda la app);
-- en el asistente, el margen de la caja de escribir (con las variables `--padding-start` y `--padding-end` de `ion-textarea`) y la letra de los mensajes 1 px mayor (Ionic no trae utilidades para ninguna de las dos cosas).
+- en el asistente, el margen de la caja de escribir (con las variables `--padding-start` y `--padding-end` de `ion-textarea`) y la letra de los mensajes 1 px mayor (Ionic no trae utilidades para ninguna de las dos cosas), y en sus respuestas, párrafos con un poco de espacio, tablas con bordes finos (con scroll horizontal si no caben) y el alto de las gráficas.
 
 Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
 
@@ -54,6 +54,9 @@ Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta; so
 ## Asistente
 
 Pantalla de conversación (botón «Asistente» de la toma; Intro envía el mensaje y Mayúsculas + Intro hace un salto de línea; «Limpiar» la borra y empieza otra; hasta entonces la conversación se guarda en este navegador, aparte de los datos (`localStorage`, clave `dosify-conversacion`), y no va en el CSV). Cada pregunta se envía a `{URL base}/chat/completions` con el modelo configurado y, como contexto, todos los datos de la app en ese momento: intervalos, pautas con sus programaciones, costes, referencias y notas, y todas las tomas, más los cálculos ya hechos de cada pauta (dosis de hoy, dosis al día, costes y fin del envase). Así responde sobre pautas, consumos, históricos o costes.
+
+- **Sugerencias:** con la conversación vacía salen 4 preguntas y, tras cada respuesta, 3 más; tocarlas las envía. Se hacen en la app a partir de los datos (qué falta hoy, cuándo se acaba un envase, gasto al mes, cumplimiento de la semana, olvidos, cambios de dosis, registro de una pauta, tabla de pautas) y no repiten las ya preguntadas.
+- **Markdown y gráficas:** las respuestas se muestran en Markdown con marked (títulos, negritas, listas, código, enlaces y tablas). Una gráfica se pide con un bloque de código `chart` que lleva solo JSON — `{"type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{"label": "...", "data": [...]}]}` — y se dibuja con Chart.js en los colores de la app; si el JSON no vale, sale «(Gráfica no válida)». No se deja pasar HTML ni enlaces que no sean http(s). Si las librerías no cargan (sin conexión), el texto sale tal cual. Tus mensajes no se interpretan.
 
 Puede cambiar datos con herramientas: `crear_pauta`, `modificar_pauta`, `borrar_pauta`, `registrar_toma`, `quitar_toma` y `modificar_intervalo`. Cada cambio pide confirmación («El asistente quiere hacer un cambio» · Cancelar / Aplicar) antes de aplicarse; lo aplicado pasa por la misma limpieza que el resto de los datos. En la conversación queda una línea por cambio, aplicado o cancelado.
 
@@ -117,5 +120,5 @@ Una cápsula blanca sobre un degradado azul (alrededor del color principal, #6dd
 ## Archivos
 
 - `index.html` — estructura de la interfaz (toma, gestor de pautas con costes, intervalos, asistente, datos, exportar y zona de peligro, editores de pauta, de programación y de intervalo, registro de una pauta, asistente, ficha, alerta y action sheet) y el CSS mínimo.
-- `app.js` — estado, limpieza y almacenamiento de datos, intervalos, programaciones, render, orden, costes, registro, asistente, CSV y PDF.
+- `app.js` — estado, limpieza y almacenamiento de datos, intervalos, programaciones, render, orden, costes, registro, asistente (con sugerencias, Markdown y gráficas), CSV y PDF.
 - Iconos y manifest: ver «Iconos».
