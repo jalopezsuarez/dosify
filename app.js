@@ -764,7 +764,7 @@ for (const k of AI_FIELDS) {
 }
 
 const chatModal = $('#chat'), chatBody = $('#chat-body'), chatInput = $('#chat-input');
-// La conversación se guarda (aparte de los datos y fuera del CSV) hasta pulsar «Nueva».
+// La conversación se guarda (aparte de los datos y fuera del CSV) hasta pulsar «Limpiar».
 const CHAT_KEY = 'dosify-conversacion';
 let { chat = [], chatView = [] } = (() => { try { const v = JSON.parse(localStorage.getItem(CHAT_KEY)); return Array.isArray(v?.chat) && Array.isArray(v?.chatView) ? v : {}; } catch { return {}; } })();
 let chatBusy = false;
