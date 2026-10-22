@@ -405,6 +405,7 @@ const renderIntervals = () => { $('#intervals').innerHTML = state.intervals.map(
 function ask(header, handler) {
   const alert = $('#confirm');
   alert.header = header;
+  alert.message = '';
   alert.buttons = [{ text: 'Cancelar', role: 'cancel' }, { text: 'Aceptar', role: 'destructive', handler }];
   alert.present();
 }
@@ -614,7 +615,7 @@ function openEditor(med = {}) {
     || empty('No hay intervalos visibles.');
   plan = structuredClone(med.plan ?? []);
   renderPlan();
-  $('#delete').classList.toggle('ion-hide', !editing);
+  for (const id of ['#delete', '#delete-header']) $(id).classList.toggle('ion-hide', !editing);
   $('#record-section').classList.toggle('ion-hide', !editing);
   $('#record-count').textContent = editing ? `${state.log.filter(e => e.id === editing).length} tomas` : '';
   rememberScroll();
@@ -747,6 +748,160 @@ function saveIntervalEditor() {
   intervalEditor.dismiss();
 }
 
+// ---------- Asistente ----------
+
+// Conversación con un modelo compatible con OpenAI (POST {url}/chat/completions). La configuración (URL base, API key y
+// modelo) se guarda aparte de los datos, solo en este navegador, y no va en el CSV. En cada petición el asistente recibe
+// todos los datos de la app; puede cambiarlos con herramientas, y cada cambio pide confirmación antes de aplicarse.
+const AI_KEY = 'dosify-asistente';
+// Sin valores por defecto: hasta rellenar los tres campos, el asistente no se puede usar.
+const AI_FIELDS = ['url', 'key', 'model'];
+const ai = (() => { let v = {}; try { v = JSON.parse(localStorage.getItem(AI_KEY)) ?? {}; } catch {} return Object.fromEntries(AI_FIELDS.map(k => [k, text(v[k]).trim()])); })();
+const aiField = name => $(`#assistant-settings [name="${name}"]`);
+for (const k of AI_FIELDS) {
+  aiField(k).value = ai[k];
+  aiField(k).addEventListener('ionChange', () => { ai[k] = String(aiField(k).value ?? '').trim(); localStorage.setItem(AI_KEY, JSON.stringify(ai)); });
+}
+
+const chatModal = $('#chat'), chatBody = $('#chat-body'), chatInput = $('#chat-input');
+// La conversación se guarda (aparte de los datos y fuera del CSV) hasta pulsar «Nueva».
+const CHAT_KEY = 'dosify-conversacion';
+let { chat = [], chatView = [] } = (() => { try { const v = JSON.parse(localStorage.getItem(CHAT_KEY)); return Array.isArray(v?.chat) && Array.isArray(v?.chatView) ? v : {}; } catch { return {}; } })();
+let chatBusy = false;
+const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, chatView }));
+
+// Lo que sabe el asistente: qué es la app, cómo son los datos, cálculos ya hechos por pauta y todos los datos en JSON.
+function systemPrompt() {
+  const now = new Date();
+  const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), terminada: finished(m),
+    dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
+  return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en texto plano sin Markdown. Usa solo los datos que te doy; si algo no está, dilo. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
+Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
+Datos:
+- intervals: intervalos de toma (id fijo i1, i2, i3; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
+- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, slots = ids de sus intervalos, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days }). Cada día vale la última programación que haya empezado, si su duración llega a ese día; la dosis empieza por la cantidad de cada toma. Una pauta sin programaciones sale todos los días, sin dosis.
+- log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = pauta, slot = intervalo, name, dose y notes = la pauta tal como se tomó).
+Cálculos por pauta (dosis de hoy, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase):
+${JSON.stringify(summary)}
+Datos completos:
+${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
+Para cambiar datos usa las herramientas; el usuario confirma cada cambio antes de aplicarlo. Usa los id que ves en los datos.`;
+}
+
+// Herramientas: qué puede cambiar el asistente. Cada una devuelve el texto que se confirma y lo que hace al aplicarse.
+const stringProp = description => ({ type: 'string', description });
+const medProps = {
+  name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
+  slots: { type: 'array', items: { type: 'string', enum: IDS }, description: 'Ids de sus intervalos' },
+  cost: { type: 'integer', description: '€ por envase' }, units: { type: 'integer', description: 'Dosis por envase' },
+  plan: { type: 'array', description: 'Programaciones (sustituyen a las que haya)', items: { type: 'object', required: ['dose', 'start', 'days'],
+    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' } } } },
+};
+const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
+const TOOLS = [
+  tool('crear_pauta', 'Crea una pauta', medProps, ['name']),
+  tool('modificar_pauta', 'Cambia los campos indicados de una pauta', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
+  tool('borrar_pauta', 'Borra una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
+  tool('registrar_toma', 'Marca una toma como tomada', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id', 'slot', 'day']),
+  tool('quitar_toma', 'Desmarca una toma (la deja pendiente)', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD') }, ['id', 'slot', 'day']),
+  tool('modificar_intervalo', 'Cambia un intervalo', { id: { type: 'string', enum: IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
+];
+const pick = (a, keys) => Object.fromEntries(keys.filter(k => k in a).map(k => [k, a[k]]));
+const MED_KEYS = Object.keys(medProps);
+const medName = id => state.meds.find(m => m.id === id)?.name ?? id;
+const ACTIONS = {
+  crear_pauta: a => ({ text: `Crear la pauta «${a.name}»`, run: () => state.meds.push({ id: newId(), notes: '', refs: '', memo: '', slots: [], cost: '', units: '', plan: [], ...pick(a, MED_KEYS) }) }),
+  modificar_pauta: a => state.meds.some(m => m.id === a.id) && ({ text: `Cambiar la pauta «${medName(a.id)}»: ${Object.keys(pick(a, MED_KEYS)).join(', ')}`, run: () => Object.assign(state.meds.find(m => m.id === a.id), pick(a, MED_KEYS)) }),
+  borrar_pauta: a => state.meds.some(m => m.id === a.id) && ({ text: `Borrar la pauta «${medName(a.id)}»`, run: () => { state.meds = state.meds.filter(m => m.id !== a.id); } }),
+  registrar_toma: a => state.meds.some(m => m.id === a.id) && IDS.includes(a.slot) && date(a.day) && ({
+    text: `Marcar «${medName(a.id)}» en ${label(a.slot)} el ${shortDate(a.day)}`,
+    run: () => {
+      if (state.log.some(e => e.id === a.id && e.slot === a.slot && e.day === a.day)) return;
+      const at = /^\d{1,2}:\d{2}$/.test(a.hora ?? '') ? new Date(`${a.day}T${a.hora.padStart(5, '0')}`) : new Date();
+      state.log.unshift({ at: at.toISOString(), day: a.day, id: a.id, slot: a.slot, ...snapOn(state.meds.find(m => m.id === a.id), a.day) });
+    },
+  }),
+  quitar_toma: a => ({ text: `Dejar pendiente «${medName(a.id)}» en ${IDS.includes(a.slot) ? label(a.slot) : a.slot} el ${date(a.day) ? shortDate(a.day) : a.day}`,
+    run: () => { state.log = state.log.filter(e => !(e.id === a.id && e.slot === a.slot && e.day === a.day)); } }),
+  modificar_intervalo: a => IDS.includes(a.id) && ({ text: `Cambiar el intervalo «${label(a.id)}»`, run: () => Object.assign(interval(a.id), pick(a, ['name', 'start', 'end', 'visible'])) }),
+};
+
+// Pide confirmación de un cambio con la alerta de la app; resuelve true si se acepta.
+const confirmChange = message => new Promise(resolve => {
+  const alert = $('#confirm');
+  Object.assign(alert, { header: 'El asistente quiere hacer un cambio', message, buttons: [
+    { text: 'Cancelar', role: 'cancel', handler: () => resolve(false) },
+    { text: 'Aplicar', handler: () => resolve(true) },
+  ] });
+  alert.present();
+  alert.onDidDismiss().then(({ role }) => role === 'backdrop' && resolve(false));
+});
+
+const bubble = v => ({
+  user: `<ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>`,
+  assistant: `<ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(v.text)}</ion-label></ion-item>`,
+  action: `<ion-item lines="none"><ion-icon slot="start" name="${v.ok ? 'checkmark-circle' : 'close-circle'}" color="${v.ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(v.text)}</ion-label></ion-item>`,
+  error: `<ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item>`,
+}[v.who]);
+function renderChat() {
+  saveChat();
+  const ready = ai.key && ai.model && ai.url;
+  chatBody.innerHTML = (chatView.length ? chatView.map(v => `<ion-list inset="true">${bubble(v)}</ion-list>`).join('')
+    : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus pautas, tomas, consumos o costes. También puedo cambiar datos (te pediré confirmación).' : 'Configura el asistente en Pautas › Asistente (URL base, API key y modelo).')}</ion-list>`)
+    + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>' : '');
+  $('#chat-send').disabled = chatBusy || !ready;
+  chatBody.scrollToBottom(200);
+}
+
+async function askModel() {
+  const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` },
+    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...chat], tools: TOOLS }),
+  });
+  if (!res.ok) throw new Error(`El servicio respondió ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const message = (await res.json()).choices?.[0]?.message;
+  if (!message) throw new Error('El servicio no devolvió ninguna respuesta.');
+  return message;
+}
+
+// Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.
+async function sendChat() {
+  const question = String(chatInput.value ?? '').trim();
+  if (!question || chatBusy) return;
+  chatInput.value = '';
+  chat.push({ role: 'user', content: question });
+  chatView.push({ who: 'user', text: question });
+  chatBusy = true; renderChat();
+  try {
+    for (let turn = 0; turn < 8; turn++) {
+      const message = await askModel();
+      chat.push({ role: 'assistant', content: message.content ?? '', ...(message.tool_calls?.length ? { tool_calls: message.tool_calls } : {}) });
+      if (message.content) chatView.push({ who: 'assistant', text: message.content });
+      if (!message.tool_calls?.length) break;
+      for (const call of message.tool_calls) {
+        let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
+        const action = ACTIONS[call.function.name]?.(args);
+        let result;
+        if (!action) result = { ok: false, error: 'Datos no válidos o no encontrados' };
+        else if (await confirmChange(action.text)) {
+          action.run();
+          Object.assign(state, clean(state)); save(); render();
+          chatView.push({ who: 'action', ok: true, text: action.text });
+          result = { ok: true };
+        } else {
+          chatView.push({ who: 'action', ok: false, text: `${action.text} (cancelado)` });
+          result = { ok: false, error: 'El usuario no lo ha aceptado' };
+        }
+        chat.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+      }
+      renderChat();
+    }
+  } catch (err) {
+    chatView.push({ who: 'error', text: err.message });
+  }
+  chatBusy = false; renderChat();
+}
+
 // ---------- Wiring ----------
 
 function render() {
@@ -857,6 +1012,13 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
   render();
   editor.dismiss();
 });
+
+$('#assistant').onclick = () => { renderChat(); chatModal.present(); };
+$('#chat-close').onclick = () => chatModal.dismiss();
+$('#chat-new').onclick = () => { chat = []; chatView = []; renderChat(); };
+$('#chat-send').onclick = sendChat;
+// Intro envía; Mayúsculas + Intro hace un salto de línea.
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && render());
 $('#day').setAttribute('value', today());

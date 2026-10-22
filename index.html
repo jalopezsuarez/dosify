@@ -23,7 +23,7 @@
       --ion-color-primary-shade: #60b7db;
       --ion-color-primary-tint: #7cd5fa;
     }
-    /* Color propio «teal» (#78b7af) para el icono de información, según «Adding colors» de Ionic */
+    /* Color propio «teal» (#78b7af) para el icono de información, los costes y tus mensajes al asistente, según «Adding colors» de Ionic */
     :root {
       --ion-color-teal: #78b7af;
       --ion-color-teal-rgb: 120, 183, 175;
@@ -70,6 +70,9 @@
 
   <ion-header>
     <ion-toolbar>
+      <ion-buttons slot="start">
+        <ion-button id="assistant"><ion-icon slot="start" name="sparkles-outline"></ion-icon>Asistente</ion-button>
+      </ion-buttons>
       <ion-title>Toma</ion-title>
       <ion-buttons slot="end">
         <ion-button id="manage"><ion-icon slot="start" name="list"></ion-icon>Pautas</ion-button>
@@ -107,6 +110,12 @@
       <ion-list inset="true">
         <ion-reorder-group id="intervals" disabled="false"></ion-reorder-group>
       </ion-list>
+      <ion-list-header><ion-label>Asistente</ion-label></ion-list-header>
+      <ion-list inset="true" id="assistant-settings">
+        <ion-item><ion-input name="url" type="url" inputmode="url" label="URL base (compatible con OpenAI)" label-placement="stacked" placeholder="https://api.openai.com/v1"></ion-input></ion-item>
+        <ion-item><ion-input name="key" type="password" label="API key" label-placement="stacked" placeholder="sk-…"></ion-input></ion-item>
+        <ion-item><ion-input name="model" label="Modelo" label-placement="stacked" placeholder="gpt-4o-mini"></ion-input></ion-item>
+      </ion-list>
       <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (intervalos, pautas y tomas)</ion-label></ion-item>
@@ -117,7 +126,7 @@
         <ion-item><ion-select id="pdf-month" label="Seleccionar mes" interface="action-sheet" cancel-text="Cancelar"></ion-select></ion-item>
         <ion-item button id="export-pdf"><ion-icon slot="start" name="document-text-outline"></ion-icon><ion-label>Exportar PDF</ion-label></ion-item>
       </ion-list>
-      <ion-list-header><ion-label>Zona peligrosa</ion-label></ion-list-header>
+      <ion-list-header><ion-label>Zona de peligro</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item button detail="false" id="clear-log"><ion-label color="danger" class="ion-text-center">Borrar registro de tomas</ion-label></ion-item>
       </ion-list>
@@ -158,6 +167,7 @@
           <ion-item button="true" id="open-record"><ion-label>Ver registro</ion-label><ion-note slot="end" id="record-count"></ion-note></ion-item>
         </ion-list>
       </div>
+      <ion-list-header id="delete-header"><ion-label>Zona de peligro</ion-label></ion-list-header>
       <ion-list inset="true" id="delete">
         <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar pauta</ion-label></ion-item>
       </ion-list>
@@ -172,6 +182,23 @@
       </ion-toolbar>
     </ion-header>
     <ion-content id="info-body" color="light"></ion-content>
+  </ion-modal>
+
+  <ion-modal id="chat">
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="chat-close">Cerrar</ion-button></ion-buttons>
+        <ion-title>Asistente</ion-title>
+        <ion-buttons slot="end"><ion-button id="chat-new">Nueva</ion-button></ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content id="chat-body" color="light"></ion-content>
+    <ion-footer>
+      <ion-toolbar>
+        <ion-textarea id="chat-input" class="ion-padding-horizontal" aria-label="Mensaje" placeholder="Pregunta sobre tus pautas…" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
+        <ion-buttons slot="end"><ion-button id="chat-send" aria-label="Enviar"><ion-icon slot="icon-only" name="send"></ion-icon></ion-button></ion-buttons>
+      </ion-toolbar>
+    </ion-footer>
   </ion-modal>
 
   <ion-modal id="record">
