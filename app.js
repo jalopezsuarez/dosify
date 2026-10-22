@@ -264,7 +264,7 @@ async function renderToma() {
     ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`; });
 }
 
-// Ficha de la pauta (dosis, indicaciones, referencias y notas) para leerla con calma; los enlaces se pueden pulsar.
+// Ficha de la pauta (dosis, indicaciones, referencias, notas y registro) para leerla con calma; los enlaces se pueden pulsar.
 const info = $('#info');
 const linkify = text => esc(text)
   .replace(/\n/g, '<br>')
@@ -275,9 +275,16 @@ const section = (title, text) => `
     <ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(text) || '—'}</ion-label></ion-item>
   </ion-list>`;
 
+// Al final de la ficha, como en el editor de la pauta: «Ver registro», con el número de tomas (si la pauta existe).
+const recordSection = id => state.meds.some(m => m.id === id) ? `
+  <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
+  <ion-list inset="true">
+    <ion-item button="true" data-record="${id}"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>
+  </ion-list>` : '';
+
 function openInfo(m) {
   $('#info-title').textContent = m.name;
-  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + section('Referencias', m.refs) + section('Notas', m.memo);
+  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + section('Referencias', m.refs) + section('Notas', m.memo) + recordSection(m.id);
   info.present();
 }
 
@@ -345,6 +352,8 @@ function runsOut(m) {
   const left = m.units - sum(taken) % m.units - pendingToday;
   return addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
 }
+const dayMonth = key => `${Number(key.slice(8))}/${key.slice(5, 7)}`; // «5/01», sin año
+const dayMonthYear = key => key.slice(0, 4) === today().slice(0, 4) ? dayMonth(key) : `${dayMonth(key)}/${key.slice(0, 4)}`; // con año solo si no es el actual
 // Aviso de que el envase se acaba: menos de 7 días. Pone en rosa el (i) de la toma y la fecha de fin de la pauta.
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
 const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
@@ -353,7 +362,7 @@ const supplyColor = id => { const m = state.meds.find(x => x.id === id); return 
 const endNote = id => {
   const m = state.meds.find(x => x.id === id), end = m && runsOut(m);
   if (!end) return '';
-  return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${Number(end.slice(8))}/${end.slice(5, 7)}</ion-note>`;
+  return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${dayMonth(end)}</ion-note>`;
 };
 // Línea de costes de la fila de una pauta: «30 €/ud · 15 €/mes · 1 €/día», con lo que se pueda calcular.
 function costLine(m) {
@@ -684,8 +693,8 @@ function savePlan() {
 // Todas las tomas de la pauta: resumen (desde cuándo, cuántas, dosis y coste estimado) y, debajo, agrupadas por la
 // programación que valía cada día (de la más reciente a la más antigua; las que no tenían, en «Sin programación»).
 const recordModal = $('#record');
-function openRecord() {
-  const m = state.meds.find(x => x.id === editing);
+function openRecord(id) {
+  const m = state.meds.find(x => x.id === id);
   const taken = state.log.filter(e => e.id === m.id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
   const units = taken.reduce((n, e) => n + amount(e.dose), 0);
   const item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
@@ -698,7 +707,7 @@ function openRecord() {
   const groups = new Map();
   for (const e of taken) {
     const p = planOn(m, e.day), key = p ? `${p.start}|${p.days}` : '';
-    if (!groups.has(key)) groups.set(key, { title: p ? `${esc(p.dose)} · ${shortDate(p.start)}` : 'Sin programación', rows: [] });
+    if (!groups.has(key)) groups.set(key, { title: p ? `${dayMonthYear(p.start)} · ${esc(p.dose)}` : 'Sin programación', rows: [] });
     groups.get(key).rows.push(e);
   }
   $('#record-title').textContent = m.name;
@@ -706,7 +715,7 @@ function openRecord() {
     <ion-list inset="true">${summary.map(([k, v]) => item(k, v)).join('')}</ion-list>
     ${[...groups.values()].map(g => `
       <ion-list-header><ion-label>${g.title} (${g.rows.length})</ion-label></ion-list-header>
-      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${shortDate(e.day)} · ${esc(label(e.slot))}</h2><p>${time(e.at)} · ${esc(e.dose)}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
+      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${dayMonthYear(e.day)} · ${time(e.at).replace(/^0/, '')}</h2><p>${esc(label(e.slot))} · ${esc(e.dose)}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
     || '<ion-list inset="true">' + empty('Sin tomas registradas.') + '</ion-list>'}`;
   recordModal.present();
 }
@@ -776,6 +785,7 @@ $('#toma').addEventListener('ionReorderEnd', e => {
   e.detail.complete();
 });
 $('#info-close').onclick = () => info.dismiss();
+$('#info-body').addEventListener('click', e => { const id = e.target.closest('[data-record]')?.dataset.record; if (id) openRecord(id); });
 
 $('#manage').onclick = () => manager.present();
 $('#close').onclick = () => manager.dismiss();
@@ -817,7 +827,7 @@ $('#intervals').addEventListener('ionReorderEnd', e => {
   renderToma();
   renderPautas();
 });
-$('#open-record').onclick = openRecord;
+$('#open-record').onclick = () => openRecord(editing);
 $('#record-close').onclick = () => recordModal.dismiss();
 $('#plan-list').addEventListener('click', e => {
   const i = e.target.closest('[data-plan]')?.dataset.plan;
