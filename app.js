@@ -651,7 +651,6 @@ const shortDate = key => fromKey(key).toLocaleDateString('es');
 // Cada programación con su fecha de inicio, duración y hasta cuándo vale (antes, si la siguiente empieza antes).
 // Hasta qué día vale una programación: su último día o, si la siguiente empieza antes, la víspera de esta.
 const planUntil = (plans, p) => { const next = plans.find(q => q.start > p.start); return next && next.start <= planEnd(p) ? addDays(next.start, -1) : planEnd(p); };
-const planDates = (plans, p) => `${shortDate(p.start)} – ${shortDate(planUntil(plans, p))}`;
 
 function renderPlan() {
   plan = cleanPlan(plan);
@@ -699,7 +698,7 @@ function openRecord() {
   const groups = new Map();
   for (const e of taken) {
     const p = planOn(m, e.day), key = p ? `${p.start}|${p.days}` : '';
-    if (!groups.has(key)) groups.set(key, { title: p ? `${esc(p.dose)} · ${planDates(m.plan, p)}` : 'Sin programación', rows: [] });
+    if (!groups.has(key)) groups.set(key, { title: p ? `${esc(p.dose)} · ${shortDate(p.start)}` : 'Sin programación', rows: [] });
     groups.get(key).rows.push(e);
   }
   $('#record-title').textContent = m.name;
@@ -707,7 +706,7 @@ function openRecord() {
     <ion-list inset="true">${summary.map(([k, v]) => item(k, v)).join('')}</ion-list>
     ${[...groups.values()].map(g => `
       <ion-list-header><ion-label>${g.title} (${g.rows.length})</ion-label></ion-list-header>
-      <ion-list inset="true">${g.rows.map(e => item(`${shortDate(e.day)} · ${esc(label(e.slot))}`, `${time(e.at)} · ${esc(e.dose)}`)).join('')}</ion-list>`).join('')
+      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${shortDate(e.day)} · ${esc(label(e.slot))}</h2><p>${time(e.at)} · ${esc(e.dose)}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
     || '<ion-list inset="true">' + empty('Sin tomas registradas.') + '</ion-list>'}`;
   recordModal.present();
 }
