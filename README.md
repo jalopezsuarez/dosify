@@ -1,6 +1,6 @@
 # Dosify
 
-App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) 9 (web components por CDN) como única dependencia. Sin build y sin frameworks. Todo se dibuja con componentes, propiedades y clases de utilidad de Ionic; el CSS propio es solo el estrictamente necesario:
+App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con [Ionic Framework](https://ionicframework.com) 9 (web components por CDN) como única dependencia. Sin build y sin frameworks; lo único externo es, si se configura, el servicio de IA del asistente. Todo se dibuja con componentes, propiedades y clases de utilidad de Ionic; el CSS propio es solo el estrictamente necesario:
 
 - las variables de tema de Ionic para el color principal (#6dd0f9) y dos colores adicionales definidos como documenta Ionic: `teal` (#78b7af, icono de información, costes de cada pauta y tus mensajes en el asistente) y `rose` (#e47969, envase al que le quedan menos de 7 días);
 - una clase de peso medio para los títulos (Ionic no trae utilidad de `font-weight`);
@@ -48,7 +48,7 @@ Se puede instalar como app: en iOS, Safari › Compartir › «Añadir a pantall
 
 Al soltar una fila tras arrastrarla, solo se guarda el nuevo orden: la lista no se repinta, así el scroll no salta. Al cerrar el editor de una pauta o de un intervalo (guardando o cancelando), la lista vuelve a la posición en que estaba.
 
-Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta.
+Todo se guarda en el `localStorage` del navegador. No hay servidor ni cuenta; solo el asistente, si se configura, envía los datos al servicio de IA elegido.
 
 ## Asistente
 
