@@ -122,12 +122,6 @@
       <ion-list inset="true">
         <ion-reorder-group id="intervals" disabled="false"></ion-reorder-group>
       </ion-list>
-      <ion-list-header><ion-label>Asistente</ion-label></ion-list-header>
-      <ion-list inset="true" id="assistant-settings">
-        <ion-item><ion-input name="url" type="url" inputmode="url" label="URL base (compatible con OpenAI)" label-placement="stacked" placeholder="https://api.openai.com/v1"></ion-input></ion-item>
-        <ion-item><ion-input name="key" type="password" label="API key" label-placement="stacked" placeholder="sk-…"></ion-input></ion-item>
-        <ion-item><ion-input name="model" label="Modelo" label-placement="stacked" placeholder="gpt-4o-mini"></ion-input></ion-item>
-      </ion-list>
       <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (intervalos, pautas y tomas)</ion-label></ion-item>
@@ -137,6 +131,12 @@
       <ion-list inset="true">
         <ion-item><ion-select id="pdf-month" label="Seleccionar mes" interface="action-sheet" cancel-text="Cancelar"></ion-select></ion-item>
         <ion-item button id="export-pdf"><ion-icon slot="start" name="document-text-outline"></ion-icon><ion-label>Exportar PDF</ion-label></ion-item>
+      </ion-list>
+      <ion-list-header><ion-label>Asistente</ion-label></ion-list-header>
+      <ion-list inset="true" id="assistant-settings">
+        <ion-item><ion-input name="url" type="url" inputmode="url" label="URL base (compatible con OpenAI)" label-placement="stacked" placeholder="https://api.openai.com/v1"></ion-input></ion-item>
+        <ion-item><ion-input name="key" type="password" label="API key" label-placement="stacked" placeholder="sk-…"></ion-input></ion-item>
+        <ion-item><ion-input name="model" label="Modelo" label-placement="stacked" placeholder="gpt-4o-mini"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Zona de peligro</ion-label></ion-list-header>
       <ion-list inset="true">
