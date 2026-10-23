@@ -825,11 +825,9 @@ Cálculos por pauta (dosis de hoy, dosis al día, costes, fin del envase actual 
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
-En cuanto te pidan crear, añadir, modificar, cambiar, editar, borrar, eliminar, marcar o quitar algo, llama a la herramienta en ese mismo turno, sin pedir antes más datos ni confirmación y sin describir lo que harías: cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Para varios elementos, una llamada por elemento (se muestran como una lista). Si no está claro a qué pauta se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.${changeHint()}`;
+Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; una pauta con el mismo nombre que ya está en los datos se modifica, no se crea otra.
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar la pauta, la toma o el intervalo), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué pauta se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.`;
 }
-// Si el último mensaje parece una petición de cambio, se le recuerda al asistente que debe proponerlo ya.
-const CHANGE_VERBS = /\b(cre[ae]|añad|agreg|modific|cambi|edit|actualiz|borr|elimin|quit|marc|registr|apunt|pon(?:er|me|le)?)\w*/i;
-const changeHint = () => { const last = [...chat].reverse().find(m => m.role === 'user'); return last && CHANGE_VERBS.test(last.content) ? '\nEl último mensaje parece una petición de crear, cambiar o borrar algo: si lo es, llama a la herramienta ahora, sin preguntar.' : ''; };
 
 // Herramientas: qué puede cambiar el asistente. Cada llamada se convierte en una propuesta: una tarjeta editable en la
 // conversación (campos, chips de intervalos, filas de programación) que el usuario guarda o descarta.
@@ -843,12 +841,12 @@ const medProps = {
 };
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const TOOLS = [
-  tool('crear_pauta', 'Úsala en cuanto pidan crear o añadir una pauta o producto: abre un formulario editable con lo que propongas', medProps, ['name']),
-  tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, intervalos, coste…): abre un formulario con la pauta y tus cambios', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
+  tool('crear_pauta', 'Úsala en cuanto pidan crear o añadir una pauta o producto, aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', medProps),
+  tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, intervalos, coste…), aunque no digan el valor nuevo: abre un formulario con la pauta y tus cambios, si los hay', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
   tool('borrar_pauta', 'Úsala en cuanto pidan borrar o eliminar una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
-  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id', 'slot', 'day']),
-  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente)', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD') }, ['id', 'slot', 'day']),
-  tool('modificar_intervalo', 'Úsala en cuanto pidan cambiar un intervalo (nombre, horas, visible)', { id: { type: 'string', enum: IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
+  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan intervalo ni día (el formulario sale con el primero de la pauta y hoy)', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS, description: 'Intervalo; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
+  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan intervalo ni día', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS, description: 'Intervalo; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
+  tool('modificar_intervalo', 'Úsala en cuanto pidan cambiar un intervalo (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
 
 // Formularios de las propuestas. Para cada herramienta: draft (los datos editables a partir de lo que propone el
@@ -958,6 +956,7 @@ function describe(tool, d) {
   return d.name;
 }
 function decide(v, saved) {
+  if (v.status !== 'pending') return; // ya decidida (p. ej. doble toque en «Guardar»): no se aplica dos veces
   const form = FORMS[v.tool];
   if (saved) {
     const summary = form.apply(v.draft);
@@ -972,6 +971,7 @@ function decide(v, saved) {
 }
 // Guarda una propuesta si sus datos valen; si no, marca en rojo los campos que fallan.
 function trySave(v, card) {
+  if (v.status !== 'pending') return false;
   const bad = FORMS[v.tool].validate(v.draft);
   for (const f of bad) {
     const [field, row] = f.split(':');
@@ -1137,6 +1137,8 @@ async function askModel() {
   return message;
 }
 
+// Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
+const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${state.meds.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ninguna pauta: si hace falta, créala.';
 // Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.
 async function sendChat() {
   const question = String(chatInput.value ?? '').trim();
@@ -1156,11 +1158,14 @@ async function sendChat() {
       if (message.content) chatView.push({ who: 'assistant', text: message.content });
       if (!message.tool_calls?.length) break;
       // Cada herramienta pasa a ser una propuesta editable; se espera a que el usuario decida sobre todas.
-      const waits = [];
+      const waits = [], seen = new Set();
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
+        const key = `${call.function.name} ${JSON.stringify(args)}`;
+        if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya está propuesta en este turno, no se propone otra vez.'); continue; }
+        seen.add(key);
         const form = FORMS[call.function.name], draft = form?.draft(args);
-        if (!draft) { pushToolResult(call.id, 'No se ha podido proponer: datos no válidos o no encontrados.'); continue; }
+        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${form ? `no existe ${call.function.name === 'modificar_intervalo' ? 'ese intervalo' : 'ninguna pauta con ese id'}. ${existing()}` : 'herramienta desconocida.'}`); continue; }
         chatView.push({ who: 'proposal', id: call.id, tool: call.function.name, draft, status: 'pending' });
         waits.push(new Promise(resolve => resolvers.set(call.id, resolve)));
       }
