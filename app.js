@@ -856,16 +856,16 @@ const TOOLS = [
 const str = v => v == null ? '' : String(v);
 const med = id => state.meds.find(m => m.id === id);
 const medFields = d => `
-  <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" error-text="Pon un nombre" value="${esc(d.name)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
   <ion-item><ion-textarea data-field="refs" label="Referencias" label-placement="stacked" auto-grow="true" value="${esc(d.refs)}"></ion-textarea></ion-item>
   <ion-item><ion-textarea data-field="memo" label="Notas" label-placement="stacked" auto-grow="true" value="${esc(d.memo)}"></ion-textarea></ion-item>
   <ion-item lines="none"><ion-label><p>Intervalos</p><p>${visibleIntervals().map(iv => chipToggle('slot', iv.id, label(iv.id), d.slots.includes(iv.id))).join('')}</p></ion-label></ion-item>
-  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" error-text="Número entero, o vacío" value="${esc(d.cost)}"></ion-input></ion-item>
-  <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" error-text="Número entero, o vacío" value="${esc(d.units)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" value="${esc(d.units)}"></ion-input></ion-item>
   ${d.plan.map((p, i) => `
-  <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" error-text="Empieza por un número" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
-  <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" error-text="Pon la fecha" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" error-text="Días, un número entero" value="${esc(p.days)}"></ion-input></ion-item>`).join('')}
+  <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
+  <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>`).join('')}
   <ion-item lines="none"><ion-label><p>${chipAction('add-plan', 'Añadir programación', 'add-outline')}</p></ion-label></ion-item>`;
 const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
 const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
@@ -881,7 +881,7 @@ const medValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.re
 const slotChips = (d, slots = visibleIntervals().map(iv => iv.id)) => slots.map(id => chipToggle('pick-slot', id, label(id), d.slot === id)).join('');
 const tomaFields = (d, withTime) => `
   <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${slotChips(d)}</p></ion-label></ion-item>
-  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" error-text="Pon el día" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" error-text="Hora HH:MM, o vacía" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
+  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
 const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.name, slot: IDS.includes(a.slot) ? a.slot : m.slots[0] ?? IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
 const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${d.slots.map(label).join(', ') || 'sin intervalos'}`;
@@ -930,7 +930,7 @@ const FORMS = {
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
     fields: d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
-  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" error-text="De 0 a 24" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" error-text="De 0 a 24" value="${esc(d.end)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" value="${esc(d.end)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>${chipToggle('visible', 'visible', 'Visible en la toma', d.visible)}</p></ion-label></ion-item>`,
     validate: d => [...(hour(d.start) === null ? ['start'] : []), ...(hour(d.end) === null ? ['end'] : [])],
     apply: d => { Object.assign(interval(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Intervalo «${label(d.id)}» cambiado`; },
@@ -970,14 +970,20 @@ function decide(v, saved) {
   }
   resolvers.get(v.id)?.(); resolvers.delete(v.id);
 }
-// Guarda una propuesta si sus datos valen; si no, marca en rojo los campos que fallan.
+// Guarda una propuesta si sus datos valen; si no, marca en rojo los campos que fallan con su mensaje debajo. El mensaje
+// (errorText) se pone solo entonces y se quita al escribir: con él fijo, Ionic dibuja debajo del campo una sección con
+// su propio borde aunque el mensaje esté oculto, y el campo sale con dos líneas.
+const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', hora: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24' };
+const PLAN_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero' };
 function trySave(v, card) {
   if (v.status !== 'pending') return false;
   const bad = FORMS[v.tool].validate(v.draft);
   for (const f of bad) {
     const [field, row] = f.split(':');
     const el = !card ? null : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-plan="${field}"][data-row="${row}"]`);
-    if (card) el?.classList.add('ion-invalid', 'ion-touched');
+    if (!el) continue;
+    el.errorText = (row === undefined ? FIELD_ERRORS : PLAN_ERRORS)[field] ?? 'Revisa este dato';
+    el.classList.add('ion-invalid', 'ion-touched');
   }
   if (bad.length) return false;
   decide(v, true);
@@ -1333,7 +1339,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   const { field, plan, row } = e.target.dataset, value = String(e.target.value ?? '');
   if (field) p.v.draft[field] = value;
   if (plan) p.v.draft.plan[Number(row)][plan] = value;
-  e.target.classList.remove('ion-invalid');
+  e.target.classList.remove('ion-invalid'); e.target.errorText = undefined;
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
