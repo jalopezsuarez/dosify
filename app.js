@@ -755,7 +755,7 @@ function openRecord(id) {
     <ion-list inset="true">${summary.map(([k, v]) => item(k, v)).join('')}</ion-list>
     ${[...groups.values()].map(g => `
       <ion-list-header><ion-label>${g.title} (${g.rows.length})</ion-label></ion-list-header>
-      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${dayMonthYear(e.day)} · ${time(e.at).replace(/^0/, '')}</h2><p>${esc(label(e.slot))} · ${esc(e.dose)}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
+      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${dayMonthYear(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at).replace(/^0/, '')} · ${esc(label(e.slot))}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
     || '<ion-list inset="true">' + empty('Sin tomas registradas.') + '</ion-list>'}`;
   recordModal.present();
 }
