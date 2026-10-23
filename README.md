@@ -6,7 +6,7 @@ App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con tr
 - una clase de peso medio para los títulos (Ionic no trae utilidad de `font-weight`);
 - ocultar la barra de scroll del selector de días;
 - permitir seleccionar texto en la ficha de la pauta (en móvil Ionic lo impide en toda la app);
-- en el asistente, el margen de la caja de escribir (con las variables `--padding-start` y `--padding-end` de `ion-textarea`) (Ionic no trae utilidad para ello), y en sus respuestas, párrafos con un poco de espacio, tablas con bordes finos (con scroll horizontal si no caben) y el alto de las gráficas.
+- en el asistente, el margen de la caja de escribir (con las variables `--padding-start` y `--padding-end` de `ion-textarea`) (Ionic no trae utilidad para ello), y en sus respuestas, párrafos con un poco de espacio, tablas con bordes finos (con scroll horizontal si no caben), el alto de las gráficas y los chips de las propuestas algo más grandes (`ion-chip` no tiene tamaño configurable).
 
 Tema claro u oscuro según el sistema (paleta `dark.system` de Ionic) y estilo según la plataforma que detecta Ionic: en iOS, listas agrupadas (inset); en Android, Material.
 
