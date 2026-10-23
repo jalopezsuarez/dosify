@@ -1119,9 +1119,9 @@ function renderChat() {
   chatBody.innerHTML = (chatView.length ? chatBlocks() + allRow()
     : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus pautas, tomas, consumos o costes. También puedo crear o cambiar datos: te lo propongo en un formulario que revisas y guardas.' : 'Configura el asistente en Pautas › Asistente (URL base, API key y modelo).')}</ion-list>`)
     + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
-      : awaiting ? `<ion-list inset="true">${empty('Guarda o descarta las propuestas para continuar.')}</ion-list>`
+      : awaiting ? `<ion-list inset="true">${empty('Guarda o descarta las propuestas para continuar; si envías otro mensaje, se descartan.')}</ion-list>`
       : ready ? suggestionList(suggestions(chatView.length ? 3 : 4)) : '');
-  $('#chat-send').disabled = chatBusy || awaiting || !ready;
+  $('#chat-send').disabled = chatBusy || !ready;
   drawCharts();
   chatBody.scrollToBottom(200);
 }
@@ -1137,6 +1137,20 @@ async function askModel() {
   return message;
 }
 
+// Historial coherente para el servicio: cada mensaje del asistente con llamadas a herramientas tiene que ir seguido de
+// un resultado por llamada. Si falta alguno (una conversación interrumpida), se da por descartado; un resultado suelto se quita.
+function repairChat() {
+  const out = []; let open = new Map(); // llamadas del último mensaje del asistente: id → contestada
+  const close = () => { for (const [id, done] of open) if (!done) out.push({ role: 'tool', tool_call_id: id, content: 'Has descartado la propuesta; no se ha cambiado nada.' }); open = new Map(); };
+  for (const m of chat) {
+    if (m.role === 'tool') { if (open.get(m.tool_call_id) === false) { open.set(m.tool_call_id, true); out.push(m); } continue; }
+    close();
+    out.push(m);
+    if (m.role === 'assistant' && m.tool_calls?.length) open = new Map(m.tool_calls.map(c => [c.id, false]));
+  }
+  close();
+  chat = out;
+}
 // Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
 const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${state.meds.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ninguna pauta: si hace falta, créala.';
 // Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.
@@ -1144,8 +1158,12 @@ async function sendChat() {
   const question = String(chatInput.value ?? '').trim();
   if (!question || chatBusy) return;
   chatInput.value = '';
-  // Las propuestas que quedaran pendientes de otra sesión se dan por descartadas antes de seguir.
+  // Las propuestas pendientes (de este turno o de otra sesión) se dan por descartadas antes de seguir, y el bucle que
+  // las esperaba, si lo hay, se cancela: cambiar de época hace que termine sin pedir otra respuesta.
+  chatEpoch++; awaiting = false;
   for (const v of pending()) decide(v, false);
+  resolvers.clear();
+  repairChat();
   chat.push({ role: 'user', content: question });
   chatView.push({ who: 'user', text: question });
   const epoch = chatEpoch;
@@ -1161,8 +1179,8 @@ async function sendChat() {
       const waits = [], seen = new Set();
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-        const key = `${call.function.name} ${JSON.stringify(args)}`;
-        if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya está propuesta en este turno, no se propone otra vez.'); continue; }
+        const key = `${call.function.name} ${call.function.name === 'crear_pauta' ? str(args.name).trim().toLowerCase() : [args.id, args.slot, args.day].map(str).join('|')}`;
+        if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya has propuesto ese mismo cambio en este turno, no se propone otra vez.'); continue; }
         seen.add(key);
         const form = FORMS[call.function.name], draft = form?.draft(args);
         if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${form ? `no existe ${call.function.name === 'modificar_intervalo' ? 'ese intervalo' : 'ninguna pauta con ese id'}. ${existing()}` : 'herramienta desconocida.'}`); continue; }
