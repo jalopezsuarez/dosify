@@ -58,7 +58,14 @@ Pantalla de conversación (botón «Asistente» de la toma; Intro envía el mens
 - **Sugerencias:** con la conversación vacía salen 4 preguntas y, tras cada respuesta, 3 más; tocarlas las envía. Se hacen en la app a partir de los datos (qué falta hoy, cuándo se acaba un envase, gasto al mes, cumplimiento de la semana, olvidos, cambios de dosis, registro de una pauta, tabla de pautas) y no repiten las ya preguntadas.
 - **Markdown y gráficas:** las respuestas se muestran en Markdown con marked (títulos, negritas, listas, código, enlaces y tablas). Una gráfica se pide con un bloque de código `chart` que lleva solo JSON — `{"type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{"label": "...", "data": [...]}]}` — y se dibuja con Chart.js en los colores de la app; si el JSON no vale, sale «(Gráfica no válida)». No se deja pasar HTML ni enlaces que no sean http(s). Si las librerías no cargan (sin conexión), el texto sale tal cual. Tus mensajes no se interpretan.
 
-Puede cambiar datos con herramientas: `crear_pauta`, `modificar_pauta`, `borrar_pauta`, `registrar_toma`, `quitar_toma` y `modificar_intervalo`. Cada cambio pide confirmación («El asistente quiere hacer un cambio» · Cancelar / Aplicar) antes de aplicarse; lo aplicado pasa por la misma limpieza que el resto de los datos. En la conversación queda una línea por cambio, aplicado o cancelado.
+Puede crear y cambiar datos con herramientas: `crear_pauta`, `modificar_pauta`, `borrar_pauta`, `registrar_toma`, `quitar_toma` y `modificar_intervalo`. Cada llamada se convierte en una **propuesta**: una tarjeta editable dentro de la conversación, hecha con componentes de Ionic, con lo que el asistente proponga ya relleno (y, al cambiar algo que existe, con el resto de sus datos actuales):
+
+- **Pauta:** nombre, indicaciones, referencias, notas, chips de intervalos (se activan y desactivan al tocarlos), coste y dosis por envase, y las programaciones como filas (dosis, inicio y duración) que se quitan con un chip o se añaden con «Añadir programación».
+- **Toma:** la pauta, chips para elegir el intervalo, día y hora.
+- **Intervalo:** nombre, horas y un chip «Visible».
+- **Borrar pauta:** la pauta y el botón «Borrar».
+
+Cada tarjeta tiene «Descartar» y «Guardar»; con varias propuestas a la vez (por ejemplo, varias pautas) aparece además una fila para guardarlas o descartarlas todas. Al guardar se validan los datos como en los editores (lo que falla se marca en rojo), se aplican con la misma limpieza que el resto, y la tarjeta queda como una línea (✓ guardada o descartada). El asistente recibe el resultado en texto (nunca en JSON) con los datos finales, incluidos los cambios del usuario, y continúa; tiene indicado hablar siempre en lenguaje natural y de tú («has guardado»), sin mostrar JSON, claves, ids ni datos en bruto; mientras haya propuestas pendientes no se puede enviar otro mensaje. Las propuestas se guardan con la conversación: si se recarga la app siguen editables; las que queden pendientes se descartan al enviar el siguiente mensaje o al pulsar «Limpiar».
 
 Los datos salen del dispositivo hacia el servicio configurado; la app no tiene servidor propio. El servicio tiene que admitir peticiones desde el navegador (CORS), como hace la API de OpenAI. El asistente no da consejo médico.
 
@@ -120,5 +127,5 @@ Una cápsula blanca sobre un degradado azul (alrededor del color principal, #6dd
 ## Archivos
 
 - `index.html` — estructura de la interfaz (toma, gestor de pautas con costes, intervalos, asistente, datos, exportar y zona de peligro, editores de pauta, de programación y de intervalo, registro de una pauta, asistente, ficha, alerta y action sheet) y el CSS mínimo.
-- `app.js` — estado, limpieza y almacenamiento de datos, intervalos, programaciones, render, orden, costes, registro, asistente (con sugerencias, Markdown y gráficas), CSV y PDF.
+- `app.js` — estado, limpieza y almacenamiento de datos, intervalos, programaciones, render, orden, costes, registro, asistente (con sugerencias, Markdown, gráficas y propuestas editables), CSV y PDF.
 - Iconos y manifest: ver «Iconos».

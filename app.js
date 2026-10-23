@@ -784,7 +784,7 @@ function systemPrompt() {
   const now = new Date();
   const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), terminada: finished(m),
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
-  return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
+  return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - intervals: intervalos de toma (id fijo i1, i2, i3; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
@@ -794,10 +794,11 @@ Cálculos por pauta (dosis de hoy, dosis al día, costes, fin del envase actual 
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
-Para cambiar datos usa las herramientas; el usuario confirma cada cambio antes de aplicarlo. Usa los id que ves en los datos.`;
+Para crear o cambiar datos usa las herramientas, aunque te falten datos: cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Para varias pautas, una llamada por pauta. Usa los id que ves en los datos.`;
 }
 
-// Herramientas: qué puede cambiar el asistente. Cada una devuelve el texto que se confirma y lo que hace al aplicarse.
+// Herramientas: qué puede cambiar el asistente. Cada llamada se convierte en una propuesta: una tarjeta editable en la
+// conversación (campos, chips de intervalos, filas de programación) que el usuario guarda o descarta.
 const stringProp = description => ({ type: 'string', description });
 const medProps = {
   name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
@@ -808,43 +809,142 @@ const medProps = {
 };
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const TOOLS = [
-  tool('crear_pauta', 'Crea una pauta', medProps, ['name']),
-  tool('modificar_pauta', 'Cambia los campos indicados de una pauta', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
-  tool('borrar_pauta', 'Borra una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
-  tool('registrar_toma', 'Marca una toma como tomada', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id', 'slot', 'day']),
-  tool('quitar_toma', 'Desmarca una toma (la deja pendiente)', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD') }, ['id', 'slot', 'day']),
-  tool('modificar_intervalo', 'Cambia un intervalo', { id: { type: 'string', enum: IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
+  tool('crear_pauta', 'Propone crear una pauta (formulario editable para el usuario)', medProps, ['name']),
+  tool('modificar_pauta', 'Propone cambiar los campos indicados de una pauta', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
+  tool('borrar_pauta', 'Propone borrar una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
+  tool('registrar_toma', 'Propone marcar una toma como tomada', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id', 'slot', 'day']),
+  tool('quitar_toma', 'Propone desmarcar una toma (dejarla pendiente)', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS }, day: stringProp('Día AAAA-MM-DD') }, ['id', 'slot', 'day']),
+  tool('modificar_intervalo', 'Propone cambiar un intervalo', { id: { type: 'string', enum: IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
-const pick = (a, keys) => Object.fromEntries(keys.filter(k => k in a).map(k => [k, a[k]]));
-const MED_KEYS = Object.keys(medProps);
-const medName = id => state.meds.find(m => m.id === id)?.name ?? id;
-const ACTIONS = {
-  crear_pauta: a => ({ text: `Crear la pauta «${a.name}»`, run: () => state.meds.push({ id: newId(), notes: '', refs: '', memo: '', slots: [], cost: '', units: '', plan: [], ...pick(a, MED_KEYS) }) }),
-  modificar_pauta: a => state.meds.some(m => m.id === a.id) && ({ text: `Cambiar la pauta «${medName(a.id)}»: ${Object.keys(pick(a, MED_KEYS)).join(', ')}`, run: () => Object.assign(state.meds.find(m => m.id === a.id), pick(a, MED_KEYS)) }),
-  borrar_pauta: a => state.meds.some(m => m.id === a.id) && ({ text: `Borrar la pauta «${medName(a.id)}»`, run: () => { state.meds = state.meds.filter(m => m.id !== a.id); } }),
-  registrar_toma: a => state.meds.some(m => m.id === a.id) && IDS.includes(a.slot) && date(a.day) && ({
-    text: `Marcar «${medName(a.id)}» en ${label(a.slot)} el ${shortDate(a.day)}`,
-    run: () => {
-      if (state.log.some(e => e.id === a.id && e.slot === a.slot && e.day === a.day)) return;
-      const at = /^\d{1,2}:\d{2}$/.test(a.hora ?? '') ? new Date(`${a.day}T${a.hora.padStart(5, '0')}`) : new Date();
-      state.log.unshift({ at: at.toISOString(), day: a.day, id: a.id, slot: a.slot, ...snapOn(state.meds.find(m => m.id === a.id), a.day) });
+
+// Formularios de las propuestas. Para cada herramienta: draft (los datos editables a partir de lo que propone el
+// asistente, o null si no vale), title, fields (el HTML de los campos), validate (campos mal) y apply (guarda y
+// devuelve el resumen). Los valores del borrador son texto, como en los campos.
+const str = v => v == null ? '' : String(v);
+const med = id => state.meds.find(m => m.id === id);
+const medFields = d => `
+  <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
+  <ion-item><ion-textarea data-field="refs" label="Referencias" label-placement="stacked" auto-grow="true" value="${esc(d.refs)}"></ion-textarea></ion-item>
+  <ion-item><ion-textarea data-field="memo" label="Notas" label-placement="stacked" auto-grow="true" value="${esc(d.memo)}"></ion-textarea></ion-item>
+  <ion-item lines="none"><ion-label><p>Intervalos</p><p>${visibleIntervals().map(iv => chipToggle('slot', iv.id, label(iv.id), d.slots.includes(iv.id))).join('')}</p></ion-label></ion-item>
+  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" value="${esc(d.units)}"></ion-input></ion-item>
+  ${d.plan.map((p, i) => `
+  <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
+  <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>`).join('')}
+  <ion-item lines="none"><ion-label><p>${chipAction('add-plan', 'Añadir programación', 'add-outline')}</p></ion-label></ion-item>`;
+const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
+const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
+const medDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
+  slots: IDS.filter(id => list(a.slots ?? base.slots).includes(id)), cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
+  plan: (Array.isArray(a.plan) ? a.plan : base.plan).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days) })) });
+const medValidate = d => [
+  ...(d.name.trim() ? [] : ['name']), ...(int(d.cost) === null ? ['cost'] : []), ...(int(d.units, 1) === null ? ['units'] : []),
+  ...d.plan.flatMap((p, i) => [['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)]].filter(([, ok]) => !ok).map(([f]) => `${f}:${i}`)),
+];
+const medValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), slots: d.slots, cost: int(d.cost), units: int(d.units, 1),
+  plan: d.plan.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1) })) });
+const slotChips = (d, slots = visibleIntervals().map(iv => iv.id)) => slots.map(id => chipToggle('pick-slot', id, label(id), d.slot === id)).join('');
+const tomaFields = (d, withTime) => `
+  <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${slotChips(d)}</p></ion-label></ion-item>
+  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
+const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.name, slot: IDS.includes(a.slot) ? a.slot : m.slots[0] ?? IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
+const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
+const FORMS = {
+  crear_pauta: {
+    draft: a => medDraft({ name: '', notes: '', refs: '', memo: '', slots: [], cost: '', units: '', plan: [] }, a),
+    title: () => 'Nueva pauta', fields: medFields, validate: medValidate,
+    apply: d => { const v = medValues(d); state.meds.push({ id: newId(), ...v }); return `Pauta «${v.name}» creada`; },
+  },
+  modificar_pauta: {
+    draft: a => { const m = med(a.id); return m && { id: m.id, ...medDraft(m, a) }; },
+    title: d => `Cambiar la pauta «${esc(med(d.id)?.name ?? d.name)}»`, fields: medFields, validate: medValidate,
+    apply: d => {
+      const m = med(d.id); if (!m) return null;
+      Object.assign(m, medValues(d));
+      for (const e of state.log) if (e.id === m.id && e.day >= today()) Object.assign(e, snapOn(m, e.day));
+      return `Pauta «${m.name}» cambiada`;
     },
-  }),
-  quitar_toma: a => ({ text: `Dejar pendiente «${medName(a.id)}» en ${IDS.includes(a.slot) ? label(a.slot) : a.slot} el ${date(a.day) ? shortDate(a.day) : a.day}`,
-    run: () => { state.log = state.log.filter(e => !(e.id === a.id && e.slot === a.slot && e.day === a.day)); } }),
-  modificar_intervalo: a => IDS.includes(a.id) && ({ text: `Cambiar el intervalo «${label(a.id)}»`, run: () => Object.assign(interval(a.id), pick(a, ['name', 'start', 'end', 'visible'])) }),
+  },
+  borrar_pauta: {
+    draft: a => { const m = med(a.id); return m && { id: m.id, name: m.name }; },
+    title: () => 'Borrar pauta', danger: 'Borrar',
+    fields: d => `<ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>Sus tomas registradas se conservan.</p></ion-label></ion-item>`,
+    validate: () => [],
+    apply: d => { state.meds = state.meds.filter(m => m.id !== d.id); return `Pauta «${d.name}» borrada`; },
+  },
+  registrar_toma: {
+    draft: tomaDraft, title: () => 'Marcar toma', fields: d => tomaFields(d, true), validate: tomaValidate,
+    apply: d => {
+      const m = med(d.id); if (!m) return null;
+      if (!state.log.some(e => e.id === d.id && e.slot === d.slot && e.day === d.day)) {
+        const at = d.hora ? new Date(`${d.day}T${d.hora.padStart(5, '0')}`) : new Date();
+        state.log.unshift({ at: at.toISOString(), day: d.day, id: d.id, slot: d.slot, ...snapOn(m, d.day) });
+      }
+      return `«${m.name}» marcada en ${label(d.slot)} el ${shortDate(d.day)}`;
+    },
+  },
+  quitar_toma: {
+    draft: tomaDraft, title: () => 'Dejar pendiente', fields: d => tomaFields(d, false), validate: tomaValidate,
+    apply: d => { state.log = state.log.filter(e => !(e.id === d.id && e.slot === d.slot && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.slot)} el ${shortDate(d.day)}`; },
+  },
+  modificar_intervalo: {
+    draft: a => { const iv = IDS.includes(a.id) && interval(a.id); return iv && { id: iv.id, name: str(a.name ?? iv.name), start: str(a.start ?? iv.start), end: str(a.end ?? iv.end), visible: typeof a.visible === 'boolean' ? a.visible : iv.visible }; },
+    title: d => `Cambiar el intervalo «${esc(label(d.id))}»`,
+    fields: d => `
+  <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" value="${esc(d.end)}"></ion-input></ion-item>
+  <ion-item lines="none"><ion-label><p>${chipToggle('visible', 'visible', 'Visible en la toma', d.visible)}</p></ion-label></ion-item>`,
+    validate: d => [...(hour(d.start) === null ? ['start'] : []), ...(hour(d.end) === null ? ['end'] : [])],
+    apply: d => { Object.assign(interval(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Intervalo «${label(d.id)}» cambiado`; },
+  },
 };
 
-// Pide confirmación de un cambio con la alerta de la app; resuelve true si se acepta.
-const confirmChange = message => new Promise(resolve => {
-  const alert = $('#confirm');
-  Object.assign(alert, { header: 'El asistente quiere hacer un cambio', message, buttons: [
-    { text: 'Cancelar', role: 'cancel', handler: () => resolve(false) },
-    { text: 'Aplicar', handler: () => resolve(true) },
-  ] });
-  alert.present();
-  alert.onDidDismiss().then(({ role }) => role === 'backdrop' && resolve(false));
-});
+// Las propuestas pendientes de este turno: el bucle del asistente espera a que el usuario las guarde o descarte.
+const resolvers = new Map();
+let chatEpoch = 0, awaiting = false;
+const pending = () => chatView.filter(v => v.who === 'proposal' && v.status === 'pending');
+// Al asistente se le responde en texto, nunca en JSON, para que no lo repita al usuario.
+const pushToolResult = (callId, content) => { if (!chat.some(m => m.role === 'tool' && m.tool_call_id === callId)) chat.push({ role: 'tool', tool_call_id: callId, content }); };
+// Los datos finales de una propuesta, descritos en texto para el asistente.
+function describe(tool, d) {
+  const dateText = k => shortDate(k);
+  if (tool === 'crear_pauta' || tool === 'modificar_pauta') {
+    const v = medValues(d);
+    return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
+      `intervalos: ${v.slots.map(label).join(', ') || 'ninguno'}`, v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
+      v.plan.length ? `programaciones: ${v.plan.map(p => `${p.dose} desde el ${dateText(p.start)} durante ${p.days} días`).join('; ')}` : 'sin programaciones'].filter(Boolean).join(', ');
+  }
+  if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.slot)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
+  if (tool === 'modificar_intervalo') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
+  return d.name;
+}
+function decide(v, saved) {
+  const form = FORMS[v.tool];
+  if (saved) {
+    const summary = form.apply(v.draft);
+    Object.assign(state, clean(state)); save(); render();
+    v.status = 'saved'; v.text = summary ?? 'No se ha podido aplicar';
+    pushToolResult(v.id, summary ? `Has guardado la propuesta. ${summary}. Datos finales (con los cambios que hayas hecho): ${describe(v.tool, v.draft)}.` : 'No se ha podido aplicar: ya no existe.');
+  } else {
+    v.status = 'discarded'; v.text = `${form.title(v.draft).replace(/<[^>]+>/g, '')}: descartada`;
+    pushToolResult(v.id, 'Has descartado la propuesta; no se ha cambiado nada.');
+  }
+  resolvers.get(v.id)?.(); resolvers.delete(v.id);
+}
+// Guarda una propuesta si sus datos valen; si no, marca en rojo los campos que fallan.
+function trySave(v, card) {
+  const bad = FORMS[v.tool].validate(v.draft);
+  for (const f of bad) {
+    const [field, row] = f.split(':');
+    const el = row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-plan="${field}"][data-row="${row}"]`);
+    el?.classList.add('ion-invalid', 'ion-touched');
+  }
+  if (bad.length) return false;
+  decide(v, true);
+  return true;
+}
 
 // Markdown (marked) y gráficas (Chart.js) de las respuestas: se cargan desde CDN la primera vez que se abre el
 // asistente. Del Markdown no se deja pasar HTML ni enlaces que no sean http(s); un bloque ```chart con JSON
@@ -909,21 +1009,41 @@ const suggestionList = qs => qs.length ? `
   <ion-list-header><ion-label>Sugerencias</ion-label></ion-list-header>
   <ion-list inset="true">${qs.map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')}</ion-list>` : '';
 
-const bubble = v => ({
-  user: `<ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>`,
-  assistant: `<ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>`,
-  action: `<ion-item lines="none"><ion-icon slot="start" name="${v.ok ? 'checkmark-circle' : 'close-circle'}" color="${v.ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(v.text)}</ion-label></ion-item>`,
-  error: `<ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item>`,
-}[v.who]);
+const actionLine = (ok, text) => `<ion-list inset="true"><ion-item lines="none"><ion-icon slot="start" name="${ok ? 'checkmark-circle' : 'close-circle'}" color="${ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(text)}</ion-label></ion-item></ion-list>`;
+// Tarjeta de una propuesta: título, campos editables y «Descartar» / «Guardar» (o «Borrar»); guardada o descartada,
+// queda como una línea.
+const proposalCard = (v, i) => {
+  const form = FORMS[v.tool];
+  if (v.status !== 'pending') return actionLine(v.status === 'saved', v.text);
+  return `<div data-proposal="${i}">
+    <ion-list-header><ion-label>${form.title(v.draft)}</ion-label></ion-list-header>
+    <ion-list inset="true">${form.fields(v.draft)}
+      <ion-item lines="none">
+        <ion-button fill="clear" color="medium" data-act="discard">Descartar</ion-button>
+        <ion-button slot="end" ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? 'Guardar'}</ion-button>
+      </ion-item>
+    </ion-list>
+  </div>`;
+};
+const block = (v, i) => ({
+  user: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item></ion-list>`,
+  assistant: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item></ion-list>`,
+  action: () => actionLine(v.ok, v.text),
+  error: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
+  proposal: () => proposalCard(v, i),
+}[v.who]());
+// Con varias propuestas pendientes, una fila para guardarlas o descartarlas todas.
+const allRow = () => pending().length > 1 ? `<ion-list inset="true"><ion-item lines="none"><ion-button fill="clear" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button slot="end" data-act="save-all">Guardar todas (${pending().length})</ion-button></ion-item></ion-list>` : '';
 function renderChat() {
   saveChat();
   const ready = ai.key && ai.model && ai.url;
   charts.forEach(c => c.destroy()); charts = [];
-  chatBody.innerHTML = (chatView.length ? chatView.map(v => `<ion-list inset="true">${bubble(v)}</ion-list>`).join('')
-    : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus pautas, tomas, consumos o costes. También puedo cambiar datos (te pediré confirmación).' : 'Configura el asistente en Pautas › Asistente (URL base, API key y modelo).')}</ion-list>`)
+  chatBody.innerHTML = (chatView.length ? chatView.map(block).join('') + allRow()
+    : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus pautas, tomas, consumos o costes. También puedo crear o cambiar datos: te lo propongo en un formulario que revisas y guardas.' : 'Configura el asistente en Pautas › Asistente (URL base, API key y modelo).')}</ion-list>`)
     + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
+      : awaiting ? `<ion-list inset="true">${empty('Guarda o descarta las propuestas para continuar.')}</ion-list>`
       : ready ? suggestionList(suggestions(chatView.length ? 3 : 4)) : '');
-  $('#chat-send').disabled = chatBusy || !ready;
+  $('#chat-send').disabled = chatBusy || awaiting || !ready;
   drawCharts();
   chatBody.scrollToBottom(200);
 }
@@ -944,32 +1064,33 @@ async function sendChat() {
   const question = String(chatInput.value ?? '').trim();
   if (!question || chatBusy) return;
   chatInput.value = '';
+  // Las propuestas que quedaran pendientes de otra sesión se dan por descartadas antes de seguir.
+  for (const v of pending()) decide(v, false);
   chat.push({ role: 'user', content: question });
   chatView.push({ who: 'user', text: question });
+  const epoch = chatEpoch;
   chatBusy = true; renderChat();
   try {
     for (let turn = 0; turn < 8; turn++) {
       const message = await askModel();
+      if (epoch !== chatEpoch) return;
       chat.push({ role: 'assistant', content: message.content ?? '', ...(message.tool_calls?.length ? { tool_calls: message.tool_calls } : {}) });
       if (message.content) chatView.push({ who: 'assistant', text: message.content });
       if (!message.tool_calls?.length) break;
+      // Cada herramienta pasa a ser una propuesta editable; se espera a que el usuario decida sobre todas.
+      const waits = [];
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-        const action = ACTIONS[call.function.name]?.(args);
-        let result;
-        if (!action) result = { ok: false, error: 'Datos no válidos o no encontrados' };
-        else if (await confirmChange(action.text)) {
-          action.run();
-          Object.assign(state, clean(state)); save(); render();
-          chatView.push({ who: 'action', ok: true, text: action.text });
-          result = { ok: true };
-        } else {
-          chatView.push({ who: 'action', ok: false, text: `${action.text} (cancelado)` });
-          result = { ok: false, error: 'El usuario no lo ha aceptado' };
-        }
-        chat.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+        const form = FORMS[call.function.name], draft = form?.draft(args);
+        if (!draft) { pushToolResult(call.id, 'No se ha podido proponer: datos no válidos o no encontrados.'); continue; }
+        chatView.push({ who: 'proposal', id: call.id, tool: call.function.name, draft, status: 'pending' });
+        waits.push(new Promise(resolve => resolvers.set(call.id, resolve)));
       }
-      renderChat();
+      chatBusy = false; awaiting = true; renderChat();
+      await Promise.all(waits);
+      awaiting = false;
+      if (epoch !== chatEpoch) return;
+      chatBusy = true; renderChat();
     }
   } catch (err) {
     chatView.push({ who: 'error', text: err.message });
@@ -1097,9 +1218,38 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
-$('#chat-new').onclick = () => { chat = []; chatView = []; renderChat(); };
+$('#chat-new').onclick = () => { chatEpoch++; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
-chatBody.addEventListener('click', e => { const q = e.target.closest('[data-suggest]')?.dataset.suggest; if (q) { chatInput.value = q; sendChat(); } });
+// Interacción con las propuestas: campos (se escriben en el borrador), chips (intervalos, programaciones, visible)
+// y botones (guardar, descartar, todas).
+const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: chatView[Number(card.dataset.proposal)] }; };
+const refreshCard = (card, v) => { card.outerHTML = proposalCard(v, Number(card.dataset.proposal)); };
+chatBody.addEventListener('ionInput', e => {
+  const p = proposalOf(e.target); if (!p) return;
+  const { field, plan, row } = e.target.dataset, value = String(e.target.value ?? '');
+  if (field) p.v.draft[field] = value;
+  if (plan) p.v.draft.plan[Number(row)][plan] = value;
+  e.target.classList.remove('ion-invalid');
+  saveChat();
+});
+chatBody.addEventListener('click', e => {
+  const q = e.target.closest('[data-suggest]')?.dataset.suggest;
+  if (q) { chatInput.value = q; return sendChat(); }
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'save-all') { for (const v of pending()) { const card = chatBody.querySelector(`[data-proposal="${chatView.indexOf(v)}"]`); trySave(v, card); } return renderChat(); }
+  if (act === 'discard-all') { for (const v of pending()) decide(v, false); return renderChat(); }
+  const p = proposalOf(e.target); if (!p) return;
+  if (act === 'save') { if (trySave(p.v, p.card)) renderChat(); return; }
+  if (act === 'discard') { decide(p.v, false); return renderChat(); }
+  const chip = e.target.closest('ion-chip[data-chip]'); if (!chip) return;
+  const { chip: kind, value, row } = chip.dataset, d = p.v.draft;
+  if (kind === 'slot') { d.slots = d.slots.includes(value) ? d.slots.filter(x => x !== value) : IDS.filter(id => id === value || d.slots.includes(id)); chip.outline = !d.slots.includes(value); chip.color = d.slots.includes(value) ? 'primary' : 'medium'; }
+  if (kind === 'pick-slot') { d.slot = value; refreshCard(p.card, p.v); }
+  if (kind === 'visible') { d.visible = !d.visible; chip.outline = !d.visible; chip.color = d.visible ? 'primary' : 'medium'; }
+  if (kind === 'add-plan') { d.plan.push({ dose: d.plan.at(-1)?.dose ?? '', start: today(), days: '' }); refreshCard(p.card, p.v); }
+  if (kind === 'remove-plan') { d.plan.splice(Number(row), 1); refreshCard(p.card, p.v); }
+  saveChat();
+});
 // Intro envía; Mayúsculas + Intro hace un salto de línea.
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 
