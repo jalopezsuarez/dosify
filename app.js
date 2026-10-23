@@ -855,16 +855,16 @@ const TOOLS = [
 const str = v => v == null ? '' : String(v);
 const med = id => state.meds.find(m => m.id === id);
 const medFields = d => `
-  <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" error-text="Pon un nombre" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
   <ion-item><ion-textarea data-field="refs" label="Referencias" label-placement="stacked" auto-grow="true" value="${esc(d.refs)}"></ion-textarea></ion-item>
   <ion-item><ion-textarea data-field="memo" label="Notas" label-placement="stacked" auto-grow="true" value="${esc(d.memo)}"></ion-textarea></ion-item>
   <ion-item lines="none"><ion-label><p>Intervalos</p><p>${visibleIntervals().map(iv => chipToggle('slot', iv.id, label(iv.id), d.slots.includes(iv.id))).join('')}</p></ion-label></ion-item>
-  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input></ion-item>
-  <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" value="${esc(d.units)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" error-text="Número entero, o vacío" value="${esc(d.cost)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" error-text="Número entero, o vacío" value="${esc(d.units)}"></ion-input></ion-item>
   ${d.plan.map((p, i) => `
-  <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
-  <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>`).join('')}
+  <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" error-text="Empieza por un número" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
+  <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" error-text="Pon la fecha" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" error-text="Días, un número entero" value="${esc(p.days)}"></ion-input></ion-item>`).join('')}
   <ion-item lines="none"><ion-label><p>${chipAction('add-plan', 'Añadir programación', 'add-outline')}</p></ion-label></ion-item>`;
 const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
 const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
@@ -880,7 +880,7 @@ const medValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.re
 const slotChips = (d, slots = visibleIntervals().map(iv => iv.id)) => slots.map(id => chipToggle('pick-slot', id, label(id), d.slot === id)).join('');
 const tomaFields = (d, withTime) => `
   <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${slotChips(d)}</p></ion-label></ion-item>
-  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
+  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" error-text="Pon el día" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" error-text="Hora HH:MM, o vacía" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
 const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.name, slot: IDS.includes(a.slot) ? a.slot : m.slots[0] ?? IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
 const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${d.slots.map(label).join(', ') || 'sin intervalos'}`;
@@ -929,7 +929,7 @@ const FORMS = {
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
     fields: d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
-  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" value="${esc(d.end)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" error-text="De 0 a 24" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" error-text="De 0 a 24" value="${esc(d.end)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>${chipToggle('visible', 'visible', 'Visible en la toma', d.visible)}</p></ion-label></ion-item>`,
     validate: d => [...(hour(d.start) === null ? ['start'] : []), ...(hour(d.end) === null ? ['end'] : [])],
     apply: d => { Object.assign(interval(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Intervalo «${label(d.id)}» cambiado`; },
@@ -1054,12 +1054,11 @@ const proposalCard = (v, i) => {
   if (v.status !== 'pending') return actionLine(v.status === 'saved', v.text);
   return `<div data-proposal="${i}">
     <ion-list-header><ion-label>${form.title(v.draft)}</ion-label></ion-list-header>
-    <ion-list inset="true">${form.fields(v.draft)}
-      <ion-item lines="none">
-        <ion-button fill="clear" color="medium" data-act="discard">Descartar</ion-button>
-        <ion-button slot="end" ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? 'Guardar'}</ion-button>
-      </ion-item>
-    </ion-list>
+    <ion-list inset="true">${form.fields(v.draft)}</ion-list>
+    <div class="proposal-actions">
+      <ion-button fill="outline" color="medium" data-act="discard">Descartar</ion-button>
+      <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? 'Guardar'}</ion-button>
+    </div>
   </div>`;
 };
 const block = (v, i) => ({
@@ -1074,7 +1073,7 @@ const block = (v, i) => ({
 const proposalRow = (v, i) => {
   const form = FORMS[v.tool];
   if (v.status !== 'pending') return `<ion-item><ion-icon slot="start" name="${v.status === 'saved' ? 'checkmark-circle' : 'close-circle'}" color="${v.status === 'saved' ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(v.text)}</ion-label></ion-item>`;
-  return `<ion-item button="true" data-open="${i}"><ion-icon slot="start" name="create-outline" color="primary"></ion-icon><ion-label class="ion-text-wrap"><h2 class="medium">${form.title(v.draft)}</h2><p>${esc(form.brief(v.draft))}</p></ion-label></ion-item>`;
+  return `<ion-item button="true" data-open="${i}"><ion-icon slot="start" name="${v.bad ? 'alert-circle-outline' : 'create-outline'}" color="${v.bad ? 'danger' : 'primary'}"></ion-icon><ion-label class="ion-text-wrap"><h2 class="medium">${form.title(v.draft)}</h2><p>${esc(form.brief(v.draft))}</p>${v.bad ? '<p><ion-text color="danger">Falta algún dato: ábrela para completarlo</ion-text></p>' : ''}</ion-label></ion-item>`;
 };
 const proposalList = idx => `
   <ion-list-header><ion-label>Propuestas (${idx.length})</ion-label></ion-list-header>
@@ -1111,7 +1110,7 @@ function openProposalEditor(i) {
 }
 
 // Con varias propuestas pendientes, una fila para guardarlas o descartarlas todas.
-const allRow = () => pending().length > 1 ? `<ion-list inset="true"><ion-item lines="none"><ion-button fill="clear" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button slot="end" data-act="save-all">Guardar todas (${pending().length})</ion-button></ion-item></ion-list>` : '';
+const allRow = () => pending().length > 1 ? `<div class="proposal-actions"><ion-button fill="outline" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button data-act="save-all">Guardar todas (${pending().length})</ion-button></div>` : '';
 function renderChat() {
   saveChat();
   const ready = ai.key && ai.model && ai.url;
@@ -1324,7 +1323,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   const open = e.target.closest('[data-open]')?.dataset.open;
   if (open) return openProposalEditor(Number(open));
   const act = e.target.closest('[data-act]')?.dataset.act;
-  if (act === 'save-all') { for (const v of pending()) { const card = chatBody.querySelector(`[data-proposal="${chatView.indexOf(v)}"]`); trySave(v, card); } return renderChat(); }
+  if (act === 'save-all') { for (const v of pending()) { const card = chatBody.querySelector(`[data-proposal="${chatView.indexOf(v)}"]`); v.bad = !trySave(v, card); } return renderChat(); }
   if (act === 'discard-all') { for (const v of pending()) decide(v, false); return renderChat(); }
   const p = proposalOf(e.target); if (!p) return;
   if (act === 'save') { if (trySave(p.v, p.card)) renderChat(); return; }
@@ -1342,7 +1341,7 @@ $('#proposal-cancel').onclick = () => proposalEditor.dismiss();
 $('#proposal-save').onclick = () => {
   const real = chatView[proposalEdit.i], card = $('#proposal-body [data-proposal]');
   if (!trySave(proposalEdit.v, card)) return;
-  real.draft = proposalEdit.v.draft; real.status = proposalEdit.v.status; real.text = proposalEdit.v.text;
+  real.draft = proposalEdit.v.draft; real.status = proposalEdit.v.status; real.text = proposalEdit.v.text; delete real.bad;
   proposalEditor.dismiss(); renderChat();
 };
 $('#proposal-body').addEventListener('click', e => { if (e.target.closest('#proposal-discard')) { decide(chatView[proposalEdit.i], false); proposalEditor.dismiss(); renderChat(); } });
