@@ -371,17 +371,48 @@ function costLine(m) {
   if (m.cost !== '' && m.units && perDayUnits(m)) parts.push(per(perDay(m) * monthDays(), 'mes'), per(perDay(m), 'día'));
   return parts.join(' · ');
 }
+// Próximas compras: los envases que se acaban en los próximos SHOP_DAYS días, del más urgente al menos.
+const SHOP_DAYS = 14;
+const shopping = () => state.meds.filter(m => !finished(m)).map(m => ({ m, end: runsOut(m) })).filter(x => x.end && daysLeft(x.end) <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
+const inDays = n => n <= 0 ? 'Se acaba hoy' : n === 1 ? 'Queda 1 día' : `Quedan ${n} días`;
+
 function renderCosts() {
   const meds = state.meds.filter(m => !finished(m)), priced = meds.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
-  const row = (title, text) => `<ion-item><ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
-  const daily = full.reduce((sum, m) => sum + perDay(m), 0);
-  // Costes del conjunto: total de los envases y, con las dosis por envase, al día y al mes (los días del mes actual).
-  $('#costs').innerHTML = priced.length ? `
+  const row = (title, text, extra = '') => `<ion-item${extra}><ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
+  const daily = full.reduce((sum, m) => sum + perDay(m), 0), shop = shopping();
+  // Costes del conjunto: total de los envases y, con las dosis por envase, al día y al mes (los días del mes actual);
+  // al final, la fila de próximas compras (sale aunque no haya costes si algo se acaba).
+  $('#costs').innerHTML = priced.length || shop.length ? `
     <ion-list-header><ion-label>Costes</ion-label></ion-list-header>
     <ion-list inset="true">
-      ${row(`${euros(priced.reduce((sum, m) => sum + m.cost, 0), 0)} en total`, `${priced.length} de ${meds.length} productos con coste`)}
-      ${row(`${euros(daily * monthDays())} al mes`, `${euros(daily)} al día · ${full.length} de ${meds.length} productos con coste y dosis por envase`)}
+      ${priced.length ? row(`${euros(priced.reduce((sum, m) => sum + m.cost, 0), 0)} en total`, `${priced.length} de ${meds.length} productos con coste`)
+      + row(`${euros(daily * monthDays())} al mes`, `${euros(daily)} al día · ${full.length} de ${meds.length} productos con coste y dosis por envase`) : ''}
+      ${row('Próximas compras', shop.length ? `${shop.length} ${shop.length === 1 ? 'producto se acaba' : 'productos se acaban'} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"')}
     </ion-list>` : '';
+}
+
+// Lista de próximas compras: nombre, precio si lo tiene, días que quedan, fecha prevista y el (i) con la ficha de la
+// pauta (como en la toma); al final, el total.
+const shoppingModal = $('#shopping');
+function openShopping() {
+  const shop = shopping(), priced = shop.filter(x => x.m.cost !== '');
+  $('#shopping-body').innerHTML = shop.length ? `
+    <ion-list inset="true">
+      ${shop.map(({ m, end }) => `
+      <ion-item>
+        <ion-label>
+          <h2 class="medium">${esc(m.name)}</h2>
+          <p><ion-text ${runningOut(m) ? 'color="rose"' : ''}>${inDays(daysLeft(end))} · ${shortDate(end)}</ion-text></p>
+        </ion-label>
+        ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}
+        <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
+          <ion-icon slot="icon-only" name="information-circle" color="${supplyColor(m.id)}" size="large"></ion-icon>
+        </ion-button>
+      </ion-item>`).join('')}
+    </ion-list>
+    ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.m.cost, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
+    : `<ion-list inset="true">${empty(`Nada se acaba en los próximos ${SHOP_DAYS} días.`)}</ion-list>`;
+  shoppingModal.present();
 }
 
 // Lista de pautas: solo las activas; las finalizadas van aparte, en la fila «Finalizadas» (solo si hay alguna), que
@@ -1146,6 +1177,9 @@ $('#sort').onclick = () => {
 };
 $('#add').onclick = () => openEditor();
 $('#open-finished').onclick = () => finishedModal.present();
+$('#costs').addEventListener('click', e => { if (e.target.closest('#open-shopping')) openShopping(); });
+$('#shopping-close').onclick = () => shoppingModal.dismiss();
+$('#shopping-body').addEventListener('click', e => { const id = e.target.closest('[data-info]')?.dataset.info, m = id && med(id); if (m) openInfo({ ...m, dose: doseOn(m, today()) }); });
 $('#finished-close').onclick = () => finishedModal.dismiss();
 $('#finished-list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
