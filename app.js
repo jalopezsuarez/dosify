@@ -378,7 +378,7 @@ const inDays = n => n <= 0 ? 'Se acaba hoy' : n === 1 ? 'Queda 1 día' : `Quedan
 
 function renderCosts() {
   const meds = state.meds.filter(m => !finished(m)), priced = meds.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
-  const row = (title, text, extra = '') => `<ion-item${extra}><ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
+  const row = (title, text, extra = '', icon = '') => `<ion-item${extra}>${icon}<ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
   const daily = full.reduce((sum, m) => sum + perDay(m), 0), shop = shopping();
   // Costes del conjunto: total de los envases y, con las dosis por envase, al día y al mes (los días del mes actual);
   // al final, la fila de próximas compras (sale aunque no haya costes si algo se acaba).
@@ -387,7 +387,8 @@ function renderCosts() {
     <ion-list inset="true">
       ${priced.length ? row(`${euros(priced.reduce((sum, m) => sum + m.cost, 0), 0)} en total`, `${priced.length} de ${meds.length} productos con coste`)
       + row(`${euros(daily * monthDays())} al mes`, `${euros(daily)} al día · ${full.length} de ${meds.length} productos con coste y dosis por envase`) : ''}
-      ${row('Próximas compras', shop.length ? `${shop.length} ${shop.length === 1 ? 'producto se acaba' : 'productos se acaban'} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"')}
+      ${row('Próximas compras', shop.length ? `${shop.length} ${shop.length === 1 ? 'producto se acaba' : 'productos se acaban'} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"',
+        `<ion-icon slot="start" name="cart-outline" color="${shop.length ? 'primary' : 'medium'}"></ion-icon>`)}
     </ion-list>` : '';
 }
 
