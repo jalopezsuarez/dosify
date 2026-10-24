@@ -154,10 +154,10 @@ const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return
 const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
-// El (i) de una fila: abre el editor de la pauta (su color avisa del fin del envase) o, si la pauta se borró, la toma
-// en solo lectura (en gris).
-const editButton = id => `
-      <ion-button slot="end" fill="clear" data-${med(id) ? 'edit' : 'view'}="${id}" aria-label="${med(id) ? 'Editar pauta' : 'Ver toma'}">
+// El (i) de una fila abre la ficha de la pauta (solo lectura); su color avisa del fin del envase, o es gris si la
+// pauta se borró.
+const viewButton = id => `
+      <ion-button slot="end" fill="clear" data-view="${id}" aria-label="Ver pauta">
         <ion-icon slot="icon-only" name="information-circle" color="${med(id) ? supplyColor(id) : 'medium'}" size="large"></ion-icon>
       </ion-button>`;
 // Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
@@ -169,7 +169,7 @@ const doseItem = (m, slot, entry, sorting) => `
         ${doseLine([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
       </ion-label>
-      ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : editButton(m.id)}
+      ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : viewButton(m.id)}
     </ion-item>`;
 // Cada toma va en su propia lista inset: filas independientes.
 const doseRow = (m, slot, entry) => `<ion-list inset="true">${doseItem(m, slot, entry)}</ion-list>`;
@@ -373,7 +373,7 @@ function openShopping() {
           <h2 class="medium">${esc(m.name)}</h2>
           <p><ion-text ${runningOut(m) ? 'color="rose"' : ''}>${inDays(daysLeft(end))} · ${shortDate(end)}</ion-text></p>
         </ion-label>
-        ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}${editButton(m.id)}
+        ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}${viewButton(m.id)}
       </ion-item>`).join('')}
     </ion-list>
     ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.m.cost, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
@@ -610,23 +610,10 @@ const editor = $('#editor');
 const field = name => $(`[name="${name}"]`, editor);
 let editing = null;
 
-// Enlaces (http, https o www.) en un texto, y cómo abrirlos.
-const LINK = /(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g;
-const href = url => url.startsWith('http') ? url : `https://${url}`;
-const links = text => [...new Set(String(text ?? '').match(LINK) ?? [])];
-// Bajo Referencias y Notas, los enlaces que contienen, pulsables; se actualiza al escribir.
-function renderLinks() {
-  const urls = links(field('refs').value).concat(links(field('memo').value)).filter((u, i, a) => a.indexOf(u) === i);
-  $('#editor-links').innerHTML = urls.length ? `<ion-list inset="true">${urls.map(u => `
-    <ion-item href="${esc(href(u))}" target="_blank" rel="noopener" detail="false"><ion-icon slot="start" name="open-outline" color="primary"></ion-icon><ion-label class="ion-text-wrap" color="primary">${esc(u)}</ion-label></ion-item>`).join('')}</ion-list>` : '';
-}
-for (const f of ['refs', 'memo']) field(f).addEventListener('ionInput', renderLinks);
-
 // En «Tomas» del editor solo salen los intervalos visibles; los ocultos conservan su valor.
 function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
-  renderLinks();
   for (const f of ['cost', 'units']) { field(f).value = med[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
   $('#editor-slots').innerHTML = visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${iv.id}" ${med.slots?.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('')
     || empty('No hay intervalos visibles.');
@@ -738,23 +725,32 @@ function openRecord(id) {
   recordModal.present();
 }
 
-// ---------- Toma de una pauta borrada ----------
+// ---------- Ficha de la pauta ----------
 
-// Solo lectura, espejo del editor con lo que guarda la toma: nombre e indicaciones, dosis, intervalo, día y hora.
-const entryModal = $('#entry');
-const readRow = (name, value) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${esc(value ?? '') || '—'}</h2></ion-label></ion-item>`;
-function openEntry(e) {
-  $('#entry-body').innerHTML = `
-    <ion-list-header><ion-label>Producto</ion-label></ion-list-header>
-    <ion-list inset="true">${readRow('Nombre', e.name)}${readRow('Indicaciones', e.notes)}</ion-list>
-    <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
-    <ion-list inset="true">${readRow('Dosis', e.dose)}</ion-list>
-    <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
-    <ion-list inset="true">${readRow('Intervalo', label(e.slot))}</ion-list>
-    <ion-list-header><ion-label>Toma</ion-label></ion-list-header>
-    <ion-list inset="true">${readRow('Día', fromKey(e.day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${readRow('Hora', time(e.at))}</ion-list>
-    <ion-list inset="true">${empty('La pauta se borró: estos son los datos tal como se tomó.')}</ion-list>`;
-  entryModal.present();
+// Solo lectura, espejo del editor: Producto, Programación, Intervalos, Otros datos y Registro de la pauta; si se abre
+// desde una toma ya hecha, además la sección Toma (día, hora y dosis tal como se tomó). Si la pauta se borró, solo
+// lo que guarda la toma. «Editar» (solo si la pauta existe) cierra la ficha y abre el editor.
+const viewModal = $('#view');
+let viewing = null;
+const readRow = (name, value) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${esc(value ?? '').replace(/\n/g, '<br>') || '—'}</h2></ion-label></ion-item>`;
+const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
+const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+function openView(id, entry) {
+  const m = med(id), base = m ?? entry;
+  viewing = id;
+  $('#view-title').textContent = base.name;
+  $('#view-edit').classList.toggle('ion-hide', !m);
+  $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', base.name) + readRow('Indicaciones', base.notes))
+    + readSection('Programación', m
+      ? m.plan.map(p => `<ion-item><ion-label><h2>${esc(p.dose)}</h2><p>${shortDate(p.start)} – ${shortDate(planUntil(m.plan, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}</p></ion-label></ion-item>`).join('') || empty('Sin programaciones.')
+      : readRow('Dosis', entry.dose))
+    + readSection('Intervalos', readRow(m ? 'Intervalos' : 'Intervalo', m ? m.slots.map(label).join(', ') : label(entry.slot)))
+    + (m ? readSection('Otros datos', readRow('Referencias', m.refs) + readRow('Notas', m.memo))
+      + `<ion-list inset="true">${readRow('Coste del envase', m.cost === '' ? '' : euros(m.cost, 0))}${readRow('Dosis por envase', m.units === '' ? '' : m.units.toLocaleString('es'))}</ion-list>` : '')
+    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + (m ? readRow('Dosis', entry.dose) : '')) : '')
+    + (m ? readSection('Registro', `<ion-item button="true" id="view-record"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
+      : `<ion-list inset="true">${empty('La pauta se borró: estos son los datos tal como se tomó.')}</ion-list>`);
+  viewModal.present();
 }
 
 // ---------- Editor de intervalo ----------
@@ -987,7 +983,7 @@ function trySave(v, card) {
 }
 
 // Texto plano con enlaces (http, https o www.) pulsables: tus mensajes y, si marked no carga, las respuestas.
-const linkify = text => esc(text).replace(/\n/g, '<br>').replace(LINK, url => `<a href="${href(url)}" target="_blank" rel="noopener">${url}</a>`);
+const linkify = text => esc(text).replace(/\n/g, '<br>').replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
 // Markdown (marked) y gráficas (Chart.js) de las respuestas: se cargan desde CDN la primera vez que se abre el
 // asistente. Del Markdown no se deja pasar HTML ni enlaces que no sean http(s); un bloque ```chart con JSON
 // { "type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{ "label": "...", "data": [...] }] }
@@ -1222,12 +1218,14 @@ $('#toma').addEventListener('ionChange', e => {
   const { checked } = e.detail;
   sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
 });
-// El (i) de una fila (en la toma y en próximas compras) abre el editor de la pauta.
-const editFrom = e => { const id = e.target.closest('[data-edit]')?.dataset.edit; if (id && med(id)) openEditor(med(id)); return !!id; };
-// El (i) de una toma cuya pauta se borró abre la toma en solo lectura.
-const viewFrom = e => { const id = e.target.closest('[data-view]')?.dataset.view, entry = id && state.log.find(x => x.day === selectedDay() && x.slot === selectedSlot() && String(x.id) === id); if (entry) openEntry(entry); return !!id; };
+// El (i) de una fila abre la ficha de la pauta; desde la toma, con la toma de ese día e intervalo si ya está hecha.
+const viewFrom = (e, fromToma) => {
+  const id = e.target.closest('[data-view]')?.dataset.view;
+  if (id) openView(id, fromToma ? state.log.find(x => x.day === selectedDay() && x.slot === selectedSlot() && String(x.id) === id) : undefined);
+  return !!id;
+};
 $('#toma').addEventListener('click', e => {
-  if (editFrom(e) || viewFrom(e)) return;
+  if (viewFrom(e, true)) return;
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#toma-sort')) chooseOrder();
@@ -1250,7 +1248,7 @@ $('#add').onclick = () => openEditor();
 $('#open-finished').onclick = () => finishedModal.present();
 $('#costs').addEventListener('click', e => { if (e.target.closest('#open-shopping')) openShopping(); });
 $('#shopping-close').onclick = () => shoppingModal.dismiss();
-$('#shopping-body').addEventListener('click', editFrom);
+$('#shopping-body').addEventListener('click', e => viewFrom(e, false));
 $('#finished-close').onclick = () => finishedModal.dismiss();
 $('#finished-list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
@@ -1292,7 +1290,9 @@ $('#intervals').addEventListener('ionReorderEnd', e => {
 });
 $('#open-record').onclick = () => openRecord(editing);
 $('#record-close').onclick = () => recordModal.dismiss();
-$('#entry-close').onclick = () => entryModal.dismiss();
+$('#view-close').onclick = () => viewModal.dismiss();
+$('#view-edit').onclick = () => { viewModal.dismiss(); openEditor(med(viewing)); };
+$('#view-body').addEventListener('click', e => { if (e.target.closest('#view-record')) openRecord(viewing); });
 $('#plan-list').addEventListener('click', e => {
   const i = e.target.closest('[data-plan]')?.dataset.plan;
   if (i) openPlan(i === 'new' ? null : Number(i));

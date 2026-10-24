@@ -170,7 +170,6 @@
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Médico, enlaces…" auto-grow="true"></ion-textarea></ion-item>
         <ion-item><ion-textarea name="memo" label="Notas" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
       </ion-list>
-      <div id="editor-links"></div>
       <ion-list inset="true">
         <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
         <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
@@ -249,14 +248,15 @@
     <ion-content id="record-body" color="light"></ion-content>
   </ion-modal>
 
-  <ion-modal id="entry">
+  <ion-modal id="view">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="entry-close">Cerrar</ion-button></ion-buttons>
-        <ion-title>Toma</ion-title>
+        <ion-buttons slot="start"><ion-button id="view-close">Cerrar</ion-button></ion-buttons>
+        <ion-title id="view-title"></ion-title>
+        <ion-buttons slot="end"><ion-button id="view-edit">Editar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
-    <ion-content id="entry-body" color="light"></ion-content>
+    <ion-content id="view-body" color="light"></ion-content>
   </ion-modal>
 
   <ion-modal id="plan-editor">
