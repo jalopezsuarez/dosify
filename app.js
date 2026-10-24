@@ -1172,8 +1172,8 @@ const proposalCard = (v, i) => {
   </div>`;
 };
 const block = (v, i) => ({
-  user: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item></ion-list>`,
-  assistant: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item></ion-list>`,
+  user: () => `<ion-list inset="true"><ion-item lines="none" data-msg="${i}"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item></ion-list>`,
+  assistant: () => `<ion-list inset="true"><ion-item lines="none" data-msg="${i}"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item></ion-list>`,
   action: () => actionLine(v.ok, v.text),
   error: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
   proposal: () => proposalCard(v, i),
@@ -1263,6 +1263,20 @@ function repairChat() {
 }
 // Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
 const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${state.meds.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ninguna pauta: si hace falta, créala.';
+// Tocar un mensaje: copiarlo, verlo en una pantalla donde se puede seleccionar el texto (en móvil Ionic lo impide en
+// la app) o, si es tuyo, editarlo (pasa a la caja de escribir).
+const textModal = $('#text-view');
+const copyText = async text => { try { await navigator.clipboard.writeText(text); toast('Copiado'); } catch { toast('No se ha podido copiar'); } };
+function toast(message) { const t = $('#toast'); t.message = message; t.present(); }
+function messageActions(v) {
+  sheet(v.who === 'user' ? 'Tu mensaje' : 'Respuesta', [
+    { text: 'Copiar', handler: () => copyText(v.text) },
+    { text: 'Seleccionar texto', handler: () => { $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`; textModal.present(); } },
+    ...(v.who === 'user' ? [{ text: 'Editar', handler: () => { chatInput.value = v.text; chatInput.setFocus(); } }] : []),
+  ]);
+}
+$('#text-close').onclick = () => textModal.dismiss();
+
 // Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.
 async function sendChat() {
   const question = String(chatInput.value ?? '').trim();
@@ -1456,6 +1470,8 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
+  const msg = e.target.closest('[data-msg]');
+  if (msg && !e.target.closest('a')) return messageActions(chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
   if (q) { chatInput.value = q; return sendChat(); }
   const open = e.target.closest('[data-open]')?.dataset.open;
