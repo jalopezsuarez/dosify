@@ -114,6 +114,19 @@ function dayRows(slot, day) {
 
 // ---------- Toma ----------
 
+// Marcar una toma la añade al registro con la pauta tal como está ese día; desmarcarla la quita.
+function toggle(id, slot, checked) {
+  const day = selectedDay();
+  if (checked) {
+    state.log.unshift({ at: new Date().toISOString(), day, id, slot, ...snapOn(med(id), day) });
+    state.log.length = Math.min(state.log.length, LOG_MAX);
+  } else {
+    state.log = state.log.filter(e => !(e.day === day && String(e.id) === id && e.slot === slot));
+  }
+  save();
+  render();
+}
+
 const ring = (done, total, label, size = 44, font = 11, color = 'primary') => `
   <ion-text color="${color}">
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
