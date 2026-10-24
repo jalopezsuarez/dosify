@@ -1207,8 +1207,8 @@ const proposalCard = (v, i) => {
   </div>`;
 };
 const block = (v, i) => ({
-  user: () => `<ion-list inset="true"><ion-item lines="none" data-msg="${i}"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item></ion-list>`,
-  assistant: () => `<ion-list inset="true"><ion-item lines="none" data-msg="${i}"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item></ion-list>`,
+  user: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>${messageBar(i, true)}</ion-list>`,
+  assistant: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>${messageBar(i, false)}</ion-list>`,
   action: () => actionLine(v.ok, v.text),
   error: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
   proposal: () => proposalCard(v, i),
@@ -1298,28 +1298,19 @@ function repairChat() {
 }
 // Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
 const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${state.meds.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ninguna pauta: si hace falta, créala.';
-// Tocar un mensaje abre una ventana con botones a todo el ancho: copiarlo, verlo en una pantalla donde se puede
-// seleccionar el texto (en móvil Ionic lo impide en la app) o, si es tuyo, editarlo (pasa a la caja de escribir).
-const textModal = $('#text-view'), actionsModal = $('#message-actions');
-let actingOn = null;
+// Última fila de cada mensaje: iconos para copiarlo, verlo en una pantalla donde se puede seleccionar el texto (en
+// móvil Ionic lo impide en la app) y, si es tuyo, editarlo (pasa a la caja de escribir). Los tuyos, a la derecha; los
+// del asistente, a la izquierda.
+const textModal = $('#text-view');
 const copyText = async text => { try { await navigator.clipboard.writeText(text); toast('Copiado'); } catch { toast('No se ha podido copiar'); } };
 function toast(message) { const t = $('#toast'); t.message = message; t.present(); }
-function messageActions(v) {
-  actingOn = v;
-  $('#message-actions-title').textContent = v.who === 'user' ? 'Tu mensaje' : 'Respuesta';
-  $('#message-edit').classList.toggle('ion-hide', v.who !== 'user');
-  actionsModal.present();
-}
+const messageButton = (i, act, icon, title) => `<ion-button data-msg="${i}" data-msg-act="${act}" aria-label="${title}" title="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
+const messageBar = (i, mine) => `<ion-item lines="none" class="msg-actions"><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
 const MESSAGE_ACTIONS = {
-  'message-copy': v => copyText(v.text),
-  'message-select': v => { $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`; textModal.present(); },
-  'message-edit': v => { chatInput.value = v.text; chatInput.setFocus(); },
+  copy: v => copyText(v.text),
+  select: v => { $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`; textModal.present(); },
+  edit: v => { chatInput.value = v.text; chatInput.setFocus(); },
 };
-actionsModal.addEventListener('click', e => {
-  const act = e.target.closest('ion-button')?.id; if (!act) return;
-  actionsModal.dismiss();
-  MESSAGE_ACTIONS[act]?.(actingOn);
-});
 $('#text-close').onclick = () => textModal.dismiss();
 
 // Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.
@@ -1516,8 +1507,8 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
   if (e.target.closest('#suggest-more')) { suggestionTurn++; return renderChat(); }
-  const msg = e.target.closest('[data-msg]');
-  if (msg && !e.target.closest('a')) return messageActions(chatView[Number(msg.dataset.msg)]);
+  const msg = e.target.closest('[data-msg-act]');
+  if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
   if (q) { chatInput.value = q; return sendChat(); }
   const open = e.target.closest('[data-open]')?.dataset.open;

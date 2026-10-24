@@ -53,6 +53,9 @@
     #day::-webkit-scrollbar { display: none; }
     /* En móvil Ionic impide seleccionar texto en toda la app; en «Seleccionar texto» del asistente se permite */
     #text-body { -webkit-user-select: text; user-select: text; }
+    /* Asistente: la fila de iconos de cada mensaje, más baja que una fila normal */
+    #chat-body .msg-actions { --min-height: 32px; --inner-padding-end: 0; }
+    #chat-body .msg-actions ion-buttons { margin: 0; }
     /* Asistente: margen de la caja de escribir (variables de ion-textarea) */
     #chat-input { --padding-start: 8px; --padding-end: 8px; }
     /* Respuestas en Markdown: tablas con bordes finos y scroll horizontal si no caben; las gráficas, con alto fijo */
@@ -295,20 +298,6 @@
         <ion-item><ion-input name="start" type="number" min="0" max="24" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" placeholder="Sin hora"></ion-input></ion-item>
         <ion-item><ion-input name="end" type="number" min="0" max="24" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" placeholder="Sin hora"></ion-input></ion-item>
       </ion-list>
-    </ion-content>
-  </ion-modal>
-
-  <ion-modal id="message-actions">
-    <ion-header>
-      <ion-toolbar>
-        <ion-title id="message-actions-title">Mensaje</ion-title>
-      </ion-toolbar>
-    </ion-header>
-    <ion-content color="light" class="ion-padding">
-      <ion-button id="message-copy" expand="block"><ion-icon slot="start" name="copy-outline"></ion-icon>Copiar</ion-button>
-      <ion-button id="message-select" expand="block" fill="outline"><ion-icon slot="start" name="text-outline"></ion-icon>Seleccionar texto</ion-button>
-      <ion-button id="message-edit" expand="block" fill="outline"><ion-icon slot="start" name="create-outline"></ion-icon>Editar</ion-button>
-      <ion-button id="message-cancel" expand="block" fill="clear" color="medium">Cancelar</ion-button>
     </ion-content>
   </ion-modal>
 
