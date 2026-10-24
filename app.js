@@ -1139,13 +1139,12 @@ function drawCharts() {
 }
 
 // Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, el
-// momento del día, la conversación y lo que sabe hacer; se guardan por estado de la conversación y de los datos (así
-// reabrir el asistente no vuelve a pedirlas) y «Otras» pide unas distintas. Mientras llegan sale un aviso; si el
-// servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
+// momento del día, la conversación y lo que sabe hacer. Se guardan en este navegador y no cambian solas: solo se piden
+// la primera vez (si no hay ninguna guardada), al pulsar «Otras» o tras «Limpiar». Si el servicio falla, se eligen al
+// azar de un fondo hecho en la app con los datos (suggestionPool).
 const SUGGEST_KEY = 'dosify-sugerencias';
-let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return v && typeof v.key === 'string' && Array.isArray(v.list) ? v : { key: '', list: [] }; } catch { return { key: '', list: [] }; } })();
+let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
-const suggestKey = () => `${chatView.length}|${state.meds.length}|${state.log.length}|${today()}|${new Date().getHours() < 12 ? 'm' : new Date().getHours() < 20 ? 't' : 'n'}`;
 function suggestionPool() {
   const meds = state.meds.filter(m => !finished(m)), day = today(), h = new Date().getHours();
   const slot = intervalNow(), slotName = slot ? label(slot) : 'ahora';
@@ -1185,24 +1184,20 @@ const localSuggestions = count => { const asked = new Set(chat.filter(m => m.rol
 // Caché que se refresca por detrás: si hay sugerencias guardadas, aunque sean de otro estado, salen al instante y se
 // piden las nuevas en segundo plano (mientras, un indicador junto a «Otras»); solo sin nada guardado sale el aviso.
 function suggestions(count) {
-  const key = suggestKey();
-  if (suggested.key !== key && !suggestLoading) requestSuggestions(count, []);
-  return suggested.list.length ? suggested.list : null;
+  if (!suggested.length && !suggestLoading) requestSuggestions(count, []);
+  return suggested.length ? suggested : null;
 }
-// Una petición cada vez: si llega una respuesta de una petición ya sustituida («Otras» mientras cargaba), se ignora;
-// si llega tarde (la conversación o los datos cambiaron) se vuelve a pedir; si el servicio tarda más de 25 s o falla,
-// salen las del fondo local.
+// Una petición cada vez: si llega una respuesta de una petición ya sustituida, se ignora; si el servicio tarda más de
+// 25 s o falla, salen las del fondo local.
 let suggestRequest = 0;
 function requestSuggestions(count, exclude) {
-  const key = suggestKey(), epoch = chatEpoch, id = ++suggestRequest;
+  const id = ++suggestRequest;
   suggestLoading = askSuggestions(count, exclude).catch(() => localSuggestions(count)).then(list => {
     if (id !== suggestRequest) return;
     suggestLoading = null;
-    if (epoch === chatEpoch && key === suggestKey()) {
-      suggested = { key, list };
-      try { localStorage.setItem(SUGGEST_KEY, JSON.stringify(suggested)); } catch {}
-    }
-    if (!chatBusy && !awaiting) renderChat(); // muestra las nuevas o, si ya no valen, pide otras
+    suggested = list;
+    try { localStorage.setItem(SUGGEST_KEY, JSON.stringify({ list })); } catch {}
+    if (!chatBusy && !awaiting) renderChat();
   });
 }
 // La petición: el mismo contexto que una pregunta, sin herramientas, y la respuesta como array JSON de textos.
@@ -1522,7 +1517,7 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
-$('#chat-new').onclick = () => { chatEpoch++; suggested = { key: '', list: [] }; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
+$('#chat-new').onclick = () => { chatEpoch++; suggested = []; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
 // Interacción con las propuestas: campos (se escriben en el borrador), chips (intervalos, programaciones, visible)
 // y botones (guardar, descartar, todas).
@@ -1544,7 +1539,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
-  if (e.target.closest('#suggest-more')) { if (!suggestLoading) requestSuggestions(chatView.length ? 3 : 4, suggested.list); return renderChat(); }
+  if (e.target.closest('#suggest-more')) { if (!suggestLoading) requestSuggestions(chatView.length ? 3 : 4, suggested); return renderChat(); }
   const msg = e.target.closest('[data-msg-act]');
   if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
@@ -1599,7 +1594,7 @@ $('#day').setAttribute('value', today());
 renderSlots();
 $('#slot').value = intervalNow();
 render();
-// Al cargar, si el asistente está configurado, se precargan las sugerencias en segundo plano (caché por delante).
-if (ai.key && ai.model && ai.url) setTimeout(() => { if (!suggestLoading && suggested.key !== suggestKey()) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
+// Al cargar, si el asistente está configurado y no hay sugerencias guardadas, se piden en segundo plano.
+if (ai.key && ai.model && ai.url) setTimeout(() => { if (!suggestLoading && !suggested.length) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
 // Al cargar, hoy (el último día) siempre a la vista.
 $('#day').componentOnReady().then(() => requestAnimationFrame(() => { $('#day').scrollLeft = $('#day').scrollWidth; }));
