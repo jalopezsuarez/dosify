@@ -100,7 +100,7 @@ const SNAP = ['name', 'dose', 'notes'];
 const EDITED = ['name', 'notes']; // lo que el editor de pauta cambia de lo que guarda cada toma
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
 const snapOn = (m, day) => ({ ...snap(m), dose: doseOn(m, day) }); // la pauta tal como se toma ese día
-const takenAs = e => { const m = state.meds.find(x => x.id === e.id); return { refs: m?.refs ?? '', memo: m?.memo ?? '', id: e.id, ...snap(e) }; };
+const takenAs = e => { const m = state.meds.find(x => x.id === e.id); return { refs: m?.refs ?? '', memo: m?.memo ?? '', cost: m?.cost ?? '', units: m?.units ?? '', id: e.id, ...snap(e) }; };
 // Filas de un día e intervalo: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
 // no están en el intervalo o se borraron).
 function dayRows(slot, day) {
@@ -264,15 +264,23 @@ async function renderToma() {
     ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`; });
 }
 
-// Ficha de la pauta (dosis, indicaciones, referencias, notas y registro) para leerla con calma; los enlaces se pueden pulsar.
+// Ficha de la pauta (dosis, indicaciones, referencias con notas y envase, y registro) para leerla con calma; los enlaces se pueden pulsar.
 const info = $('#info');
 const linkify = text => esc(text)
   .replace(/\n/g, '<br>')
   .replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
-const section = (title, text) => `
-  <ion-list-header><ion-label>${title}</ion-label></ion-list-header>
+const island = text => `
   <ion-list inset="true">
     <ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(text) || '—'}</ion-label></ion-item>
+  </ion-list>`;
+const section = (title, text) => `
+  <ion-list-header><ion-label>${title}</ion-label></ion-list-header>${island(text)}`;
+// Sección «Referencias»: las referencias, debajo las notas en su propia isla y, en otra, el coste y las dosis por envase.
+const refsSection = m => `
+  <ion-list-header><ion-label>Referencias</ion-label></ion-list-header>${island(m.refs)}${island(m.memo)}
+  <ion-list inset="true">
+    <ion-item><ion-label>Coste del envase</ion-label><ion-note slot="end">${m.cost === '' || m.cost == null ? '—' : euros(m.cost, 0)}</ion-note></ion-item>
+    <ion-item><ion-label>Dosis por envase</ion-label><ion-note slot="end">${m.units === '' || m.units == null ? '—' : m.units.toLocaleString('es')}</ion-note></ion-item>
   </ion-list>`;
 
 // Al final de la ficha, como en el editor de la pauta: «Ver registro», con el número de tomas (si la pauta existe).
@@ -284,7 +292,7 @@ const recordSection = id => state.meds.some(m => m.id === id) ? `
 
 function openInfo(m) {
   $('#info-title').textContent = m.name;
-  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + section('Referencias', m.refs) + section('Notas', m.memo) + recordSection(m.id);
+  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + refsSection(m) + recordSection(m.id);
   info.present();
 }
 
