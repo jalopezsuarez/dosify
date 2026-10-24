@@ -173,8 +173,10 @@
       </ion-list>
       <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
       <ion-list inset="true" id="plan-list"></ion-list>
-      <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
-      <ion-list inset="true" id="editor-slots"></ion-list>
+      <div id="editor-slots-section">
+        <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
+        <ion-list inset="true" id="editor-slots"></ion-list>
+      </div>
       <ion-list-header><ion-label>Otros datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Médico, enlaces…" auto-grow="true"></ion-textarea></ion-item>
@@ -278,11 +280,14 @@
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
+      <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-input name="dose" label="Dosis (empieza por un número)" label-placement="stacked" placeholder="1 comprimido"></ion-input></ion-item>
         <ion-item><ion-input name="start" type="date" label="Fecha de inicio" label-placement="stacked"></ion-input></ion-item>
         <ion-item><ion-input name="days" type="number" min="1" inputmode="numeric" label="Duración (días)" label-placement="stacked" placeholder="7"></ion-input></ion-item>
       </ion-list>
+      <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
+      <ion-list inset="true" id="plan-slots"></ion-list>
       <ion-list inset="true" id="plan-delete">
         <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar programación</ion-label></ion-item>
       </ion-list>
