@@ -1140,8 +1140,8 @@ function drawCharts() {
 
 // Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, el
 // momento del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
-// hay ninguna guardada), al enviar una pregunta (se vacían y se piden a la vez que la respuesta), al pulsar «Otras» o
-// tras «Limpiar». Si el servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
+// hay ninguna guardada), al terminar cada respuesta (se vacían al enviar la pregunta y las nuevas siguen, la mitad, el
+// hilo de lo respondido y, la otra mitad, van libres), al pulsar «Otras» o tras «Limpiar». Si el servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
 const SUGGEST_KEY = 'dosify-sugerencias';
 let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
@@ -1204,7 +1204,8 @@ function requestSuggestions(count, exclude) {
 async function askSuggestions(count, exclude) {
   const recent = chat.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-6).map(m => ({ role: m.role, content: m.content }));
   const asked = chat.filter(m => m.role === 'user').map(m => m.content);
-  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, intervalos, envases, costes, historial) y útiles según el momento del día y la conversación. Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
+  const linked = recent.some(m => m.role === 'assistant') ? ` La mitad de ellas (${Math.ceil(count / 2)}) deben seguir el hilo de tu última respuesta y de la conversación: profundizar, detallar o actuar sobre lo que acabas de decir (por ejemplo, si has mostrado una tabla, pedir una gráfica, un detalle o un cambio sobre esos mismos datos); la otra mitad, libres: otras cosas útiles ahora mismo con sus datos.` : '';
+  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, intervalos, envases, costes, historial) y útiles según el momento del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
   const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal: AbortSignal.timeout(25000),
     body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: ask }] }),
@@ -1359,8 +1360,8 @@ async function sendChat() {
   repairChat();
   chat.push({ role: 'user', content: question });
   chatView.push({ who: 'user', text: question });
-  // Las sugerencias se vacían y se piden las nuevas a la vez que la respuesta; hasta que lleguen, solo la fila de carga.
-  suggested = []; requestSuggestions(3, []);
+  // Las sugerencias se vacían; las nuevas se piden al terminar la respuesta, para que la mitad siga su hilo.
+  suggested = []; suggestRequest++; suggestLoading = null;
   const epoch = chatEpoch;
   chatBusy = true; renderChat();
   try {
@@ -1391,6 +1392,7 @@ async function sendChat() {
   } catch (err) {
     chatView.push({ who: 'error', text: err.message });
   }
+  if (epoch === chatEpoch) requestSuggestions(3, []);
   chatBusy = false; renderChat();
 }
 
