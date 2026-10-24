@@ -807,6 +807,7 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 function systemPrompt() {
   const now = new Date();
   const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), terminada: finished(m),
+    tomas_hoy: onDay(m, today()) ? Object.fromEntries(m.slots.map(sl => [sl, state.log.some(e => e.id === m.id && e.day === today() && e.slot === sl) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
   return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
@@ -819,6 +820,7 @@ ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; una pauta con el mismo nombre que ya está en los datos se modifica, no se crea otra.
+Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, o responder entre opciones, no contestes con texto: llama a interfaz, que muestra una lista con casillas (mode multiple) o de elección única (mode single) hecha con componentes de la app, y pon en cada elemento la acción que corresponda (por ejemplo, «una lista con check para marcar las tomas de esta mañana»: interfaz multiple con un elemento por pauta pendiente del intervalo de la mañana, cada uno con action registrar_toma e id, slot y day). Los elementos sin acción solo te devuelven lo elegido: sirven para preguntar con opciones. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
 Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar la pauta, la toma o el intervalo), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué pauta se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.`;
 }
 
@@ -833,7 +835,14 @@ const medProps = {
     properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' } } } },
 };
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
+const ACTIONS = ['crear_pauta', 'modificar_pauta', 'borrar_pauta', 'registrar_toma', 'quitar_toma', 'modificar_intervalo'];
 const TOOLS = [
+  tool('interfaz', 'Úsala siempre que haga falta interacción (elegir, marcar varias cosas, confirmar una lista, responder entre opciones): muestra una lista con casillas (multiple) o de elección única (single). Al aplicar se ejecuta la acción de cada elemento marcado y recibes lo elegido.', {
+    title: stringProp('Título de la lista'), mode: { type: 'string', enum: ['multiple', 'single'], description: 'multiple: casillas; single: una sola elección' }, confirm: stringProp('Texto del botón de aplicar, p. ej. «Marcar»'),
+    items: { type: 'array', description: 'Elementos de la lista', items: { type: 'object', required: ['label'], properties: {
+      label: stringProp('Texto principal'), detail: stringProp('Texto secundario'), checked: { type: 'boolean', description: 'Marcado de inicio' },
+      action: { type: 'object', description: 'Acción al aplicar si queda marcado', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } } } } },
+  }, ['title', 'items']),
   tool('crear_pauta', 'Úsala en cuanto pidan crear o añadir una pauta o producto, aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', medProps),
   tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, intervalos, coste…), aunque no digan el valor nuevo: abre un formulario con la pauta y tus cambios, si los hay', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
   tool('borrar_pauta', 'Úsala en cuanto pidan borrar o eliminar una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
@@ -877,7 +886,35 @@ const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.na
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
 const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${d.slots.map(label).join(', ') || 'sin intervalos'}`;
 const tomaBrief = d => `${d.name} · ${label(d.slot)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
+// Interfaz dinámica: cada elemento, con casilla (multiple) o radio (single); lo marcado se devuelve al asistente y,
+// si lleva acción, se ejecuta al aplicar con el mismo formulario que una propuesta (sin pasar por su tarjeta).
+const uiItem = (it, i, single) => `<ion-item><ion-${single ? 'radio' : 'checkbox'} class="ion-text-wrap" data-item="${i}" value="${i}" label-placement="end" justify="start" ${!single && it.checked ? 'checked' : ''}>${esc(it.label)}${it.detail ? `<br><ion-text color="medium">${esc(it.detail)}</ion-text>` : ''}</ion-${single ? 'radio' : 'checkbox'}></ion-item>`;
+const runAction = (label, a) => {
+  const f = a && ACTIONS.includes(a.tool) && FORMS[a.tool], d = f && f.draft(a.args ?? {});
+  if (!a) return label;
+  if (!d) return `${label}: no se ha podido (no existe o la acción no vale)`;
+  if (f.validate(d).length) return `${label}: no se ha podido (faltan datos)`;
+  return `${label}: ${f.apply(d) ?? 'no se ha podido'}`;
+};
 const FORMS = {
+  interfaz: {
+    draft: a => {
+      const items = (Array.isArray(a.items) ? a.items : []).filter(it => it && typeof it === 'object' && str(it.label).trim()).map(it => ({
+        label: str(it.label).trim(), detail: str(it.detail).trim(), checked: it.checked === true,
+        action: it.action && typeof it.action === 'object' && ACTIONS.includes(it.action.tool) ? { tool: it.action.tool, args: it.action.args && typeof it.action.args === 'object' ? it.action.args : {} } : null }));
+      if (!items.length) return null;
+      const single = a.mode === 'single';
+      if (single && items.filter(it => it.checked).length !== 1) items.forEach((it, i) => { it.checked = i === Math.max(0, items.findIndex(x => x.checked)); });
+      return { title: str(a.title).trim() || 'Elige', single, confirm: str(a.confirm).trim() || 'Aplicar', items };
+    },
+    title: d => esc(d.title), button: d => d.confirm,
+    brief: d => `${d.items.filter(it => it.checked).length} de ${d.items.length} ${d.single ? 'elegido' : 'marcados'}`,
+    fields: d => d.single
+      ? `<ion-radio-group data-field="choice" value="${d.items.findIndex(it => it.checked)}">${d.items.map((it, i) => uiItem(it, i, true)).join('')}</ion-radio-group>`
+      : d.items.map((it, i) => uiItem(it, i, false)).join(''),
+    validate: () => [],
+    apply: d => { const chosen = d.items.filter(it => it.checked); return chosen.length ? chosen.map(it => runAction(it.label, it.action)).join('; ') : `${d.title}: nada marcado`; },
+  },
   crear_pauta: {
     draft: a => medDraft({ name: '', notes: '', refs: '', memo: '', slots: [], cost: '', units: '', plan: [] }, a),
     title: () => 'Nueva pauta', brief: medBrief, fields: medFields, validate: medValidate,
@@ -945,6 +982,7 @@ function describe(tool, d) {
   }
   if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.slot)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
   if (tool === 'modificar_intervalo') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
+  if (tool === 'interfaz') { const on = d.items.filter(it => it.checked).map(it => it.label), off = d.items.filter(it => !it.checked).map(it => it.label); return `${d.single ? 'elegido' : 'marcado'}: ${on.join(', ') || 'nada'}${off.length ? `; sin marcar: ${off.join(', ')}` : ''}`; }
   return d.name;
 }
 function decide(v, saved) {
@@ -1057,7 +1095,7 @@ const proposalCard = (v, i) => {
     <ion-list inset="true">${form.fields(v.draft)}</ion-list>
     <div class="proposal-actions">
       <ion-button fill="outline" color="medium" data-act="discard">Descartar</ion-button>
-      <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? 'Guardar'}</ion-button>
+      <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? form.button?.(v.draft) ?? 'Guardar'}</ion-button>
     </div>
   </div>`;
 };
@@ -1078,7 +1116,7 @@ const proposalRow = (v, i) => {
 const proposalList = idx => `
   <ion-list-header><ion-label>Propuestas (${idx.length})</ion-label></ion-list-header>
   <ion-list inset="true">${idx.map(i => proposalRow(chatView[i], i)).join('')}</ion-list>`;
-// Los bloques de la conversación, agrupando las propuestas consecutivas en una lista.
+// Los bloques de la conversación, agrupando las propuestas consecutivas en una lista cuando hay varias pendientes.
 function chatBlocks() {
   const out = [];
   for (let i = 0; i < chatView.length; i++) {
@@ -1086,7 +1124,8 @@ function chatBlocks() {
       const idx = [];
       for (; i < chatView.length && chatView[i].who === 'proposal'; i++) idx.push(i);
       i--;
-      out.push(idx.length > 1 ? proposalList(idx) : block(chatView[idx[0]], idx[0]));
+      // Lista solo si hay varias pendientes; si no, cada una como tarjeta o línea.
+      out.push(idx.filter(i => chatView[i].status === 'pending').length > 1 ? proposalList(idx) : idx.map(i => block(chatView[i], i)).join(''));
     } else out.push(block(chatView[i], i));
   }
   return out.join('');
@@ -1104,7 +1143,7 @@ function openProposalEditor(i) {
   const v = chatView[i], form = FORMS[v.tool];
   proposalEdit = { i, v: { ...v, draft: structuredClone(v.draft) } };
   $('#proposal-title').innerHTML = form.title(v.draft);
-  Object.assign($('#proposal-save'), { textContent: form.danger ?? 'Guardar', color: form.danger ? 'danger' : '' });
+  Object.assign($('#proposal-save'), { textContent: form.danger ?? form.button?.(v.draft) ?? 'Guardar', color: form.danger ? 'danger' : '' });
   $('#proposal-body').innerHTML = editBlock(proposalEdit.v, i);
   proposalEditor.present();
 }
@@ -1178,7 +1217,7 @@ async function sendChat() {
       const waits = [], seen = new Set();
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-        const key = `${call.function.name} ${call.function.name === 'crear_pauta' ? str(args.name).trim().toLowerCase() : [args.id, args.slot, args.day].map(str).join('|')}`;
+        const key = `${call.function.name} ${call.function.name === 'crear_pauta' ? str(args.name).trim().toLowerCase() : call.function.name === 'interfaz' ? str(args.title).trim().toLowerCase() : [args.id, args.slot, args.day].map(str).join('|')}`;
         if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya has propuesto ese mismo cambio en este turno, no se propone otra vez.'); continue; }
         seen.add(key);
         const form = FORMS[call.function.name], draft = form?.draft(args);
@@ -1329,6 +1368,13 @@ $('#chat-send').onclick = sendChat;
 // y botones (guardar, descartar, todas).
 const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: 'edit' in card.dataset ? proposalEdit.v : chatView[Number(card.dataset.proposal)] }; };
 const refreshCard = (card, v) => { card.outerHTML = ('edit' in card.dataset ? editBlock : proposalCard)(v, Number(card.dataset.proposal)); };
+for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionChange', e => {
+  const p = proposalOf(e.target); if (!p || p.v.tool !== 'interfaz') return;
+  const { item, field } = e.target.dataset;
+  if (item !== undefined) p.v.draft.items[Number(item)].checked = e.detail.checked;
+  if (field === 'choice') p.v.draft.items.forEach((it, i) => { it.checked = String(i) === String(e.detail.value); });
+  saveChat();
+});
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionInput', e => {
   const p = proposalOf(e.target); if (!p) return;
   const { field, plan, row } = e.target.dataset, value = String(e.target.value ?? '');
