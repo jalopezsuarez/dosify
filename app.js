@@ -1220,7 +1220,7 @@ async function askSuggestions(count, exclude) {
 const suggestionList = qs => `
   <ion-list-header><ion-label>Sugerencias</ion-label>${qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button>' : ''}</ion-list-header>
   <ion-list inset="true">${(qs ?? []).map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')
-    }${suggestLoading || !qs ? '<ion-item lines="none"><ion-spinner slot="start" name="dots" color="medium"></ion-spinner><ion-label color="medium">Pensando sugerencias…</ion-label></ion-item>' : ''}</ion-list>`;
+    }${suggestLoading || !qs ? '<ion-item lines="none"><ion-spinner slot="start" name="dots" color="medium"></ion-spinner><ion-label color="medium">Proponiendo sugerencias…</ion-label></ion-item>' : ''}</ion-list>`;
 
 const actionLine = (ok, text) => `<ion-list inset="true"><ion-item lines="none"><ion-icon slot="start" name="${ok ? 'checkmark-circle' : 'close-circle'}" color="${ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(text)}</ion-label></ion-item></ion-list>`;
 // Tarjeta de una propuesta: título, campos editables y «Descartar» / «Guardar» (o «Borrar»); guardada o descartada,
