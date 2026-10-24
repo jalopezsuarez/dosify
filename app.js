@@ -269,12 +269,12 @@ const info = $('#info');
 const linkify = text => esc(text)
   .replace(/\n/g, '<br>')
   .replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
-const island = text => `
+const island = (text, sub = '') => `
   <ion-list inset="true">
-    <ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(text) || '—'}</ion-label></ion-item>
+    <ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(text) || '—'}${sub ? `<p>${esc(sub)}</p>` : ''}</ion-label></ion-item>
   </ion-list>`;
-const section = (title, text) => `
-  <ion-list-header><ion-label>${title}</ion-label></ion-list-header>${island(text)}`;
+const section = (title, text, sub) => `
+  <ion-list-header><ion-label>${title}</ion-label></ion-list-header>${island(text, sub)}`;
 // Sección «Referencias»: las referencias, debajo las notas en su propia isla y, en otra, el coste y las dosis por envase.
 const refsSection = m => `
   <ion-list-header><ion-label>Referencias</ion-label></ion-list-header>${island(m.refs)}${island(m.memo)}
@@ -292,7 +292,9 @@ const recordSection = id => state.meds.some(m => m.id === id) ? `
 
 function openInfo(m) {
   $('#info-title').textContent = m.name;
-  $('#info-body').innerHTML = section('Dosis', m.dose) + section('Indicaciones', m.notes) + refsSection(m) + recordSection(m.id);
+  // Bajo la dosis, el intervalo que aplica: el de la toma desde la que se abre o, desde otro sitio, los de la pauta.
+  const slots = m.slot ? [m.slot] : list(m.slots);
+  $('#info-body').innerHTML = section('Dosis', m.dose, slots.map(label).join(', ')) + section('Indicaciones', m.notes) + refsSection(m) + recordSection(m.id);
   info.present();
 }
 
@@ -1227,7 +1229,7 @@ $('#slot').addEventListener('ionChange', renderToma);
 // La pauta de una fila de la toma: si ese día ya está tomada, como se tomó; si no, la pauta actual.
 const rowMed = id => {
   const e = state.log.find(e => e.day === selectedDay() && e.slot === selectedSlot() && String(e.id) === id), m = state.meds.find(m => m.id === id);
-  return e ? takenAs(e) : { ...m, dose: doseOn(m, selectedDay()) };
+  return { ...(e ? takenAs(e) : { ...m, dose: doseOn(m, selectedDay()) }), slot: selectedSlot() };
 };
 // Marcar o desmarcar se confirma en un action sheet; si se cancela, la casilla vuelve a como estaba.
 $('#toma').addEventListener('ionChange', e => {
