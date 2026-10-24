@@ -1138,22 +1138,57 @@ function drawCharts() {
   }
 }
 
-// Preguntas sugeridas, hechas con tus datos (sin llamar al servicio); no repite las ya preguntadas.
-function suggestions(count) {
-  const meds = state.meds.filter(m => !finished(m)), asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content));
-  const list = [
-    '¿Qué me falta por tomar hoy?',
+// Preguntas sugeridas, hechas con tus datos y el momento del día (sin llamar al servicio): de un fondo amplio (qué
+// tomar ahora, envases, costes, historial, programaciones, cambios con formularios…) se eligen unas pocas al azar
+// entre las que vienen a cuento, sin repetir las ya preguntadas; cambian al abrir el asistente, tras cada respuesta
+// y con «Otras».
+let suggestionKey = '', suggestionPick = [], suggestionTurn = 0;
+function suggestionPool() {
+  const meds = state.meds.filter(m => !finished(m)), day = today(), h = new Date().getHours();
+  const slot = intervalNow(), slotName = slot ? label(slot) : 'ahora';
+  const taken = (m, sl) => state.log.some(e => e.id === m.id && e.day === day && e.slot === sl);
+  const pendingNow = meds.filter(m => m.slots.includes(slot) && onDay(m, day) && !taken(m, slot));
+  const logged = meds.filter(m => state.log.some(e => e.id === m.id)), priced = meds.filter(m => m.cost !== ''), ending = meds.filter(m => m.plan.length && planEnd(m.plan.at(-1)) <= addDays(day, 7));
+  const week = state.log.filter(e => e.day >= addDays(day, -7)).length, pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const some = meds.length ? pick(meds) : null, withLog = logged.length ? pick(logged) : null;
+  return [
+    // Ahora mismo
+    ...(pendingNow.length ? [`Hazme una lista con check para marcar lo que me toca en ${slotName}.`, `¿Qué me queda por tomar en ${slotName}?`] : []),
+    ...(meds.length ? ['¿Qué me falta por tomar hoy?', h >= 20 ? '¿Me queda algo pendiente de hoy antes de dormir?' : h < 12 ? '¿Qué tengo que tomar a lo largo del día de hoy?' : '¿Qué me queda por tomar en lo que falta de día?'] : []),
+    // Envases y compras
     ...meds.filter(m => runsOut(m)).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
-    ...(state.meds.some(m => m.cost !== '') ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por pauta.'] : []),
-    ...(state.log.length ? ['¿Cómo he cumplido las tomas esta semana? Hazme una tabla por día.', '¿Qué tomas se me olvidaron en los últimos 7 días?'] : []),
+    ...(meds.some(m => runsOut(m)) ? ['¿Qué tengo que comprar en los próximos 14 días? Hazme la lista con precios.', '¿Qué envase se me acaba antes?'] : []),
+    ...(meds.some(m => m.units === '' || m.cost === '') ? ['Hazme un formulario para completar el coste y las dosis por envase de las pautas que no lo tienen.'] : []),
+    // Costes
+    ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por pauta.', '¿Qué pauta me sale más cara al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por pauta.'] : []),
+    ...(priced.length && state.log.length ? ['¿Cuánto me he gastado este mes según las tomas registradas?'] : []),
+    // Historial
+    ...(state.log.length ? ['¿Cómo he cumplido las tomas esta semana? Hazme una tabla por día.', '¿Qué tomas se me olvidaron en los últimos 7 días?', 'Hazme una gráfica de las tomas por día de los últimos 14 días.'] : []),
+    ...(week > 7 ? ['¿Qué día de la semana se me olvidan más tomas?', '¿En qué intervalo cumplo peor?'] : []),
+    ...(withLog ? [`Resume el registro de ${withLog.name} en una tabla.`, `¿A qué hora suelo tomar ${withLog.name}?`, `¿Cuántas dosis de ${withLog.name} llevo tomadas en total?`] : []),
+    // Programaciones
     ...meds.filter(m => m.plan.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus programaciones?`),
-    ...meds.filter(m => state.log.some(e => e.id === m.id)).map(m => `Resume el registro de ${m.name} en una tabla.`),
-    ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, intervalos, coste y fin del envase.'] : ['Ayúdame a crear mi primera pauta.']),
+    ...(ending.length ? [`¿Qué pautas terminan esta semana y cuándo?`] : []),
+    ...(meds.some(m => !m.plan.length) ? ['¿Qué pautas tengo sin programación?'] : []),
+    // Cambios con formulario
+    ...(some ? [`Quiero cambiar los intervalos de ${some.name}.`, `Añade una programación nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
+    ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, intervalos, coste y fin del envase.', 'Revisa mis pautas y dime si ves algo raro o incompleto.', 'Quiero añadir una pauta nueva.'] : ['Ayúdame a crear mi primera pauta.', 'Crea una pauta de ejemplo para ver cómo funciona.']),
+    // Otras
+    ...(state.intervals.some(iv => iv.visible && (iv.start === '' || iv.end === '')) ? ['Quiero poner horas a mis intervalos.'] : []),
+    '¿Qué puedes hacer por mí?',
   ];
-  return [...new Set(list)].filter(q => !asked.has(q)).slice(0, count);
+}
+function suggestions(count) {
+  const asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content));
+  const key = `${chatView.length}|${suggestionTurn}`;
+  if (key !== suggestionKey) {
+    suggestionKey = key;
+    suggestionPick = [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count);
+  }
+  return suggestionPick;
 }
 const suggestionList = qs => qs.length ? `
-  <ion-list-header><ion-label>Sugerencias</ion-label></ion-list-header>
+  <ion-list-header><ion-label>Sugerencias</ion-label><ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button></ion-list-header>
   <ion-list inset="true">${qs.map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')}</ion-list>` : '';
 
 const actionLine = (ok, text) => `<ion-list inset="true"><ion-item lines="none"><ion-icon slot="start" name="${ok ? 'checkmark-circle' : 'close-circle'}" color="${ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(text)}</ion-label></ion-item></ion-list>`;
@@ -1456,7 +1491,7 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
   editor.dismiss();
 });
 
-$('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
+$('#assistant').onclick = () => { suggestionTurn++; renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
 $('#chat-new').onclick = () => { chatEpoch++; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
@@ -1480,6 +1515,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
+  if (e.target.closest('#suggest-more')) { suggestionTurn++; return renderChat(); }
   const msg = e.target.closest('[data-msg]');
   if (msg && !e.target.closest('a')) return messageActions(chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
