@@ -1336,8 +1336,7 @@ const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${stat
 // móvil Ionic lo impide en la app) y, si es tuyo, editarlo (pasa a la caja de escribir). Los tuyos, a la derecha; los
 // del asistente, a la izquierda.
 const textModal = $('#text-view');
-const copyText = async text => { try { await navigator.clipboard.writeText(text); toast('Copiado'); } catch { toast('No se ha podido copiar'); } };
-function toast(message) { const t = $('#toast'); t.message = message; t.present(); }
+const copyText = text => navigator.clipboard.writeText(text).catch(() => {});
 const messageButton = (i, act, icon, title) => `<ion-button color="medium" data-msg="${i}" data-msg-act="${act}" aria-label="${title}" title="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
 const messageBar = (i, mine) => `<ion-item lines="none" class="msg-actions"><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
 const MESSAGE_ACTIONS = {
