@@ -1263,18 +1263,28 @@ function repairChat() {
 }
 // Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
 const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${state.meds.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ninguna pauta: si hace falta, créala.';
-// Tocar un mensaje: copiarlo, verlo en una pantalla donde se puede seleccionar el texto (en móvil Ionic lo impide en
-// la app) o, si es tuyo, editarlo (pasa a la caja de escribir).
-const textModal = $('#text-view');
+// Tocar un mensaje abre una ventana con botones a todo el ancho: copiarlo, verlo en una pantalla donde se puede
+// seleccionar el texto (en móvil Ionic lo impide en la app) o, si es tuyo, editarlo (pasa a la caja de escribir).
+const textModal = $('#text-view'), actionsModal = $('#message-actions');
+let actingOn = null;
 const copyText = async text => { try { await navigator.clipboard.writeText(text); toast('Copiado'); } catch { toast('No se ha podido copiar'); } };
 function toast(message) { const t = $('#toast'); t.message = message; t.present(); }
 function messageActions(v) {
-  sheet(v.who === 'user' ? 'Tu mensaje' : 'Respuesta', [
-    { text: 'Copiar', handler: () => copyText(v.text) },
-    { text: 'Seleccionar texto', handler: () => { $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`; textModal.present(); } },
-    ...(v.who === 'user' ? [{ text: 'Editar', handler: () => { chatInput.value = v.text; chatInput.setFocus(); } }] : []),
-  ]);
+  actingOn = v;
+  $('#message-actions-title').textContent = v.who === 'user' ? 'Tu mensaje' : 'Respuesta';
+  $('#message-edit').classList.toggle('ion-hide', v.who !== 'user');
+  actionsModal.present();
 }
+const MESSAGE_ACTIONS = {
+  'message-copy': v => copyText(v.text),
+  'message-select': v => { $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`; textModal.present(); },
+  'message-edit': v => { chatInput.value = v.text; chatInput.setFocus(); },
+};
+actionsModal.addEventListener('click', e => {
+  const act = e.target.closest('ion-button')?.id; if (!act) return;
+  actionsModal.dismiss();
+  MESSAGE_ACTIONS[act]?.(actingOn);
+});
 $('#text-close').onclick = () => textModal.dismiss();
 
 // Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.

@@ -298,6 +298,20 @@
     </ion-content>
   </ion-modal>
 
+  <ion-modal id="message-actions">
+    <ion-header>
+      <ion-toolbar>
+        <ion-title id="message-actions-title">Mensaje</ion-title>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content color="light" class="ion-padding">
+      <ion-button id="message-copy" expand="block"><ion-icon slot="start" name="copy-outline"></ion-icon>Copiar</ion-button>
+      <ion-button id="message-select" expand="block" fill="outline"><ion-icon slot="start" name="text-outline"></ion-icon>Seleccionar texto</ion-button>
+      <ion-button id="message-edit" expand="block" fill="outline"><ion-icon slot="start" name="create-outline"></ion-icon>Editar</ion-button>
+      <ion-button id="message-cancel" expand="block" fill="clear" color="medium">Cancelar</ion-button>
+    </ion-content>
+  </ion-modal>
+
   <ion-modal id="text-view">
     <ion-header>
       <ion-toolbar>
