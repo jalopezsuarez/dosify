@@ -699,8 +699,8 @@ function savePlan() {
 // programación que valía cada día (de la más reciente a la más antigua; las que no tenían, en «Sin programación»).
 const recordModal = $('#record');
 function openRecord(id) {
-  const m = med(id);
-  const taken = state.log.filter(e => e.id === m.id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
+  const taken = state.log.filter(e => e.id === id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
+  const m = med(id) ?? { name: taken[0]?.name ?? '', plan: [], cost: '', units: '' }; // pauta borrada: solo sus tomas
   const units = taken.reduce((n, e) => n + amount(e.dose), 0);
   const item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
   const summary = [
@@ -727,29 +727,28 @@ function openRecord(id) {
 
 // ---------- Ficha de la pauta ----------
 
-// Solo lectura, espejo del editor: Producto, Programación, Intervalos, Otros datos y Registro de la pauta; si se abre
-// desde una toma ya hecha, además la sección Toma (día, hora y dosis tal como se tomó). Si la pauta se borró, solo
-// lo que guarda la toma. «Editar» (solo si la pauta existe) cierra la ficha y abre el editor.
+// Solo lectura, espejo del editor, exista la pauta o no: Producto, Programación, Intervalos, Otros datos y Registro;
+// desde una toma ya hecha, además la sección Toma (día, hora y dosis tal como se tomó). De una pauta borrada se
+// muestra lo que guarda la toma (nombre, indicaciones, intervalo) y «—» en el resto. «Editar», solo si la pauta
+// existe, cierra la ficha y abre el editor.
 const viewModal = $('#view');
 let viewing = null;
 const readRow = (name, value) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${esc(value ?? '').replace(/\n/g, '<br>') || '—'}</h2></ion-label></ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 function openView(id, entry) {
-  const m = med(id), base = m ?? entry;
+  const m = med(id), p = m ?? { name: entry.name, notes: entry.notes, refs: '', memo: '', slots: [entry.slot], cost: '', units: '', plan: [] };
   viewing = id;
-  $('#view-title').textContent = base.name;
+  $('#view-title').textContent = p.name;
   $('#view-edit').classList.toggle('ion-hide', !m);
-  $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', base.name) + readRow('Indicaciones', base.notes))
-    + readSection('Programación', m
-      ? m.plan.map(p => `<ion-item><ion-label><h2>${esc(p.dose)}</h2><p>${shortDate(p.start)} – ${shortDate(planUntil(m.plan, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}</p></ion-label></ion-item>`).join('') || empty('Sin programaciones.')
-      : readRow('Dosis', entry.dose))
-    + readSection('Intervalos', readRow(m ? 'Intervalos' : 'Intervalo', m ? m.slots.map(label).join(', ') : label(entry.slot)))
-    + (m ? readSection('Otros datos', readRow('Referencias', m.refs) + readRow('Notas', m.memo))
-      + `<ion-list inset="true">${readRow('Coste del envase', m.cost === '' ? '' : euros(m.cost, 0))}${readRow('Dosis por envase', m.units === '' ? '' : m.units.toLocaleString('es'))}</ion-list>` : '')
-    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + (m ? readRow('Dosis', entry.dose) : '')) : '')
-    + (m ? readSection('Registro', `<ion-item button="true" id="view-record"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
-      : `<ion-list inset="true">${empty('La pauta se borró: estos son los datos tal como se tomó.')}</ion-list>`);
+  $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
+    + readSection('Programación', p.plan.map(x => `<ion-item><ion-label><h2>${esc(x.dose)}</h2><p>${shortDate(x.start)} – ${shortDate(planUntil(p.plan, x))} · ${x.days} ${x.days === 1 ? 'día' : 'días'}</p></ion-label></ion-item>`).join('') || empty(m ? 'Sin programaciones.' : '—'))
+    + readSection('Intervalos', readRow('Intervalos', p.slots.map(label).join(', ')))
+    + readSection('Otros datos', readRow('Referencias', p.refs) + readRow('Notas', p.memo))
+    + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
+    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Dosis', entry.dose)) : '')
+    + readSection('Registro', `<ion-item button="true" id="view-record"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
+    + (m ? '' : `<ion-list inset="true">${empty('La pauta se borró: se muestra lo que guarda la toma.')}</ion-list>`);
   viewModal.present();
 }
 
