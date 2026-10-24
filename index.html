@@ -53,9 +53,11 @@
     #day::-webkit-scrollbar { display: none; }
     /* En móvil Ionic impide seleccionar texto en toda la app; en «Seleccionar texto» del asistente se permite */
     #text-body { -webkit-user-select: text; user-select: text; }
-    /* Asistente: la fila de iconos de cada mensaje, más baja que una fila normal */
-    #chat-body .msg-actions { --min-height: 32px; --inner-padding-end: 0; }
-    #chat-body .msg-actions ion-buttons { margin: 0; }
+    /* Asistente: la fila de iconos de cada mensaje, más baja que una fila normal y con el primer icono (o el último, en
+       los tuyos) a la misma sangría que el texto */
+    #chat-body .msg-actions { --min-height: 32px; }
+    #chat-body .msg-actions ion-buttons { margin: 0; gap: 16px; }
+    #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; }
     /* Asistente: margen de la caja de escribir (variables de ion-textarea) */
     #chat-input { --padding-start: 8px; --padding-end: 8px; }
     /* Respuestas en Markdown: tablas con bordes finos y scroll horizontal si no caben; las gráficas, con alto fijo */
