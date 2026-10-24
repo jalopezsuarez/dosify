@@ -21,6 +21,8 @@ const LOG_MAX = 1000;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// Texto plano con saltos de línea y enlaces (http, https o www.) pulsables, que se abren en otra pestaña.
+const linkify = text => esc(text).replace(/\n/g, '<br>').replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
 const yes = v => !['', '0', 'no', 'false'].includes(String(v).toLowerCase());
 const dayKey = d => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 const fromKey = key => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -733,7 +735,7 @@ function openRecord(id) {
 // existe, cierra la ficha y abre el editor.
 const viewModal = $('#view');
 let viewing = null;
-const readRow = (name, value) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${esc(value ?? '').replace(/\n/g, '<br>') || '—'}</h2></ion-label></ion-item>`;
+const readRow = (name, value, links) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${(links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label></ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 function openView(id, entry) {
@@ -744,7 +746,7 @@ function openView(id, entry) {
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
     + readSection('Programación', p.plan.map(x => `<ion-item><ion-label><h2>${esc(x.dose)}</h2><p>${shortDate(x.start)} – ${shortDate(planUntil(p.plan, x))} · ${x.days} ${x.days === 1 ? 'día' : 'días'}</p></ion-label></ion-item>`).join('') || empty(m ? 'Sin programaciones.' : '—'))
     + readSection('Intervalos', readRow('Intervalos', p.slots.map(label).join(', ')))
-    + readSection('Otros datos', readRow('Referencias', p.refs) + readRow('Notas', p.memo))
+    + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
     + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Dosis', entry.dose)) : '')
     + readSection('Registro', `<ion-item button="true" id="view-record"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
@@ -1078,8 +1080,6 @@ function trySave(v, card) {
   return true;
 }
 
-// Texto plano con enlaces (http, https o www.) pulsables: tus mensajes y, si marked no carga, las respuestas.
-const linkify = text => esc(text).replace(/\n/g, '<br>').replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
 // Markdown (marked) y gráficas (Chart.js) de las respuestas: se cargan desde CDN la primera vez que se abre el
 // asistente. Del Markdown no se deja pasar HTML ni enlaces que no sean http(s); un bloque ```chart con JSON
 // { "type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{ "label": "...", "data": [...] }] }
