@@ -1587,6 +1587,6 @@ renderSlots();
 $('#slot').value = intervalNow();
 render();
 // Al cargar, si el asistente está configurado, se precargan las sugerencias en segundo plano (caché por delante).
-if (ai.key && ai.model && ai.url && suggested.key !== suggestKey()) setTimeout(() => { if (!suggestLoading) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
+if (ai.key && ai.model && ai.url) setTimeout(() => { if (!suggestLoading && suggested.key !== suggestKey()) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
 // Al cargar, hoy (el último día) siempre a la vista.
 $('#day').componentOnReady().then(() => requestAnimationFrame(() => { $('#day').scrollLeft = $('#day').scrollWidth; }));
