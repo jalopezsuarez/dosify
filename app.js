@@ -1331,11 +1331,15 @@ const existing = () => state.meds.length ? `Las pautas que hay ahora son: ${stat
 const textModal = $('#text-view');
 const copyText = async text => { try { await navigator.clipboard.writeText(text); toast('Copiado'); } catch { toast('No se ha podido copiar'); } };
 function toast(message) { const t = $('#toast'); t.message = message; t.present(); }
-const messageButton = (i, act, icon, title) => `<ion-button data-msg="${i}" data-msg-act="${act}" aria-label="${title}" title="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
+const messageButton = (i, act, icon, title) => `<ion-button color="medium" data-msg="${i}" data-msg-act="${act}" aria-label="${title}" title="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
 const messageBar = (i, mine) => `<ion-item lines="none" class="msg-actions"><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
 const MESSAGE_ACTIONS = {
   copy: v => copyText(v.text),
-  select: v => { $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`; textModal.present(); },
+  // La pantalla «Texto» se abre con todo el texto ya seleccionado.
+  select: v => {
+    $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" id="text-content">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`;
+    textModal.present().then(() => { const range = document.createRange(); range.selectNodeContents($('#text-content')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); });
+  },
   edit: v => { chatInput.value = v.text; chatInput.setFocus(); },
 };
 $('#text-close').onclick = () => textModal.dismiss();
