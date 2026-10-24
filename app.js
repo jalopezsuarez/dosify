@@ -820,7 +820,7 @@ ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; una pauta con el mismo nombre que ya está en los datos se modifica, no se crea otra.
-Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, o responder entre opciones, no contestes con texto: llama a interfaz, que muestra una lista con casillas (mode multiple) o de elección única (mode single) hecha con componentes de la app, y pon en cada elemento la acción que corresponda (por ejemplo, «una lista con check para marcar las tomas de esta mañana»: interfaz multiple con un elemento por pauta pendiente del intervalo de la mañana, cada uno con action registrar_toma e id, slot y day). Los elementos sin acción solo te devuelven lo elegido: sirven para preguntar con opciones. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
+Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a interfaz y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por pauta pendiente del intervalo de la mañana, cada uno con action registrar_toma (id, slot, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions modificar_pauta con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué pauta?» → radio o buttons con las candidatas; elegir intervalos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
 Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar la pauta, la toma o el intervalo), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué pauta se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.`;
 }
 
@@ -836,13 +836,25 @@ const medProps = {
 };
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const ACTIONS = ['crear_pauta', 'modificar_pauta', 'borrar_pauta', 'registrar_toma', 'quitar_toma', 'modificar_intervalo'];
+const UI_TYPES = ['text', 'check', 'toggle', 'radio', 'chips', 'select', 'input', 'textarea', 'button'];
+const ACTION = { type: 'object', description: 'Acción: una de las otras herramientas con sus argumentos; en los argumentos, {{clave}} se sustituye por el valor del elemento con esa clave', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } };
 const TOOLS = [
-  tool('interfaz', 'Úsala siempre que haga falta interacción (elegir, marcar varias cosas, confirmar una lista, responder entre opciones): muestra una lista con casillas (multiple) o de elección única (single). Al aplicar se ejecuta la acción de cada elemento marcado y recibes lo elegido.', {
-    title: stringProp('Título de la lista'), mode: { type: 'string', enum: ['multiple', 'single'], description: 'multiple: casillas; single: una sola elección' }, confirm: stringProp('Texto del botón de aplicar, p. ej. «Marcar»'),
-    items: { type: 'array', description: 'Elementos de la lista', items: { type: 'object', required: ['label'], properties: {
-      label: stringProp('Texto principal'), detail: stringProp('Texto secundario'), checked: { type: 'boolean', description: 'Marcado de inicio' },
-      action: { type: 'object', description: 'Acción al aplicar si queda marcado', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } } } } },
-  }, ['title', 'items']),
+  tool('interfaz', 'Úsala siempre que haga falta interacción (elegir, marcar, repasar o confirmar una lista, rellenar o editar datos, responder entre opciones): compone una interfaz con componentes de la app a partir de secciones y elementos (texto, casillas, interruptores, radios, chips, selector, campos de texto, número, fecha y hora, área de texto y botones). Al aplicar se ejecutan las acciones de los elementos marcados o elegidos y las acciones globales, y recibes el valor de cada elemento.', {
+    title: stringProp('Título de la interfaz'), confirm: stringProp('Texto del botón de aplicar, p. ej. «Marcar» o «Guardar»'),
+    sections: { type: 'array', description: 'Secciones: cada una, un bloque (lista) con título opcional y sus elementos', items: { type: 'object', required: ['elements'], properties: {
+      title: stringProp('Título de la sección'),
+      elements: { type: 'array', items: { type: 'object', required: ['type'], properties: {
+        type: { type: 'string', enum: UI_TYPES, description: 'text: solo texto; check: casilla; toggle: interruptor; radio: elegir una opción; chips: chips (varias con multiple); select: selector; input: campo (text, number, date o time); textarea: texto largo; button: botón que aplica al instante' },
+        key: stringProp('Clave única del elemento: con ella recibes su valor y puedes usarlo en las acciones como {{clave}}'),
+        label: stringProp('Texto principal (o etiqueta del campo)'), detail: stringProp('Texto secundario'), placeholder: stringProp('Texto de ayuda del campo'),
+        checked: { type: 'boolean', description: 'check o toggle: marcado de inicio' }, value: { description: 'Valor inicial: texto en input, textarea, radio, select o chips; lista de valores en chips multiple' },
+        input: { type: 'string', enum: ['text', 'number', 'date', 'time'], description: 'input: tipo de campo' }, multiple: { type: 'boolean', description: 'chips: se pueden marcar varios' }, required: { type: 'boolean', description: 'input o textarea: obligatorio' },
+        options: { type: 'array', description: 'radio, chips o select: opciones', items: { type: 'object', required: ['label'], properties: { value: stringProp('Valor (si no, el texto)'), label: stringProp('Texto'), detail: stringProp('Texto secundario'), action: ACTION } } },
+        action: ACTION,
+      } } },
+    } } },
+    actions: { type: 'array', description: 'Acciones globales al aplicar (p. ej. modificar_pauta con los valores de los campos como {{clave}})', items: ACTION },
+  }, ['title', 'sections']),
   tool('crear_pauta', 'Úsala en cuanto pidan crear o añadir una pauta o producto, aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', medProps),
   tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, intervalos, coste…), aunque no digan el valor nuevo: abre un formulario con la pauta y tus cambios, si los hay', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
   tool('borrar_pauta', 'Úsala en cuanto pidan borrar o eliminar una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
@@ -886,34 +898,81 @@ const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.na
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
 const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${d.slots.map(label).join(', ') || 'sin intervalos'}`;
 const tomaBrief = d => `${d.name} · ${label(d.slot)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
-// Interfaz dinámica: cada elemento, con casilla (multiple) o radio (single); lo marcado se devuelve al asistente y,
-// si lleva acción, se ejecuta al aplicar con el mismo formulario que una propuesta (sin pasar por su tarjeta).
-const uiItem = (it, i, single) => `<ion-item><ion-${single ? 'radio' : 'checkbox'} class="ion-text-wrap" data-item="${i}" value="${i}" label-placement="end" justify="start" ${!single && it.checked ? 'checked' : ''}>${esc(it.label)}${it.detail ? `<br><ion-text color="medium">${esc(it.detail)}</ion-text>` : ''}</ion-${single ? 'radio' : 'checkbox'}></ion-item>`;
+// Interfaz dinámica: secciones (una lista cada una) de elementos hechos con componentes de Ionic. Cada elemento tiene
+// una clave; su valor (marcado, elegido o escrito) se guarda en el borrador, vuelve al asistente al aplicar y puede ir
+// en los argumentos de las acciones como {{clave}}. Las acciones (de elementos marcados o elegidos, de un botón
+// pulsado y las globales) se ejecutan con el formulario de su herramienta, sin pasar por su tarjeta.
+const normAction = a => a && typeof a === 'object' && ACTIONS.includes(a.tool) ? { tool: a.tool, args: a.args && typeof a.args === 'object' ? a.args : {} } : null;
+const normOptions = o => (Array.isArray(o) ? o : []).filter(x => x && typeof x === 'object' && str(x.label ?? x.value).trim())
+  .map(x => ({ value: str(x.value ?? x.label).trim(), label: str(x.label ?? x.value).trim(), detail: str(x.detail).trim(), action: normAction(x.action) }));
+function uiDraft(a) {
+  const values = {}; let n = 0;
+  const sections = (Array.isArray(a.sections) ? a.sections : []).map(sec => ({ title: str(sec?.title).trim(), elements: (Array.isArray(sec?.elements) ? sec.elements : [])
+    .filter(el => el && typeof el === 'object' && UI_TYPES.includes(el.type)).map(el => {
+      const e = { type: el.type, key: str(el.key).trim() || `e${++n}`, label: str(el.label ?? el.text).trim(), detail: str(el.detail).trim(), placeholder: str(el.placeholder).trim(),
+        input: ['text', 'number', 'date', 'time'].includes(el.input) ? el.input : 'text', multiple: el.multiple === true, required: el.required === true, options: normOptions(el.options), action: normAction(el.action) };
+      const has = v => e.options.some(o => o.value === v);
+      if (e.type === 'check' || e.type === 'toggle') values[e.key] = el.checked === true || el.value === true;
+      else if (e.type === 'radio') values[e.key] = has(str(el.value)) ? str(el.value) : e.options[0]?.value ?? '';
+      else if (e.type === 'select') values[e.key] = has(str(el.value)) ? str(el.value) : '';
+      else if (e.type === 'chips') values[e.key] = e.multiple ? list(el.value).filter(has) : has(str(el.value)) ? str(el.value) : '';
+      else if (e.type === 'input' || e.type === 'textarea') values[e.key] = str(el.value);
+      return e;
+    }) })).filter(sec => sec.elements.length);
+  if (!sections.length) return null;
+  return { title: str(a.title).trim() || 'Interfaz', confirm: str(a.confirm).trim() || 'Aplicar', sections, values, pressed: null, actions: (Array.isArray(a.actions) ? a.actions : []).map(normAction).filter(Boolean) };
+}
+const uiElements = d => d.sections.flatMap(sec => sec.elements);
+const uiSub = x => x.detail ? `<br><ion-text color="medium">${esc(x.detail)}</ion-text>` : '';
+const uiElement = (e, v) => ({
+  text: () => `<ion-item><ion-label class="ion-text-wrap"><h2>${esc(e.label)}</h2>${e.detail ? `<p>${esc(e.detail)}</p>` : ''}</ion-label></ion-item>`,
+  check: () => `<ion-item><ion-checkbox class="ion-text-wrap" data-ui="${esc(e.key)}" label-placement="end" justify="start" ${v ? 'checked' : ''}>${esc(e.label)}${uiSub(e)}</ion-checkbox></ion-item>`,
+  toggle: () => `<ion-item><ion-toggle class="ion-text-wrap" data-ui="${esc(e.key)}" ${v ? 'checked' : ''}>${esc(e.label)}${uiSub(e)}</ion-toggle></ion-item>`,
+  radio: () => `${e.label ? `<ion-item lines="none"><ion-label><p>${esc(e.label)}</p></ion-label></ion-item>` : ''}<ion-radio-group data-ui="${esc(e.key)}" value="${esc(v)}">${e.options.map(o =>
+    `<ion-item><ion-radio class="ion-text-wrap" value="${esc(o.value)}" label-placement="end" justify="start">${esc(o.label)}${uiSub(o)}</ion-radio></ion-item>`).join('')}</ion-radio-group>`,
+  chips: () => `<ion-item lines="none"><ion-label>${e.label ? `<p>${esc(e.label)}</p>` : ''}<p>${e.options.map(o => {
+    const on = e.multiple ? v.includes(o.value) : v === o.value;
+    return `<ion-chip data-chip="ui" data-ui="${esc(e.key)}" data-value="${esc(o.value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(o.label)}</ion-label></ion-chip>`; }).join('')}</p></ion-label></ion-item>`,
+  select: () => `<ion-item><ion-select data-ui="${esc(e.key)}" label="${esc(e.label)}" label-placement="stacked" interface="action-sheet" cancel-text="Cancelar" placeholder="${esc(e.placeholder || 'Elige')}" value="${esc(v)}">${e.options.map(o =>
+    `<ion-select-option value="${esc(o.value)}">${esc(o.label)}</ion-select-option>`).join('')}</ion-select></ion-item>`,
+  input: () => `<ion-item><ion-input data-ui="${esc(e.key)}" type="${e.input}" ${e.input === 'number' ? 'inputmode="numeric"' : ''} label="${esc(e.label)}" label-placement="stacked" placeholder="${esc(e.placeholder)}" value="${esc(v)}"></ion-input></ion-item>`,
+  textarea: () => `<ion-item><ion-textarea data-ui="${esc(e.key)}" label="${esc(e.label)}" label-placement="stacked" auto-grow="true" placeholder="${esc(e.placeholder)}" value="${esc(v)}"></ion-textarea></ion-item>`,
+  button: () => `<ion-item button="true" detail="false" data-ui-button="${esc(e.key)}"><ion-label color="primary" class="ion-text-wrap">${esc(e.label)}${e.detail ? `<p>${esc(e.detail)}</p>` : ''}</ion-label></ion-item>`,
+}[e.type]());
+const uiBlocks = d => d.sections.map(sec => `${sec.title ? `<ion-list-header><ion-label>${esc(sec.title)}</ion-label></ion-list-header>` : ''}<ion-list inset="true">${sec.elements.map(e => uiElement(e, d.values[e.key])).join('')}</ion-list>`).join('');
+// El valor de un elemento, en texto, para el asistente.
+const uiValue = (e, d) => {
+  const v = d.values[e.key], opt = x => e.options.find(o => o.value === x)?.label ?? x;
+  if (e.type === 'button') return d.pressed === e.key ? 'pulsado' : 'no pulsado';
+  if (Array.isArray(v)) return v.map(opt).join(', ') || 'ninguno';
+  if (typeof v === 'boolean') return v ? 'sí' : 'no';
+  return opt(v) || '—';
+};
+// {{clave}} en los argumentos de una acción: el valor del elemento (tal cual si es todo el texto; si no, dentro de él).
+const fill = (args, values) => JSON.parse(JSON.stringify(args), (k, v) => typeof v !== 'string' ? v
+  : /^\{\{\w+\}\}$/.test(v) ? values[v.slice(2, -2)] ?? '' : v.replace(/\{\{(\w+)\}\}/g, (_, key) => str(values[key])));
 const runAction = (label, a) => {
-  const f = a && ACTIONS.includes(a.tool) && FORMS[a.tool], d = f && f.draft(a.args ?? {});
-  if (!a) return label;
-  if (!d) return `${label}: no se ha podido (no existe o la acción no vale)`;
-  if (f.validate(d).length) return `${label}: no se ha podido (faltan datos)`;
+  const f = FORMS[a.tool], d = f.draft(a.args);
+  if (!d) return `${label}: no se ha podido (no existe)`;
+  if (f.validate(d).length) return `${label}: no se ha podido (faltan datos o no valen)`;
   return `${label}: ${f.apply(d) ?? 'no se ha podido'}`;
 };
 const FORMS = {
   interfaz: {
-    draft: a => {
-      const items = (Array.isArray(a.items) ? a.items : []).filter(it => it && typeof it === 'object' && str(it.label).trim()).map(it => ({
-        label: str(it.label).trim(), detail: str(it.detail).trim(), checked: it.checked === true,
-        action: it.action && typeof it.action === 'object' && ACTIONS.includes(it.action.tool) ? { tool: it.action.tool, args: it.action.args && typeof it.action.args === 'object' ? it.action.args : {} } : null }));
-      if (!items.length) return null;
-      const single = a.mode === 'single';
-      if (single && items.filter(it => it.checked).length !== 1) items.forEach((it, i) => { it.checked = i === Math.max(0, items.findIndex(x => x.checked)); });
-      return { title: str(a.title).trim() || 'Elige', single, confirm: str(a.confirm).trim() || 'Aplicar', items };
+    draft: uiDraft, title: d => esc(d.title), button: d => d.confirm, blocks: uiBlocks, fields: uiBlocks,
+    brief: d => `${uiElements(d).filter(e => e.type !== 'text').length} elementos`,
+    validate: d => uiElements(d).filter(e => (e.type === 'input' || e.type === 'textarea') && e.required && !str(d.values[e.key]).trim()).map(e => `@${e.key}`),
+    apply: d => {
+      const runs = [], run = (label, a) => { if (a) runs.push(runAction(label, { tool: a.tool, args: fill(a.args, d.values) })); };
+      for (const e of uiElements(d)) {
+        const v = d.values[e.key], chosen = e.options.filter(o => e.type === 'chips' && e.multiple ? v.includes(o.value) : v === o.value);
+        if ((e.type === 'check' || e.type === 'toggle') && v) run(e.label, e.action);
+        if (e.type === 'radio' || e.type === 'select' || e.type === 'chips') chosen.forEach(o => run(o.label, o.action));
+        if (e.type === 'button' && d.pressed === e.key) run(e.label, e.action);
+      }
+      d.actions.forEach(a => run(d.title, a));
+      return runs.length ? runs.join('; ') : `${d.title}: aplicado`;
     },
-    title: d => esc(d.title), button: d => d.confirm,
-    brief: d => `${d.items.filter(it => it.checked).length} de ${d.items.length} ${d.single ? 'elegido' : 'marcados'}`,
-    fields: d => d.single
-      ? `<ion-radio-group data-field="choice" value="${d.items.findIndex(it => it.checked)}">${d.items.map((it, i) => uiItem(it, i, true)).join('')}</ion-radio-group>`
-      : d.items.map((it, i) => uiItem(it, i, false)).join(''),
-    validate: () => [],
-    apply: d => { const chosen = d.items.filter(it => it.checked); return chosen.length ? chosen.map(it => runAction(it.label, it.action)).join('; ') : `${d.title}: nada marcado`; },
   },
   crear_pauta: {
     draft: a => medDraft({ name: '', notes: '', refs: '', memo: '', slots: [], cost: '', units: '', plan: [] }, a),
@@ -982,7 +1041,7 @@ function describe(tool, d) {
   }
   if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.slot)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
   if (tool === 'modificar_intervalo') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
-  if (tool === 'interfaz') { const on = d.items.filter(it => it.checked).map(it => it.label), off = d.items.filter(it => !it.checked).map(it => it.label); return `${d.single ? 'elegido' : 'marcado'}: ${on.join(', ') || 'nada'}${off.length ? `; sin marcar: ${off.join(', ')}` : ''}`; }
+  if (tool === 'interfaz') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
   return d.name;
 }
 function decide(v, saved) {
@@ -1009,9 +1068,9 @@ function trySave(v, card) {
   const bad = FORMS[v.tool].validate(v.draft);
   for (const f of bad) {
     const [field, row] = f.split(':');
-    const el = !card ? null : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-plan="${field}"][data-row="${row}"]`);
+    const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-plan="${field}"][data-row="${row}"]`);
     if (!el) continue;
-    el.errorText = (row === undefined ? FIELD_ERRORS : PLAN_ERRORS)[field] ?? 'Revisa este dato';
+    el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : PLAN_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
   }
   if (bad.length) return false;
@@ -1092,7 +1151,7 @@ const proposalCard = (v, i) => {
   if (v.status !== 'pending') return actionLine(v.status === 'saved', v.text);
   return `<div data-proposal="${i}">
     <ion-list-header><ion-label>${form.title(v.draft)}</ion-label></ion-list-header>
-    <ion-list inset="true">${form.fields(v.draft)}</ion-list>
+    ${form.blocks ? form.blocks(v.draft) : `<ion-list inset="true">${form.fields(v.draft)}</ion-list>`}
     <div class="proposal-actions">
       <ion-button fill="outline" color="medium" data-act="discard">Descartar</ion-button>
       <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? form.button?.(v.draft) ?? 'Guardar'}</ion-button>
@@ -1136,7 +1195,7 @@ function chatBlocks() {
 const proposalEditor = $('#proposal-editor');
 let proposalEdit = null; // { i, v } con v una copia de la propuesta
 const editBlock = (v, i) => `<div data-proposal="${i}" data-edit="">
-  <ion-list inset="true">${FORMS[v.tool].fields(v.draft)}</ion-list>
+  ${FORMS[v.tool].blocks ? FORMS[v.tool].blocks(v.draft) : `<ion-list inset="true">${FORMS[v.tool].fields(v.draft)}</ion-list>`}
   <ion-list inset="true"><ion-item button="true" detail="false" id="proposal-discard"><ion-label color="danger" class="ion-text-center">Descartar propuesta</ion-label></ion-item></ion-list>
 </div>`;
 function openProposalEditor(i) {
@@ -1368,16 +1427,16 @@ $('#chat-send').onclick = sendChat;
 // y botones (guardar, descartar, todas).
 const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: 'edit' in card.dataset ? proposalEdit.v : chatView[Number(card.dataset.proposal)] }; };
 const refreshCard = (card, v) => { card.outerHTML = ('edit' in card.dataset ? editBlock : proposalCard)(v, Number(card.dataset.proposal)); };
+// Elementos de una interfaz: casillas, interruptores, radios y selectores escriben su valor en el borrador.
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionChange', e => {
-  const p = proposalOf(e.target); if (!p || p.v.tool !== 'interfaz') return;
-  const { item, field } = e.target.dataset;
-  if (item !== undefined) p.v.draft.items[Number(item)].checked = e.detail.checked;
-  if (field === 'choice') p.v.draft.items.forEach((it, i) => { it.checked = String(i) === String(e.detail.value); });
+  const p = proposalOf(e.target), key = e.target.dataset.ui; if (!p || p.v.tool !== 'interfaz' || key === undefined) return;
+  p.v.draft.values[key] = 'checked' in e.detail ? e.detail.checked : String(e.detail.value ?? '');
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionInput', e => {
   const p = proposalOf(e.target); if (!p) return;
-  const { field, plan, row } = e.target.dataset, value = String(e.target.value ?? '');
+  const { field, plan, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
+  if (ui !== undefined) p.v.draft.values[ui] = value;
   if (field) p.v.draft[field] = value;
   if (plan) p.v.draft.plan[Number(row)][plan] = value;
   e.target.classList.remove('ion-invalid'); e.target.errorText = undefined;
@@ -1392,12 +1451,16 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   if (act === 'save-all') { for (const v of pending()) { const card = chatBody.querySelector(`[data-proposal="${chatView.indexOf(v)}"]`); v.bad = !trySave(v, card); } return renderChat(); }
   if (act === 'discard-all') { for (const v of pending()) decide(v, false); return renderChat(); }
   const p = proposalOf(e.target); if (!p) return;
+  // Botón de una interfaz: aplica al instante (en la vista de edición, por su «Guardar», que vuelca la copia).
+  const uiButton = e.target.closest('[data-ui-button]')?.dataset.uiButton;
+  if (uiButton !== undefined) { p.v.draft.pressed = uiButton; if ('edit' in p.card.dataset) $('#proposal-save').click(); else if (trySave(p.v, p.card)) renderChat(); return; }
   if (act === 'save') { if (trySave(p.v, p.card)) renderChat(); return; }
   if (act === 'discard') { decide(p.v, false); return renderChat(); }
   const chip = e.target.closest('ion-chip[data-chip]'); if (!chip) return;
   const { chip: kind, value, row } = chip.dataset, d = p.v.draft;
   if (kind === 'slot') { d.slots = d.slots.includes(value) ? d.slots.filter(x => x !== value) : IDS.filter(id => id === value || d.slots.includes(id)); chip.outline = !d.slots.includes(value); chip.color = d.slots.includes(value) ? 'primary' : 'medium'; }
   if (kind === 'pick-slot') { d.slot = value; refreshCard(p.card, p.v); }
+  if (kind === 'ui') { const k = chip.dataset.ui, multi = uiElements(d).find(x => x.key === k)?.multiple, cur = d.values[k]; d.values[k] = multi ? (cur.includes(value) ? cur.filter(x => x !== value) : [...cur, value]) : cur === value ? '' : value; refreshCard(p.card, p.v); }
   if (kind === 'visible') { d.visible = !d.visible; chip.outline = !d.visible; chip.color = d.visible ? 'primary' : 'medium'; }
   if (kind === 'add-plan') { d.plan.push({ dose: d.plan.at(-1)?.dose ?? '', start: today(), days: '' }); refreshCard(p.card, p.v); }
   if (kind === 'remove-plan') { d.plan.splice(Number(row), 1); refreshCard(p.card, p.v); }
