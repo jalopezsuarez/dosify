@@ -1216,7 +1216,7 @@ async function askSuggestions(count, exclude) {
   if (!list.length) throw new Error('vacío');
   return list;
 }
-// Mientras se piden sugerencias nuevas, una fila al final de la lista (la única, si aún no hay ninguna).
+// Mientras se piden sugerencias nuevas no se muestran las antiguas: solo la fila de carga.
 const suggestionList = qs => `
   <ion-list-header><ion-label>Sugerencias</ion-label>${qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button>' : ''}</ion-list-header>
   <ion-list inset="true">${(qs ?? []).map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')
@@ -1543,7 +1543,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
-  if (e.target.closest('#suggest-more')) { if (!suggestLoading) requestSuggestions(chatView.length ? 3 : 4, suggested); return renderChat(); }
+  if (e.target.closest('#suggest-more')) { if (!suggestLoading) { const prev = suggested; suggested = []; requestSuggestions(chatView.length ? 3 : 4, prev); } return renderChat(); }
   const msg = e.target.closest('[data-msg-act]');
   if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
