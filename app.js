@@ -1182,11 +1182,12 @@ function suggestionPool() {
   ];
 }
 const localSuggestions = count => { const asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content)); return [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count); };
+// Caché que se refresca por detrás: si hay sugerencias guardadas, aunque sean de otro estado, salen al instante y se
+// piden las nuevas en segundo plano (mientras, un indicador junto a «Otras»); solo sin nada guardado sale el aviso.
 function suggestions(count) {
   const key = suggestKey();
-  if (suggested.key === key && suggested.list.length) return suggested.list;
-  if (!suggestLoading) requestSuggestions(count, []);
-  return null; // cargando
+  if (suggested.key !== key && !suggestLoading) requestSuggestions(count, []);
+  return suggested.list.length ? suggested.list : null;
 }
 // Una petición cada vez: si llega una respuesta de una petición ya sustituida («Otras» mientras cargaba), se ignora;
 // si llega tarde (la conversación o los datos cambiaron) se vuelve a pedir; si el servicio tarda más de 25 s o falla,
@@ -1220,7 +1221,7 @@ async function askSuggestions(count, exclude) {
   return list;
 }
 const suggestionList = qs => `
-  <ion-list-header><ion-label>Sugerencias</ion-label>${qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button>' : ''}</ion-list-header>
+  <ion-list-header><ion-label>Sugerencias</ion-label>${suggestLoading ? '<ion-spinner name="dots" color="medium"></ion-spinner>' : qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button>' : ''}</ion-list-header>
   <ion-list inset="true">${qs ? qs.map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')
     : '<ion-item lines="none"><ion-spinner slot="start" name="dots" color="medium"></ion-spinner><ion-label color="medium">Pensando sugerencias…</ion-label></ion-item>'}</ion-list>`;
 
@@ -1543,7 +1544,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
-  if (e.target.closest('#suggest-more')) { if (suggestLoading) return; const prev = suggested.list; suggested = { key: '', list: [] }; requestSuggestions(chatView.length ? 3 : 4, prev); return renderChat(); }
+  if (e.target.closest('#suggest-more')) { if (!suggestLoading) requestSuggestions(chatView.length ? 3 : 4, suggested.list); return renderChat(); }
   const msg = e.target.closest('[data-msg-act]');
   if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
@@ -1585,5 +1586,7 @@ $('#day').setAttribute('value', today());
 renderSlots();
 $('#slot').value = intervalNow();
 render();
+// Al cargar, si el asistente está configurado, se precargan las sugerencias en segundo plano (caché por delante).
+if (ai.key && ai.model && ai.url && suggested.key !== suggestKey()) setTimeout(() => { if (!suggestLoading) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
 // Al cargar, hoy (el último día) siempre a la vista.
 $('#day').componentOnReady().then(() => requestAnimationFrame(() => { $('#day').scrollLeft = $('#day').scrollWidth; }));
