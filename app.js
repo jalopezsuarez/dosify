@@ -3,8 +3,9 @@ const KEY = 'dosify';
 // · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), en su orden:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
 // · meds: pautas, en el orden de pautas: { id, name, notes (indicaciones), refs (referencias), memo (notas),
-//   slots: [ids de intervalo] (solo valen sin programaciones), cost (€ por envase) y units (dosis por envase), enteros o vacíos, y
-//   plan: [programaciones { dose (empieza por la cantidad de cada toma), start, days }] }
+//   cost (€ por envase) y units (dosis por envase), enteros o vacíos, y plan: [programaciones { dose (empieza por la
+//   cantidad de cada toma), start, days, slots: [ids de los intervalos en que se toma; al menos uno] }]. Sin
+//   programaciones, una pauta no sale en la toma.
 // · log: tomas: { at, day, id (de la pauta), slot (id de intervalo), name, dose, notes (la pauta tal como se tomó) }
 const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
@@ -42,15 +43,15 @@ const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' 
 // Cantidad de cada toma: el número con que empieza la dosis («1 comprimido», «0,5 ml»); 0 si no empieza por número.
 const amount = dose => Number(String(dose).match(/^\s*(\d+(?:[.,]\d+)?)/)?.[1].replace(',', '.')) || 0;
 // Programaciones válidas (dosis con número, fecha y duración), en orden de fecha de inicio y, a igual fecha, de duración.
-// Cada programación lleva sus intervalos (slots); si no los trae (datos o CSV anteriores), hereda los de la pauta.
-const cleanPlan = (v, slots = []) => (Array.isArray(v) ? v : []).filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1)
-  .map(p => ({ dose: p.dose, start: p.start, days: p.days, slots: IDS.filter(id => list(p.slots ?? slots).includes(id)) })).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
+// Programaciones válidas (dosis con número, fecha, duración y al menos un intervalo), en orden de fecha de inicio y,
+// a igual fecha, de duración; las incompletas se descartan.
+const cleanPlan = v => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, slots: IDS.filter(id => list(p.slots).includes(id)) } : null)
+  .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.slots.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   const meds = arr(raw?.meds).filter(m => text(m.id) && text(m.name)).map(m => ({
     id: m.id, name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
-    slots: IDS.filter(id => list(m.slots).includes(id)), cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '',
-    plan: cleanPlan(m.plan, list(m.slots)),
+    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', plan: cleanPlan(m.plan),
   }));
   const saved = arr(raw?.intervals);
   const intervals = DEFAULT_INTERVALS.map(d => {
@@ -95,11 +96,11 @@ const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, sl
 // su dosis; sin programaciones, todos los días, sin dosis.
 const planEnd = p => addDays(p.start, p.days - 1);
 const planOn = (m, day) => { const p = m.plan.filter(p => p.start <= day).at(-1); return p && day <= planEnd(p) ? p : null; };
-const onDay = (m, day) => !m.plan.length || !!planOn(m, day);
+const onDay = (m, day) => !!planOn(m, day);
 const doseOn = (m, day) => planOn(m, day)?.dose ?? '';
 // Intervalos que valen un día: los de la programación de ese día (o, si ninguna vale, los de la última); sin
-// programaciones, los de la pauta.
-const slotsOn = (m, day) => (planOn(m, day) ?? m.plan.at(-1))?.slots ?? m.slots;
+// programaciones, ninguno.
+const slotsOn = (m, day) => (planOn(m, day) ?? m.plan.at(-1))?.slots ?? [];
 const doses = (slot, day = selectedDay()) => bySlot(state.meds.filter(m => slotsOn(m, day).includes(slot) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), slot);
 // Cada toma guarda nombre, dosis e indicaciones de la pauta al tomarla; así el registro muestra lo que se tomó aunque la
 // pauta cambie o se borre.
@@ -476,7 +477,7 @@ const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
 const exportCSV = () => csv([
   HEAD,
   ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
-  ...state.meds.flatMap(m => [csvRow('pauta', { id: m.id, nombre: m.name, intervalos: m.slots.join(' '), indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units }),
+  ...state.meds.flatMap(m => [csvRow('pauta', { id: m.id, nombre: m.name, indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units }),
     ...m.plan.map(p => csvRow('programacion', { id: m.id, intervalos: p.slots.join(' '), dosis: p.dose, desde: p.start, dias: p.days }))]),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
     .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
@@ -491,8 +492,8 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     if (c.tipo === 'intervalo') raw.intervals.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
-    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, notes: c.indicaciones, refs: c.referencias, memo: c.notas, slots: words(c.intervalos), cost: c.coste, units: c.envase, plan: [] });
-    if (c.tipo === 'programacion') raw.meds.find(m => m.id === c.id)?.plan.push({ dose: c.dosis, start: c.desde, days: int(c.dias, 1), slots: c.intervalos.trim() ? words(c.intervalos) : undefined });
+    if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, notes: c.indicaciones, refs: c.referencias, memo: c.notas, cost: c.coste, units: c.envase, plan: [] });
+    if (c.tipo === 'programacion') raw.meds.find(m => m.id === c.id)?.plan.push({ dose: c.dosis, start: c.desde, days: int(c.dias, 1), slots: words(c.intervalos) });
     if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
   }
   if (!raw.intervals.length && !raw.meds.length && !raw.log.length) return;
@@ -629,15 +630,10 @@ const editor = $('#editor');
 const field = name => $(`[name="${name}"]`, editor);
 let editing = null;
 
-// Intervalos marcados en una lista de casillas (solo salen los visibles; los ocultos conservan el valor anterior).
-const slotBoxes = (root, prefix, slots) => visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${prefix}${iv.id}" ${slots.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('') || empty('No hay intervalos visibles.');
-const readSlots = (get, prefix, old) => IDS.filter(id => interval(id).visible ? get(`${prefix}${id}`).checked : old.includes(id));
-// Los intervalos de la pauta solo se editan aquí si no tiene programaciones (con ellas, van en cada programación).
 function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
   for (const f of ['cost', 'units']) { field(f).value = med[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
-  $('#editor-slots').innerHTML = slotBoxes(editor, '', med.slots ?? []);
   plan = structuredClone(med.plan ?? []);
   renderPlan();
   for (const id of ['#delete', '#delete-header']) $(id).classList.toggle('ion-hide', !editing);
@@ -650,14 +646,13 @@ function openEditor(med = {}) {
 function saveEditor() {
   const old = state.meds.find(m => m.id === editing);
   const med = Object.fromEntries(TEXT.map(f => [f, String(field(f).value ?? '').trim()]));
-  med.slots = readSlots(field, '', old?.slots ?? []);
   if (!med.name) return field('name').setFocus();
   // Coste y dosis por envase: enteros (las dosis, al menos 1) o vacíos; un valor no válido se marca en rojo.
   med.cost = int(field('cost').value); med.units = int(field('units').value, 1);
   for (const f of ['cost', 'units']) field(f).classList.toggle('ion-invalid', med[f] === null);
   const bad = ['cost', 'units'].find(f => med[f] === null);
   if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
-  med.plan = cleanPlan(plan, med.slots);
+  med.plan = cleanPlan(plan);
   const done = () => { save(); render(); editor.dismiss(); };
   if (!old) return state.meds.push({ id: newId(), ...med }), done();
   // Cambiar la pauta: las tomas de hoy en adelante pasan a mostrarla nueva; si cambia lo que se ve en el registro
@@ -689,29 +684,35 @@ const planUntil = (plans, p) => { const next = plans.find(q => q.start > p.start
 
 // Fechas, duración e intervalos de una programación («24/10/2026 – 22/11/2026 · 30 días · Desayuno, Cena»).
 const planLine = (plans, p) => `${shortDate(p.start)} – ${shortDate(planUntil(plans, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'} · ${p.slots.map(label).join(', ') || 'sin intervalos'}`;
+// Intervalos de una programación: una casilla por intervalo visible; los ocultos conservan su valor.
+const slotBoxes = slots => visibleIntervals().map(iv => `<ion-item><ion-checkbox name="ps-${iv.id}" ${slots.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('') || empty('No hay intervalos visibles.');
+const readSlots = old => IDS.filter(id => interval(id).visible ? planField(`ps-${id}`).checked : old.includes(id));
 function renderPlan() {
-  plan = cleanPlan(plan, readSlots(field, '', []));
+  plan = cleanPlan(plan);
   $('#plan-list').innerHTML = plan.map((p, i) => `<ion-item button="true" data-plan="${i}"><ion-label><h2>${esc(p.dose)}</h2><p>${esc(planLine(plan, p))}</p></ion-label></ion-item>`).join('')
     + `<ion-item button="true" detail="false" data-plan="new"><ion-icon slot="start" name="add-outline" color="primary"></ion-icon><ion-label color="primary">Añadir programación</ion-label></ion-item>`;
-  $('#editor-slots-section').classList.toggle('ion-hide', plan.length > 0);
 }
 
-// Una programación nueva propone la dosis y los intervalos de la última (o los de la pauta) y hoy.
+// Una programación nueva propone la dosis y los intervalos de la última y hoy.
 function openPlan(i) {
   editingPlan = i;
-  const p = plan[i] ?? { dose: plan.at(-1)?.dose ?? '', start: today(), days: '', slots: plan.at(-1)?.slots ?? readSlots(field, '', []) };
+  const p = plan[i] ?? { dose: plan.at(-1)?.dose ?? '', start: today(), days: '', slots: plan.at(-1)?.slots ?? [] };
   for (const f of ['dose', 'start', 'days']) { planField(f).value = p[f]; planField(f).classList.remove('ion-invalid', 'ion-touched'); }
-  $('#plan-slots').innerHTML = slotBoxes(planEditor, 'ps-', p.slots);
+  $('#plan-slots').innerHTML = slotBoxes(p.slots);
+  $('#plan-slots-error').classList.add('ion-hide');
   $('#plan-delete').classList.toggle('ion-hide', i === null);
   planEditor.present();
 }
 
-// Dosis que empiece por un número, fecha de inicio y duración de al menos 1 día; si falta algo, se marca en rojo.
+// Dosis que empiece por un número, fecha de inicio, duración de al menos 1 día y al menos un intervalo; si falta
+// algo, se marca en rojo.
 function savePlan() {
-  const p = { dose: String(planField('dose').value ?? '').trim(), start: date(planField('start').value ?? ''), days: int(planField('days').value, 1), slots: readSlots(planField, 'ps-', plan[editingPlan]?.slots ?? []) };
+  const p = { dose: String(planField('dose').value ?? '').trim(), start: date(planField('start').value ?? ''), days: int(planField('days').value, 1), slots: readSlots(plan[editingPlan]?.slots ?? []) };
   const bad = [['dose', amount(p.dose)], ['start', p.start], ['days', p.days]].filter(([, ok]) => !ok).map(([f]) => f);
   for (const f of ['dose', 'start', 'days']) planField(f).classList.toggle('ion-invalid', bad.includes(f));
+  $('#plan-slots-error').classList.toggle('ion-hide', p.slots.length > 0);
   if (bad.length) return bad.forEach(f => planField(f).classList.add('ion-touched')), planField(bad[0]).setFocus();
+  if (!p.slots.length) return;
   if (editingPlan === null) plan.push(p); else plan[editingPlan] = p;
   renderPlan();
   planEditor.dismiss();
@@ -751,26 +752,25 @@ function openRecord(id) {
 
 // ---------- Ficha de la pauta ----------
 
-// Solo lectura, espejo del editor, exista la pauta o no: Producto, Programación, Intervalos, Otros datos y Registro;
-// desde una toma ya hecha, además la sección Toma (día, hora y dosis tal como se tomó). De una pauta borrada se
-// muestra lo que guarda la toma (nombre, indicaciones, intervalo) y «—» en el resto. «Editar», solo si la pauta
-// existe, cierra la ficha y abre el editor.
+// Solo lectura, espejo del editor, exista la pauta o no: Producto, Programación (con los intervalos de cada una),
+// Otros datos y Registro; desde una toma ya hecha, además la sección Toma (día, hora, intervalo y dosis tal como se
+// tomó). De una pauta borrada se muestra lo que guarda la toma (nombre, indicaciones y la toma) y «—» en el resto.
+// «Editar», solo si la pauta existe, cierra la ficha y abre el editor.
 const viewModal = $('#view');
 let viewing = null;
 const readRow = (name, value, links) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${(links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label></ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 function openView(id, entry) {
-  const m = med(id), p = m ?? { name: entry.name, notes: entry.notes, refs: '', memo: '', slots: [entry.slot], cost: '', units: '', plan: [] };
+  const m = med(id), p = m ?? { name: entry.name, notes: entry.notes, refs: '', memo: '', cost: '', units: '', plan: [] };
   viewing = id;
   $('#view-title').textContent = p.name;
   $('#view-edit').classList.toggle('ion-hide', !m);
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
     + readSection('Programación', p.plan.map(x => `<ion-item><ion-label class="ion-text-wrap"><h2>${esc(x.dose)}</h2><p>${esc(planLine(p.plan, x))}</p></ion-label></ion-item>`).join('') || empty(m ? 'Sin programaciones.' : '—'))
-    + readSection('Intervalos', readRow(m && m.plan.length ? 'Intervalos de la programación actual' : 'Intervalos', slotsOn(p, today()).map(label).join(', ')))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
-    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Dosis', entry.dose)) : '')
+    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Intervalo', label(entry.slot)) + readRow('Dosis', entry.dose)) : '')
     + readSection('Registro', `<ion-item button="true" id="view-record"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('La pauta se borró: se muestra lo que guarda la toma.')}</ion-list>`);
   viewModal.present();
@@ -837,7 +837,7 @@ function systemPrompt() {
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - intervals: intervalos de toma (id fijo i1, i2, i3; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
-- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, slots = ids de los intervalos en que se toma con esa programación }, y slots = intervalos de la pauta, que solo valen si no tiene programaciones). Cada día vale la última programación que haya empezado, si su duración llega a ese día; la dosis empieza por la cantidad de cada toma. Una pauta sin programaciones sale todos los días, sin dosis. Para cambiar los intervalos de una pauta con programaciones, cambia los slots de la programación (o crea otra con otros).
+- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, slots = ids de los intervalos en que se toma con esa programación, al menos uno }). Cada día vale la última programación que haya empezado, si su duración llega a ese día, en sus slots y con su dose (que empieza por la cantidad de cada toma). Una pauta sin programaciones no sale en la toma: para que se tome hay que darle una programación. Para cambiar los intervalos de una pauta, cambia los slots de su programación (o crea otra con otros).
 - log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = pauta, slot = intervalo, name, dose y notes = la pauta tal como se tomó).
 Cálculos por pauta (dosis de hoy, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase):
 ${JSON.stringify(summary)}
@@ -853,10 +853,9 @@ Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar 
 const stringProp = description => ({ type: 'string', description });
 const medProps = {
   name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
-  slots: { type: 'array', items: { type: 'string', enum: IDS }, description: 'Ids de sus intervalos (solo valen sin programaciones; con ellas, los intervalos van en cada programación)' },
   cost: { type: 'integer', description: '€ por envase' }, units: { type: 'integer', description: 'Dosis por envase' },
-  plan: { type: 'array', description: 'Programaciones (sustituyen a las que haya)', items: { type: 'object', required: ['dose', 'start', 'days'],
-    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, slots: { type: 'array', items: { type: 'string', enum: IDS }, description: 'Ids de los intervalos en que se toma con esta programación' } } } },
+  plan: { type: 'array', description: 'Programaciones (sustituyen a las que haya); sin ellas la pauta no sale en la toma', items: { type: 'object', required: ['dose', 'start', 'days', 'slots'],
+    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, slots: { type: 'array', items: { type: 'string', enum: IDS }, description: 'Ids de los intervalos en que se toma con esta programación (al menos uno)' } } } },
 };
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const ACTIONS = ['crear_pauta', 'modificar_pauta', 'borrar_pauta', 'registrar_toma', 'quitar_toma', 'modificar_intervalo'];
@@ -896,24 +895,24 @@ const medFields = d => `
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
   <ion-item><ion-textarea data-field="refs" label="Referencias" label-placement="stacked" auto-grow="true" value="${esc(d.refs)}"></ion-textarea></ion-item>
   <ion-item><ion-textarea data-field="memo" label="Notas" label-placement="stacked" auto-grow="true" value="${esc(d.memo)}"></ion-textarea></ion-item>
-  ${d.plan.length ? '' : `<ion-item lines="none"><ion-label><p>Intervalos</p><p>${visibleIntervals().map(iv => chipToggle('slot', iv.id, label(iv.id), d.slots.includes(iv.id))).join('')}</p></ion-label></ion-item>`}
   <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" value="${esc(d.units)}"></ion-input></ion-item>
   ${d.plan.map((p, i) => `
   <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
   <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
-  <ion-item lines="none"><ion-label><p>Intervalos de la programación ${i + 1}</p><p>${visibleIntervals().map(iv => `<ion-chip data-chip="plan-slot" data-row="${i}" data-value="${esc(iv.id)}" ${(p.slots ?? []).includes(iv.id) ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(label(iv.id))}</ion-label></ion-chip>`).join('')}</p></ion-label></ion-item>`).join('')}
+  <ion-item lines="none"><ion-label><p>Intervalos de la programación ${i + 1}</p><p>${visibleIntervals().map(iv => `<ion-chip data-chip="plan-slot" data-row="${i}" data-value="${esc(iv.id)}" ${p.slots.includes(iv.id) ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(label(iv.id))}</ion-label></ion-chip>`).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un intervalo</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
   <ion-item lines="none"><ion-label><p>${chipAction('add-plan', 'Añadir programación', 'add-outline')}</p></ion-label></ion-item>`;
 const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
 const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
 const medDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
-  slots: IDS.filter(id => list(a.slots ?? base.slots).includes(id)), cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
-  plan: (Array.isArray(a.plan) ? a.plan : base.plan).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), slots: IDS.filter(id => list(p.slots ?? a.slots ?? base.slots).includes(id)) })) });
+  cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
+  plan: (Array.isArray(a.plan) ? a.plan : base.plan).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), slots: IDS.filter(id => list(p.slots).includes(id)) })) });
+// Una programación sin intervalos no vale (se marca en su fila: «Marca al menos un intervalo»).
 const medValidate = d => [
   ...(d.name.trim() ? [] : ['name']), ...(int(d.cost) === null ? ['cost'] : []), ...(int(d.units, 1) === null ? ['units'] : []),
-  ...d.plan.flatMap((p, i) => [['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)]].filter(([, ok]) => !ok).map(([f]) => `${f}:${i}`)),
+  ...d.plan.flatMap((p, i) => [['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)], ['slots', p.slots.length]].filter(([, ok]) => !ok).map(([f]) => `${f}:${i}`)),
 ];
-const medValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), slots: d.slots, cost: int(d.cost), units: int(d.units, 1),
+const medValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), cost: int(d.cost), units: int(d.units, 1),
   plan: d.plan.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), slots: p.slots })) });
 const slotChips = (d, slots = visibleIntervals().map(iv => iv.id)) => slots.map(id => chipToggle('pick-slot', id, label(id), d.slot === id)).join('');
 const tomaFields = (d, withTime) => `
@@ -921,7 +920,7 @@ const tomaFields = (d, withTime) => `
   <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
 const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.name, slot: IDS.includes(a.slot) ? a.slot : slotsOn(m, date(str(a.day)) || today())[0] ?? IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
-const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${(d.plan[0]?.slots ?? d.slots).map(label).join(', ') || 'sin intervalos'}`;
+const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${(d.plan[0]?.slots ?? []).map(label).join(', ') || 'sin intervalos'}`;
 const tomaBrief = d => `${d.name} · ${label(d.slot)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
 // Interfaz dinámica: secciones (una lista cada una) de elementos hechos con componentes de Ionic. Cada elemento tiene
 // una clave; su valor (marcado, elegido o escrito) se guarda en el borrador, vuelve al asistente al aplicar y puede ir
@@ -1000,7 +999,7 @@ const FORMS = {
     },
   },
   crear_pauta: {
-    draft: a => medDraft({ name: '', notes: '', refs: '', memo: '', slots: [], cost: '', units: '', plan: [] }, a),
+    draft: a => medDraft({ name: '', notes: '', refs: '', memo: '', cost: '', units: '', plan: [] }, a),
     title: () => 'Nueva pauta', brief: medBrief, fields: medFields, validate: medValidate,
     apply: d => { const v = medValues(d); state.meds.push({ id: newId(), ...v }); return `Pauta «${v.name}» creada`; },
   },
@@ -1061,8 +1060,8 @@ function describe(tool, d) {
   if (tool === 'crear_pauta' || tool === 'modificar_pauta') {
     const v = medValues(d);
     return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
-      v.plan.length ? '' : `intervalos: ${v.slots.map(label).join(', ') || 'ninguno'}`, v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
-      v.plan.length ? `programaciones: ${v.plan.map(p => `${p.dose} desde el ${dateText(p.start)} durante ${p.days} días en ${p.slots.map(label).join(', ') || 'ningún intervalo'}`).join('; ')}` : 'sin programaciones'].filter(Boolean).join(', ');
+      v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
+      v.plan.length ? `programaciones: ${v.plan.map(p => `${p.dose} desde el ${dateText(p.start)} durante ${p.days} días en ${p.slots.map(label).join(', ')}`).join('; ')}` : 'sin programaciones (no sale en la toma)'].filter(Boolean).join(', ');
   }
   if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.slot)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
   if (tool === 'modificar_intervalo') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
@@ -1093,12 +1092,13 @@ function trySave(v, card) {
   const bad = FORMS[v.tool].validate(v.draft);
   for (const f of bad) {
     const [field, row] = f.split(':');
+    if (field === 'slots') { v.draft.plan[Number(row)].bad = true; continue; }
     const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-plan="${field}"][data-row="${row}"]`);
     if (!el) continue;
     el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : PLAN_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
   }
-  if (bad.length) return false;
+  if (bad.length) { if (card && bad.some(f => f.startsWith('slots:'))) refreshCard(card, v); return false; }
   decide(v, true);
   return true;
 }
@@ -1183,7 +1183,7 @@ function suggestionPool() {
     ...(ending.length ? [`¿Qué pautas terminan esta semana y cuándo?`] : []),
     ...(meds.some(m => !m.plan.length) ? ['¿Qué pautas tengo sin programación?'] : []),
     // Cambios con formulario
-    ...(some ? [`Quiero cambiar los intervalos de ${some.name}.`, `Añade una programación nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
+    ...(some ? [`Quiero cambiar los intervalos de la programación de ${some.name}.`, `Añade una programación nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
     ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, intervalos, coste y fin del envase.', 'Revisa mis pautas y dime si ves algo raro o incompleto.', 'Quiero añadir una pauta nueva.'] : ['Ayúdame a crear mi primera pauta.', 'Crea una pauta de ejemplo para ver cómo funciona.']),
     // Otras
     ...(state.intervals.some(iv => iv.visible && (iv.start === '' || iv.end === '')) ? ['Quiero poner horas a mis intervalos.'] : []),
@@ -1571,12 +1571,11 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   if (act === 'discard') { decide(p.v, false); return renderChat(); }
   const chip = e.target.closest('ion-chip[data-chip]'); if (!chip) return;
   const { chip: kind, value, row } = chip.dataset, d = p.v.draft;
-  if (kind === 'slot') { d.slots = d.slots.includes(value) ? d.slots.filter(x => x !== value) : IDS.filter(id => id === value || d.slots.includes(id)); chip.outline = !d.slots.includes(value); chip.color = d.slots.includes(value) ? 'primary' : 'medium'; }
   if (kind === 'pick-slot') { d.slot = value; refreshCard(p.card, p.v); }
   if (kind === 'ui') { const k = chip.dataset.ui, multi = uiElements(d).find(x => x.key === k)?.multiple, cur = d.values[k]; d.values[k] = multi ? (cur.includes(value) ? cur.filter(x => x !== value) : [...cur, value]) : cur === value ? '' : value; refreshCard(p.card, p.v); }
   if (kind === 'visible') { d.visible = !d.visible; chip.outline = !d.visible; chip.color = d.visible ? 'primary' : 'medium'; }
-  if (kind === 'add-plan') { d.plan.push({ dose: d.plan.at(-1)?.dose ?? '', start: today(), days: '', slots: d.plan.at(-1)?.slots ?? d.slots }); refreshCard(p.card, p.v); }
-  if (kind === 'plan-slot') { const ps = d.plan[Number(row)]; ps.slots ??= []; ps.slots = ps.slots.includes(value) ? ps.slots.filter(x => x !== value) : IDS.filter(id => id === value || ps.slots.includes(id)); refreshCard(p.card, p.v); }
+  if (kind === 'add-plan') { d.plan.push({ dose: d.plan.at(-1)?.dose ?? '', start: today(), days: '', slots: d.plan.at(-1)?.slots ?? [] }); refreshCard(p.card, p.v); }
+  if (kind === 'plan-slot') { const ps = d.plan[Number(row)]; ps.slots = ps.slots.includes(value) ? ps.slots.filter(x => x !== value) : IDS.filter(id => id === value || ps.slots.includes(id)); delete ps.bad; refreshCard(p.card, p.v); }
   if (kind === 'remove-plan') { d.plan.splice(Number(row), 1); refreshCard(p.card, p.v); }
   saveChat();
 });
