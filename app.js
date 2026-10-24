@@ -1581,6 +1581,19 @@ $('#proposal-body').addEventListener('click', e => { if (e.target.closest('#prop
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && render());
+// Teclado en el navegador (iOS): Ionic no se entera y Safari desplaza la página para ver el campo, con lo que la cabecera
+// y media pantalla desaparecen. Con visualViewport, la app se encoge a la zona visible (--keyboard), la página vuelve
+// arriba y, en el asistente, la conversación queda al final.
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const fit = () => {
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height));
+    document.documentElement.style.setProperty('--keyboard', `${kb}px`);
+    if (kb) { window.scrollTo(0, 0); if (chatModal.classList.contains('show-modal')) chatBody.scrollToBottom(0); }
+  };
+  vv.addEventListener('resize', fit);
+  vv.addEventListener('scroll', () => { if (vv.offsetTop > 0 && window.innerHeight - vv.height > 0) window.scrollTo(0, 0); });
+}
 $('#day').setAttribute('value', today());
 renderSlots();
 $('#slot').value = intervalNow();

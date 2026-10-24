@@ -53,6 +53,9 @@
     #day::-webkit-scrollbar { display: none; }
     /* En móvil Ionic impide seleccionar texto en toda la app; en «Seleccionar texto» del asistente se permite */
     #text-body { -webkit-user-select: text; user-select: text; }
+    /* Teclado en el navegador (iOS): la app se encoge a la zona visible (--keyboard la pone app.js con visualViewport),
+       así la caja de escribir queda sobre el teclado sin que Safari desplace la página y oculte la cabecera */
+    ion-app { height: calc(100% - var(--keyboard, 0px)); bottom: var(--keyboard, 0px); }
     /* Asistente: la fila de iconos de cada mensaje, más baja que una fila normal y con el primer icono (o el último, en
        los tuyos) a la misma sangría que el texto */
     #chat-body .msg-actions { --min-height: 32px; }

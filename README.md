@@ -5,6 +5,7 @@ App mínima para gestionar pautas de medicación: HTML + JavaScript puro, con tr
 - las variables de tema de Ionic para el color principal (#6dd0f9) y dos colores adicionales definidos como documenta Ionic: `teal` (#78b7af, icono de información, costes de cada pauta y tus mensajes en el asistente) y `rose` (#e47969, envase al que le quedan menos de 7 días);
 - una clase de peso medio para los títulos (Ionic no trae utilidad de `font-weight`);
 - ocultar la barra de scroll del selector de días;
+- encoger la app a la zona visible cuando sale el teclado en el navegador (iOS): `app.js` mide con `visualViewport` cuánto ocupa el teclado y lo pone en `--keyboard`, así la caja de escribir del asistente queda sobre él sin que Safari desplace la página y oculte la cabecera;
 - permitir seleccionar texto en la pantalla «Texto» del asistente (en móvil Ionic lo impide en toda la app);
 - en el asistente, el margen de la caja de escribir (con las variables `--padding-start` y `--padding-end` de `ion-textarea`) (Ionic no trae utilidad para ello), la fila de iconos de cada mensaje más baja que una fila normal y con sus iconos a la misma sangría que el texto, y en sus respuestas, párrafos con un poco de espacio, tablas con bordes finos (con scroll horizontal si no caben), el alto de las gráficas, los chips de las propuestas algo más grandes (`ion-chip` no tiene tamaño configurable) y los botones de las propuestas («Descartar» / «Guardar») a medias y a todo el ancho.
 
