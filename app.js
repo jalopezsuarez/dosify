@@ -1139,9 +1139,9 @@ function drawCharts() {
 }
 
 // Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, el
-// momento del día, la conversación y lo que sabe hacer. Se guardan en este navegador y no cambian solas: solo se piden
-// la primera vez (si no hay ninguna guardada), al pulsar «Otras» o tras «Limpiar». Si el servicio falla, se eligen al
-// azar de un fondo hecho en la app con los datos (suggestionPool).
+// momento del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
+// hay ninguna guardada), al enviar una pregunta (se vacían y se piden a la vez que la respuesta), al pulsar «Otras» o
+// tras «Limpiar». Si el servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
 const SUGGEST_KEY = 'dosify-sugerencias';
 let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
@@ -1359,6 +1359,8 @@ async function sendChat() {
   repairChat();
   chat.push({ role: 'user', content: question });
   chatView.push({ who: 'user', text: question });
+  // Las sugerencias se vacían y se piden las nuevas a la vez que la respuesta; hasta que lleguen, solo la fila de carga.
+  suggested = []; requestSuggestions(3, []);
   const epoch = chatEpoch;
   chatBusy = true; renderChat();
   try {
