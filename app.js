@@ -609,10 +609,23 @@ const editor = $('#editor');
 const field = name => $(`[name="${name}"]`, editor);
 let editing = null;
 
+// Enlaces (http, https o www.) en un texto, y cómo abrirlos.
+const LINK = /(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g;
+const href = url => url.startsWith('http') ? url : `https://${url}`;
+const links = text => [...new Set(String(text ?? '').match(LINK) ?? [])];
+// Bajo Referencias y Notas, los enlaces que contienen, pulsables; se actualiza al escribir.
+function renderLinks() {
+  const urls = links(field('refs').value).concat(links(field('memo').value)).filter((u, i, a) => a.indexOf(u) === i);
+  $('#editor-links').innerHTML = urls.length ? `<ion-list inset="true">${urls.map(u => `
+    <ion-item href="${esc(href(u))}" target="_blank" rel="noopener" detail="false"><ion-icon slot="start" name="open-outline" color="primary"></ion-icon><ion-label class="ion-text-wrap" color="primary">${esc(u)}</ion-label></ion-item>`).join('')}</ion-list>` : '';
+}
+for (const f of ['refs', 'memo']) field(f).addEventListener('ionInput', renderLinks);
+
 // En «Tomas» del editor solo salen los intervalos visibles; los ocultos conservan su valor.
 function openEditor(med = {}) {
   editing = med.id ?? null;
   TEXT.forEach(f => field(f).value = med[f] ?? '');
+  renderLinks();
   for (const f of ['cost', 'units']) { field(f).value = med[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
   $('#editor-slots').innerHTML = visibleIntervals().map(iv => `<ion-item><ion-checkbox name="${iv.id}" ${med.slots?.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('')
     || empty('No hay intervalos visibles.');
@@ -954,9 +967,7 @@ function trySave(v, card) {
 }
 
 // Texto plano con enlaces (http, https o www.) pulsables: tus mensajes y, si marked no carga, las respuestas.
-const linkify = text => esc(text)
-  .replace(/\n/g, '<br>')
-  .replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
+const linkify = text => esc(text).replace(/\n/g, '<br>').replace(LINK, url => `<a href="${href(url)}" target="_blank" rel="noopener">${url}</a>`);
 // Markdown (marked) y gráficas (Chart.js) de las respuestas: se cargan desde CDN la primera vez que se abre el
 // asistente. Del Markdown no se deja pasar HTML ni enlaces que no sean http(s); un bloque ```chart con JSON
 // { "type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{ "label": "...", "data": [...] }] }
