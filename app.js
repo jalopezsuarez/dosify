@@ -68,6 +68,7 @@ const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 // ---------- Intervalos ----------
 
 const interval = id => state.intervals.find(iv => iv.id === id);
+const med = id => state.meds.find(m => m.id === id);
 const visibleIntervals = () => state.intervals.filter(iv => iv.visible);
 const hours = iv => iv.start !== '' && iv.end !== '' ? `${iv.start}–${iv.end} h` : iv.start !== '' ? `desde las ${iv.start} h` : iv.end !== '' ? `hasta las ${iv.end} h` : '';
 const label = id => { const iv = interval(id); return iv.name || hours(iv) || 'Sin nombre'; };
@@ -100,7 +101,7 @@ const SNAP = ['name', 'dose', 'notes'];
 const EDITED = ['name', 'notes']; // lo que el editor de pauta cambia de lo que guarda cada toma
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
 const snapOn = (m, day) => ({ ...snap(m), dose: doseOn(m, day) }); // la pauta tal como se toma ese día
-const takenAs = e => { const m = state.meds.find(x => x.id === e.id); return { refs: m?.refs ?? '', memo: m?.memo ?? '', cost: m?.cost ?? '', units: m?.units ?? '', id: e.id, ...snap(e) }; };
+const takenAs = e => ({ id: e.id, ...snap(e) });
 // Filas de un día e intervalo: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
 // no están en el intervalo o se borraron).
 function dayRows(slot, day) {
@@ -153,6 +154,11 @@ const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return
 const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
+// El (i) de una fila: abre el editor de la pauta (solo si sigue existiendo); su color avisa del fin del envase.
+const editButton = id => med(id) ? `
+      <ion-button slot="end" fill="clear" data-edit="${id}" aria-label="Editar pauta">
+        <ion-icon slot="icon-only" name="information-circle" color="${supplyColor(id)}" size="large"></ion-icon>
+      </ion-button>` : '';
 // Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
 const doseItem = (m, slot, entry, sorting) => `
     <ion-item data-id="${m.id}">
@@ -162,10 +168,7 @@ const doseItem = (m, slot, entry, sorting) => `
         ${doseLine([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
       </ion-label>
-      ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : `
-      <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
-        <ion-icon slot="icon-only" name="information-circle" color="${supplyColor(m.id)}" size="large"></ion-icon>
-      </ion-button>`}
+      ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : editButton(m.id)}
     </ion-item>`;
 // Cada toma va en su propia lista inset: filas independientes.
 const doseRow = (m, slot, entry) => `<ion-list inset="true">${doseItem(m, slot, entry)}</ion-list>`;
@@ -264,52 +267,6 @@ async function renderToma() {
     ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`; });
 }
 
-// Ficha de la pauta (dosis, indicaciones, referencias con notas y envase, y registro) para leerla con calma; los enlaces se pueden pulsar.
-const info = $('#info');
-const linkify = text => esc(text)
-  .replace(/\n/g, '<br>')
-  .replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
-const island = (text, sub = '') => `
-  <ion-list inset="true">
-    <ion-item lines="none"><ion-label class="ion-text-wrap">${linkify(text) || '—'}${sub ? `<p>${esc(sub)}</p>` : ''}</ion-label></ion-item>
-  </ion-list>`;
-const section = (title, text, sub) => `
-  <ion-list-header><ion-label>${title}</ion-label></ion-list-header>${island(text, sub)}`;
-// Sección «Referencias»: las referencias, debajo las notas en su propia isla y, en otra, el coste y las dosis por envase.
-const refsSection = m => `
-  <ion-list-header><ion-label>Referencias</ion-label></ion-list-header>${island(m.refs)}${island(m.memo)}
-  <ion-list inset="true">
-    <ion-item><ion-label>Coste del envase</ion-label><ion-note slot="end">${m.cost === '' || m.cost == null ? '—' : euros(m.cost, 0)}</ion-note></ion-item>
-    <ion-item><ion-label>Dosis por envase</ion-label><ion-note slot="end">${m.units === '' || m.units == null ? '—' : m.units.toLocaleString('es')}</ion-note></ion-item>
-  </ion-list>`;
-
-// Al final de la ficha, como en el editor de la pauta: «Ver registro», con el número de tomas (si la pauta existe).
-const recordSection = id => state.meds.some(m => m.id === id) ? `
-  <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
-  <ion-list inset="true">
-    <ion-item button="true" data-record="${id}"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>
-  </ion-list>` : '';
-
-function openInfo(m) {
-  $('#info-title').textContent = m.name;
-  // Bajo la dosis, el intervalo que aplica: el de la toma desde la que se abre o, desde otro sitio, los de la pauta.
-  const slots = m.slot ? [m.slot] : list(m.slots);
-  $('#info-body').innerHTML = section('Dosis', m.dose, slots.map(label).join(', ')) + section('Indicaciones', m.notes) + refsSection(m) + recordSection(m.id);
-  info.present();
-}
-
-function toggle(id, slot, checked) {
-  const day = selectedDay();
-  if (checked) {
-    state.log.unshift({ at: new Date().toISOString(), day, id, slot, ...snapOn(state.meds.find(m => m.id === id), day) });
-    state.log.length = Math.min(state.log.length, LOG_MAX);
-  } else {
-    state.log = state.log.filter(e => !(e.day === day && String(e.id) === id && e.slot === slot));
-  }
-  save();
-  render();
-}
-
 // ---------- Pautas ----------
 
 const manager = $('#manager');
@@ -367,10 +324,10 @@ const dayMonthYear = key => key.slice(0, 4) === today().slice(0, 4) ? dayMonth(k
 // Aviso de que el envase se acaba: menos de 7 días. Pone en rosa el (i) de la toma y la fecha de fin de la pauta.
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
 const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
-const supplyColor = id => { const m = state.meds.find(x => x.id === id); return m && runningOut(m) ? 'rose' : 'teal'; };
+const supplyColor = id => { const m = med(id); return m && runningOut(m) ? 'rose' : 'teal'; };
 // Fin del envase («5/01») a la derecha de la fila de la pauta, a la altura del nombre: en gris; si se acaba, en rosa y peso medio.
 const endNote = id => {
-  const m = state.meds.find(x => x.id === id), end = m && runsOut(m);
+  const m = med(id), end = m && runsOut(m);
   if (!end) return '';
   return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${dayMonth(end)}</ion-note>`;
 };
@@ -415,10 +372,7 @@ function openShopping() {
           <h2 class="medium">${esc(m.name)}</h2>
           <p><ion-text ${runningOut(m) ? 'color="rose"' : ''}>${inDays(daysLeft(end))} · ${shortDate(end)}</ion-text></p>
         </ion-label>
-        ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}
-        <ion-button slot="end" fill="clear" data-info="${m.id}" aria-label="Información">
-          <ion-icon slot="icon-only" name="information-circle" color="${supplyColor(m.id)}" size="large"></ion-icon>
-        </ion-button>
+        ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}${editButton(m.id)}
       </ion-item>`).join('')}
     </ion-list>
     ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.m.cost, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
@@ -744,7 +698,7 @@ function savePlan() {
 // programación que valía cada día (de la más reciente a la más antigua; las que no tenían, en «Sin programación»).
 const recordModal = $('#record');
 function openRecord(id) {
-  const m = state.meds.find(x => x.id === id);
+  const m = med(id);
   const taken = state.log.filter(e => e.id === m.id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
   const units = taken.reduce((n, e) => n + amount(e.dose), 0);
   const item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
@@ -864,7 +818,6 @@ const TOOLS = [
 // asistente, o null si no vale), title, fields (el HTML de los campos), validate (campos mal) y apply (guarda y
 // devuelve el resumen). Los valores del borrador son texto, como en los campos.
 const str = v => v == null ? '' : String(v);
-const med = id => state.meds.find(m => m.id === id);
 const medFields = d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
@@ -1000,6 +953,10 @@ function trySave(v, card) {
   return true;
 }
 
+// Texto plano con enlaces (http, https o www.) pulsables: tus mensajes y, si marked no carga, las respuestas.
+const linkify = text => esc(text)
+  .replace(/\n/g, '<br>')
+  .replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
 // Markdown (marked) y gráficas (Chart.js) de las respuestas: se cargan desde CDN la primera vez que se abre el
 // asistente. Del Markdown no se deja pasar HTML ni enlaces que no sean http(s); un bloque ```chart con JSON
 // { "type": "bar" | "line" | "pie" | "doughnut", "labels": [...], "datasets": [{ "label": "...", "data": [...] }] }
@@ -1226,21 +1183,18 @@ function render() {
 
 $('#day').addEventListener('ionChange', renderToma);
 $('#slot').addEventListener('ionChange', renderToma);
-// La pauta de una fila de la toma: si ese día ya está tomada, como se tomó; si no, la pauta actual.
-const rowMed = id => {
-  const e = state.log.find(e => e.day === selectedDay() && e.slot === selectedSlot() && String(e.id) === id), m = state.meds.find(m => m.id === id);
-  return { ...(e ? takenAs(e) : { ...m, dose: doseOn(m, selectedDay()) }), slot: selectedSlot() };
-};
+// El nombre de una fila de la toma: si ese día ya está tomada, como se tomó; si no, el de la pauta.
+const rowName = id => (state.log.find(e => e.day === selectedDay() && e.slot === selectedSlot() && String(e.id) === id) ?? med(id)).name;
 // Marcar o desmarcar se confirma en un action sheet; si se cancela, la casilla vuelve a como estaba.
 $('#toma').addEventListener('ionChange', e => {
   const { id, slot } = e.target.dataset;
   const { checked } = e.detail;
-  const { name } = rowMed(id);
-  sheet(name, [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
+  sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
 });
+// El (i) de una fila (en la toma y en próximas compras) abre el editor de la pauta.
+const editFrom = e => { const id = e.target.closest('[data-edit]')?.dataset.edit; if (id && med(id)) openEditor(med(id)); return !!id; };
 $('#toma').addEventListener('click', e => {
-  const id = e.target.closest('[data-info]')?.dataset.info;
-  if (id) openInfo(rowMed(id));
+  if (editFrom(e)) return;
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#toma-sort')) chooseOrder();
@@ -1252,8 +1206,6 @@ $('#toma').addEventListener('ionReorderEnd', e => {
   reorderPending(slot, move([...e.target.children].map(el => state.meds.find(m => m.id === el.dataset.id)), e.detail));
   e.detail.complete();
 });
-$('#info-close').onclick = () => info.dismiss();
-$('#info-body').addEventListener('click', e => { const id = e.target.closest('[data-record]')?.dataset.record; if (id) openRecord(id); });
 
 $('#manage').onclick = () => manager.present();
 $('#close').onclick = () => manager.dismiss();
@@ -1265,16 +1217,16 @@ $('#add').onclick = () => openEditor();
 $('#open-finished').onclick = () => finishedModal.present();
 $('#costs').addEventListener('click', e => { if (e.target.closest('#open-shopping')) openShopping(); });
 $('#shopping-close').onclick = () => shoppingModal.dismiss();
-$('#shopping-body').addEventListener('click', e => { const id = e.target.closest('[data-info]')?.dataset.info, m = id && med(id); if (m) openInfo({ ...m, dose: doseOn(m, today()) }); });
+$('#shopping-body').addEventListener('click', editFrom);
 $('#finished-close').onclick = () => finishedModal.dismiss();
 $('#finished-list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
-  if (id) openEditor(state.meds.find(m => m.id === id));
+  if (id) openEditor(med(id));
 });
 $('#list').addEventListener('click', e => {
   if (e.target.closest('ion-reorder')) return;
   const id = e.target.closest('ion-item')?.dataset.id;
-  if (id) openEditor(state.meds.find(m => m.id === id));
+  if (id) openEditor(med(id));
 });
 // Igual en Pautas: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
 $('#list').addEventListener('ionReorderEnd', e => {

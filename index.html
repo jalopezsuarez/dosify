@@ -51,8 +51,6 @@
     /* Oculta la barra de scroll del selector de días (la regla de Ionic para ello no se aplica) */
     #day { scrollbar-width: none; }
     #day::-webkit-scrollbar { display: none; }
-    /* En móvil Ionic impide seleccionar texto en toda la app; en la ficha de la pauta se permite para poder copiarlo */
-    #info-body { -webkit-user-select: text; user-select: text; }
     /* Asistente: margen de la caja de escribir (variables de ion-textarea) */
     #chat-input { --padding-start: 8px; --padding-end: 8px; }
     /* Respuestas en Markdown: tablas con bordes finos y scroll horizontal si no caben; las gráficas, con alto fijo */
@@ -189,15 +187,6 @@
     </ion-content>
   </ion-modal>
 
-  <ion-modal id="info">
-    <ion-header>
-      <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="info-close">Cerrar</ion-button></ion-buttons>
-        <ion-title id="info-title"></ion-title>
-      </ion-toolbar>
-    </ion-header>
-    <ion-content id="info-body" color="light"></ion-content>
-  </ion-modal>
 
   <ion-modal id="chat">
     <ion-header>
