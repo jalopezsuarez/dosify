@@ -1188,14 +1188,20 @@ function suggestions(count) {
   if (!suggestLoading) requestSuggestions(count, []);
   return null; // cargando
 }
-async function requestSuggestions(count, exclude) {
-  const key = suggestKey(), epoch = chatEpoch;
+// Una petición cada vez: si llega una respuesta de una petición ya sustituida («Otras» mientras cargaba), se ignora;
+// si llega tarde (la conversación o los datos cambiaron) se vuelve a pedir; si el servicio tarda más de 25 s o falla,
+// salen las del fondo local.
+let suggestRequest = 0;
+function requestSuggestions(count, exclude) {
+  const key = suggestKey(), epoch = chatEpoch, id = ++suggestRequest;
   suggestLoading = askSuggestions(count, exclude).catch(() => localSuggestions(count)).then(list => {
+    if (id !== suggestRequest) return;
     suggestLoading = null;
-    if (epoch !== chatEpoch || key !== suggestKey()) return; // la conversación o los datos cambiaron: ya no valen
-    suggested = { key, list };
-    localStorage.setItem(SUGGEST_KEY, JSON.stringify(suggested));
-    if (!chatBusy && !awaiting) renderChat();
+    if (epoch === chatEpoch && key === suggestKey()) {
+      suggested = { key, list };
+      try { localStorage.setItem(SUGGEST_KEY, JSON.stringify(suggested)); } catch {}
+    }
+    if (!chatBusy && !awaiting) renderChat(); // muestra las nuevas o, si ya no valen, pide otras
   });
 }
 // La petición: el mismo contexto que una pregunta, sin herramientas, y la respuesta como array JSON de textos.
@@ -1204,7 +1210,7 @@ async function askSuggestions(count, exclude) {
   const asked = chat.filter(m => m.role === 'user').map(m => m.content);
   const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, intervalos, envases, costes, historial) y útiles según el momento del día y la conversación. Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
   const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` },
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal: AbortSignal.timeout(25000),
     body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: ask }] }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -1537,7 +1543,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
-  if (e.target.closest('#suggest-more')) { const prev = suggested.list; suggested = { key: '', list: [] }; requestSuggestions(chatView.length ? 3 : 4, prev); return renderChat(); }
+  if (e.target.closest('#suggest-more')) { if (suggestLoading) return; const prev = suggested.list; suggested = { key: '', list: [] }; requestSuggestions(chatView.length ? 3 : 4, prev); return renderChat(); }
   const msg = e.target.closest('[data-msg-act]');
   if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
