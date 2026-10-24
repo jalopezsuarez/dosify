@@ -154,11 +154,12 @@ const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return
 const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
-// El (i) de una fila: abre el editor de la pauta (solo si sigue existiendo); su color avisa del fin del envase.
-const editButton = id => med(id) ? `
-      <ion-button slot="end" fill="clear" data-edit="${id}" aria-label="Editar pauta">
-        <ion-icon slot="icon-only" name="information-circle" color="${supplyColor(id)}" size="large"></ion-icon>
-      </ion-button>` : '';
+// El (i) de una fila: abre el editor de la pauta (su color avisa del fin del envase) o, si la pauta se borró, la toma
+// en solo lectura (en gris).
+const editButton = id => `
+      <ion-button slot="end" fill="clear" data-${med(id) ? 'edit' : 'view'}="${id}" aria-label="${med(id) ? 'Editar pauta' : 'Ver toma'}">
+        <ion-icon slot="icon-only" name="information-circle" color="${med(id) ? supplyColor(id) : 'medium'}" size="large"></ion-icon>
+      </ion-button>`;
 // Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
 const doseItem = (m, slot, entry, sorting) => `
     <ion-item data-id="${m.id}">
@@ -737,6 +738,25 @@ function openRecord(id) {
   recordModal.present();
 }
 
+// ---------- Toma de una pauta borrada ----------
+
+// Solo lectura, espejo del editor con lo que guarda la toma: nombre e indicaciones, dosis, intervalo, día y hora.
+const entryModal = $('#entry');
+const readRow = (name, value) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${esc(value ?? '') || '—'}</h2></ion-label></ion-item>`;
+function openEntry(e) {
+  $('#entry-body').innerHTML = `
+    <ion-list-header><ion-label>Producto</ion-label></ion-list-header>
+    <ion-list inset="true">${readRow('Nombre', e.name)}${readRow('Indicaciones', e.notes)}</ion-list>
+    <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
+    <ion-list inset="true">${readRow('Dosis', e.dose)}</ion-list>
+    <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
+    <ion-list inset="true">${readRow('Intervalo', label(e.slot))}</ion-list>
+    <ion-list-header><ion-label>Toma</ion-label></ion-list-header>
+    <ion-list inset="true">${readRow('Día', fromKey(e.day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}${readRow('Hora', time(e.at))}</ion-list>
+    <ion-list inset="true">${empty('La pauta se borró: estos son los datos tal como se tomó.')}</ion-list>`;
+  entryModal.present();
+}
+
 // ---------- Editor de intervalo ----------
 
 const intervalEditor = $('#interval-editor');
@@ -1204,8 +1224,10 @@ $('#toma').addEventListener('ionChange', e => {
 });
 // El (i) de una fila (en la toma y en próximas compras) abre el editor de la pauta.
 const editFrom = e => { const id = e.target.closest('[data-edit]')?.dataset.edit; if (id && med(id)) openEditor(med(id)); return !!id; };
+// El (i) de una toma cuya pauta se borró abre la toma en solo lectura.
+const viewFrom = e => { const id = e.target.closest('[data-view]')?.dataset.view, entry = id && state.log.find(x => x.day === selectedDay() && x.slot === selectedSlot() && String(x.id) === id); if (entry) openEntry(entry); return !!id; };
 $('#toma').addEventListener('click', e => {
-  if (editFrom(e)) return;
+  if (editFrom(e) || viewFrom(e)) return;
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#toma-sort')) chooseOrder();
@@ -1270,6 +1292,7 @@ $('#intervals').addEventListener('ionReorderEnd', e => {
 });
 $('#open-record').onclick = () => openRecord(editing);
 $('#record-close').onclick = () => recordModal.dismiss();
+$('#entry-close').onclick = () => entryModal.dismiss();
 $('#plan-list').addEventListener('click', e => {
   const i = e.target.closest('[data-plan]')?.dataset.plan;
   if (i) openPlan(i === 'new' ? null : Number(i));
