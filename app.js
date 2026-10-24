@@ -1138,11 +1138,14 @@ function drawCharts() {
   }
 }
 
-// Preguntas sugeridas, hechas con tus datos y el momento del día (sin llamar al servicio): de un fondo amplio (qué
-// tomar ahora, envases, costes, historial, programaciones, cambios con formularios…) se eligen unas pocas al azar
-// entre las que vienen a cuento, sin repetir las ya preguntadas; cambian al abrir el asistente, tras cada respuesta
-// y con «Otras».
-let suggestionKey = '', suggestionPick = [], suggestionTurn = 0;
+// Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, el
+// momento del día, la conversación y lo que sabe hacer; se guardan por estado de la conversación y de los datos (así
+// reabrir el asistente no vuelve a pedirlas) y «Otras» pide unas distintas. Mientras llegan sale un aviso; si el
+// servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
+const SUGGEST_KEY = 'dosify-sugerencias';
+let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return v && typeof v.key === 'string' && Array.isArray(v.list) ? v : { key: '', list: [] }; } catch { return { key: '', list: [] }; } })();
+let suggestLoading = null; // promesa de la petición en curso
+const suggestKey = () => `${chatView.length}|${state.meds.length}|${state.log.length}|${today()}|${new Date().getHours() < 12 ? 'm' : new Date().getHours() < 20 ? 't' : 'n'}`;
 function suggestionPool() {
   const meds = state.meds.filter(m => !finished(m)), day = today(), h = new Date().getHours();
   const slot = intervalNow(), slotName = slot ? label(slot) : 'ahora';
@@ -1178,18 +1181,42 @@ function suggestionPool() {
     '¿Qué puedes hacer por mí?',
   ];
 }
+const localSuggestions = count => { const asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content)); return [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count); };
 function suggestions(count) {
-  const asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content));
-  const key = `${chatView.length}|${suggestionTurn}`;
-  if (key !== suggestionKey) {
-    suggestionKey = key;
-    suggestionPick = [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count);
-  }
-  return suggestionPick;
+  const key = suggestKey();
+  if (suggested.key === key && suggested.list.length) return suggested.list;
+  if (!suggestLoading) requestSuggestions(count, []);
+  return null; // cargando
 }
-const suggestionList = qs => qs.length ? `
-  <ion-list-header><ion-label>Sugerencias</ion-label><ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button></ion-list-header>
-  <ion-list inset="true">${qs.map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')}</ion-list>` : '';
+async function requestSuggestions(count, exclude) {
+  const key = suggestKey(), epoch = chatEpoch;
+  suggestLoading = askSuggestions(count, exclude).catch(() => localSuggestions(count)).then(list => {
+    suggestLoading = null;
+    if (epoch !== chatEpoch || key !== suggestKey()) return; // la conversación o los datos cambiaron: ya no valen
+    suggested = { key, list };
+    localStorage.setItem(SUGGEST_KEY, JSON.stringify(suggested));
+    if (!chatBusy && !awaiting) renderChat();
+  });
+}
+// La petición: el mismo contexto que una pregunta, sin herramientas, y la respuesta como array JSON de textos.
+async function askSuggestions(count, exclude) {
+  const recent = chat.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-6).map(m => ({ role: m.role, content: m.content }));
+  const asked = chat.filter(m => m.role === 'user').map(m => m.content);
+  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, intervalos, envases, costes, historial) y útiles según el momento del día y la conversación. Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
+  const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` },
+    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: ask }] }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const text = String((await res.json()).choices?.[0]?.message?.content ?? ''), json = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1);
+  const list = [...new Set(JSON.parse(json).filter(q => typeof q === 'string').map(q => q.trim()).filter(q => q && q.length <= 140))].slice(0, count);
+  if (!list.length) throw new Error('vacío');
+  return list;
+}
+const suggestionList = qs => `
+  <ion-list-header><ion-label>Sugerencias</ion-label>${qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button>' : ''}</ion-list-header>
+  <ion-list inset="true">${qs ? qs.map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')
+    : '<ion-item lines="none"><ion-spinner slot="start" name="dots" color="medium"></ion-spinner><ion-label color="medium">Pensando sugerencias…</ion-label></ion-item>'}</ion-list>`;
 
 const actionLine = (ok, text) => `<ion-list inset="true"><ion-item lines="none"><ion-icon slot="start" name="${ok ? 'checkmark-circle' : 'close-circle'}" color="${ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(text)}</ion-label></ion-item></ion-list>`;
 // Tarjeta de una propuesta: título, campos editables y «Descartar» / «Guardar» (o «Borrar»); guardada o descartada,
@@ -1482,9 +1509,9 @@ $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
   editor.dismiss();
 });
 
-$('#assistant').onclick = () => { suggestionTurn++; renderChat(); chatModal.present(); loadLibs().then(renderChat); };
+$('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
-$('#chat-new').onclick = () => { chatEpoch++; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
+$('#chat-new').onclick = () => { chatEpoch++; suggested = { key: '', list: [] }; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
 // Interacción con las propuestas: campos (se escriben en el borrador), chips (intervalos, programaciones, visible)
 // y botones (guardar, descartar, todas).
@@ -1506,7 +1533,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   saveChat();
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
-  if (e.target.closest('#suggest-more')) { suggestionTurn++; return renderChat(); }
+  if (e.target.closest('#suggest-more')) { const prev = suggested.list; suggested = { key: '', list: [] }; requestSuggestions(chatView.length ? 3 : 4, prev); return renderChat(); }
   const msg = e.target.closest('[data-msg-act]');
   if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
