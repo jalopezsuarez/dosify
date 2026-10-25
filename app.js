@@ -761,7 +761,7 @@ function openHistory(id) {
 // ---------- Ficha del producto ----------
 
 // Solo lectura, espejo del editor, exista el producto o no: Producto, Pautas (con los momentos de cada una),
-// Otros datos y Registro; desde una toma ya hecha, además la sección Toma (día, hora, momento y dosis tal como se
+// Otros datos y Estadísticas; desde una toma ya hecha, además la sección Toma (día, hora, momento y dosis tal como se
 // tomó). De un producto borrado se muestra lo que guarda la toma (nombre, indicaciones y la toma) y «—» en el resto.
 // «Editar», solo si el producto existe, cierra la ficha y abre el editor.
 const viewModal = $('#view');
@@ -779,7 +779,7 @@ function openView(id, entry) {
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
     + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Momento', label(entry.timing)) + readRow('Dosis', entry.dose)) : '')
-    + readSection('Registro', `<ion-item button="true" id="view-history"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.records.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
+    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${state.records.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('El producto se borró: se muestra lo que guarda la toma.')}</ion-list>`);
   viewModal.present();
 }
