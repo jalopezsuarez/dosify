@@ -835,16 +835,16 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // Lo que sabe el asistente: qué es la app, cómo son los datos, cálculos ya hechos por pauta y todos los datos en JSON.
 function systemPrompt() {
   const now = new Date();
-  const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), terminada: finished(m),
+  const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), inactiva: finished(m),
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(slotsOn(m, today()).map(sl => [sl, state.log.some(e => e.id === m.id && e.day === today() && e.slot === sl) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
   return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
-- intervals: intervalos de toma (id fijo i1, i2, i3, i4; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
-- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, slots = ids de los intervalos en que se toma con esa programación, al menos uno }). Cada día vale la última programación que haya empezado, si su duración llega a ese día, en sus slots y con su dose (que empieza por la cantidad de cada toma). Una pauta sin programaciones no sale en la toma: para que se tome hay que darle una programación. Para cambiar los intervalos de una pauta, cambia los slots de su programación (o crea otra con otros).
+- intervals: intervalos de toma, siempre en este orden fijo (id fijo i1, i2, i3, i4; por defecto Desayuno, Almuerzo, Cena y Demanda, pero name es el nombre que ve el usuario y puede haberse cambiado; start y end, horas, opcionales; visible, si sale en la app; order, ids de pauta en el orden de tomas). En la toma de cada día solo se ven los intervalos que ese día tienen alguna pauta pendiente o toma hecha.
+- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, slots = ids de los intervalos en que se toma con esa programación, al menos uno }). Cada día vale la última programación que haya empezado, si su duración llega a ese día, en sus slots y con su dose (que empieza por la cantidad de cada toma). Una pauta sin programación vigente ni futura (también sin ninguna) está inactiva: no sale en la toma y va en la lista «Inactivas» de Pautas; para que se tome hay que darle una programación. Para cambiar los intervalos de una pauta, cambia los slots de su programación (o crea otra con otros). Al crear una pauta, propón ya su programación (dosis, inicio, duración e intervalos).
 - log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = pauta, slot = intervalo, name, dose y notes = la pauta tal como se tomó).
-Cálculos por pauta (dosis de hoy, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase):
+Cálculos por pauta (dosis de hoy, si está inactiva, qué tomas de hoy están tomadas o pendientes por intervalo, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
@@ -1186,7 +1186,7 @@ function suggestionPool() {
     // Programaciones
     ...meds.filter(m => m.plan.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus programaciones?`),
     ...(ending.length ? [`¿Qué pautas terminan esta semana y cuándo?`] : []),
-    ...(meds.some(m => !m.plan.length) ? ['¿Qué pautas tengo sin programación?'] : []),
+    ...(state.meds.some(finished) ? ['¿Qué pautas tengo inactivas y por qué?'] : []),
     // Cambios con formulario
     ...(some ? [`Quiero cambiar los intervalos de la programación de ${some.name}.`, `Añade una programación nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
     ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, intervalos, coste y fin del envase.', 'Revisa mis pautas y dime si ves algo raro o incompleto.', 'Quiero añadir una pauta nueva.'] : ['Ayúdame a crear mi primera pauta.', 'Crea una pauta de ejemplo para ver cómo funciona.']),
