@@ -699,7 +699,7 @@ function openEditor(product = {}) {
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
   const last = editing && lastRecord(editing);
-  $('#last-record').innerHTML = last ? `<ion-item>${recordLabel(last)}</ion-item>` : ''; $('#last-record').classList.toggle('ion-hide', !last);
+  $('#last-record').innerHTML = last ? `<ion-item>${recordLabel(last, 'Esta toma')}</ion-item>` : ''; $('#last-record').classList.toggle('ion-hide', !last);
   rememberScroll();
   editor.present();
 }
@@ -773,8 +773,8 @@ function saveSchedule() {
 
 // ---------- Product history ----------
 
-// A record as a row: «25/10 · 15 gramos» and, below, «9:30 · Desayuno».
-const recordLabel = e => `<ion-label><h2>${shortDate(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at)} · ${esc(label(e.timing))}</p></ion-label>`;
+// A record as a row: «25/10 · 15 gramos» and, below, «9:30 · Desayuno»; optionally with a small title on top.
+const recordLabel = (e, title = '') => `<ion-label>${title ? `<p>${title}</p>` : ''}<h2>${shortDate(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at)} · ${esc(label(e.timing))}</p></ion-label>`;
 
 // How many records a product has («1 toma», «12 tomas»), for the «Registro» row of the editor and the product view.
 const recordsLabel = n => count(n, 'toma', 'tomas');
@@ -832,7 +832,7 @@ function openView(id, record) {
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
     + '<ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>'
-    + [record && `<ion-item>${recordLabel(record)}</ion-item>`, `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
+    + [record && `<ion-item>${recordLabel(record, 'Esta toma')}</ion-item>`, `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
       purchaseRow(m), `<ion-item>${updatedLabel(m)}</ion-item>`].filter(Boolean).map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
     + (m ? '' : emptyList('El producto se borró: se muestra lo que guarda la toma.'));
   viewModal.present();
