@@ -505,7 +505,7 @@ async function importCSV(file) {
   }
   if (!raw.timings.length && !raw.products.length && !raw.records.length) return;
   const apply = () => { Object.assign(state, clean(raw)); save(); render(); };
-  ask('¿Reemplazar los momentos, los productos y las tomas actuales?', apply);
+  ask('¿Reemplazar la base de datos?', apply);
 }
 
 // ---------- PDF ----------
