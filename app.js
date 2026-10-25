@@ -80,8 +80,10 @@ const label = id => { const iv = interval(id); return iv.name || hours(iv) || 'S
 // ¿La hora h cae en el intervalo? Admite intervalos que pasan de medianoche (p. ej. 22–6).
 const within = (iv, h) => iv.start === '' || iv.end === '' ? false : iv.start <= iv.end ? h >= iv.start && h < iv.end : h >= iv.start || h < iv.end;
 // Intervalo que se abre al cargar: el visible que incluye la hora actual; si ninguno, el próximo en empezar; si no, el primero.
-function intervalNow() {
-  const h = new Date().getHours(), list = visibleIntervals();
+// De una lista de intervalos, el de ahora: el que incluye la hora actual; si ninguno, el próximo en empezar; si no
+// tienen horas, el primero.
+function intervalNow(list = visibleIntervals()) {
+  const h = new Date().getHours();
   const next = list.filter(iv => iv.start !== '').sort((a, b) => (a.start - h + 24) % 24 - (b.start - h + 24) % 24)[0];
   return (list.find(iv => within(iv, h)) ?? next ?? list[0])?.id ?? '';
 }
@@ -164,10 +166,14 @@ function renderDays() {
 
 // Pestañas de intervalos visibles, en su orden. Solo se repintan si cambian; si el elegido deja de verse, se abre el de ahora.
 let slotsHtml = '';
+// Pestañas de la toma: solo los intervalos visibles con algo ese día (alguna pauta pendiente o toma hecha). Si el
+// seleccionado deja de estar, pasa al de ahora entre los que quedan.
+const daySlots = day => visibleIntervals().filter(iv => { const r = dayRows(iv.id, day); return r.pending.length || r.taken.length; });
 function renderSlots() {
-  const html = visibleIntervals().map(iv => `<ion-segment-button value="${iv.id}"><ion-label>${esc(label(iv.id))}</ion-label></ion-segment-button>`).join('');
+  const slots = daySlots(selectedDay());
+  const html = slots.map(iv => `<ion-segment-button value="${iv.id}"><ion-label>${esc(label(iv.id))}</ion-label></ion-segment-button>`).join('');
   if (html !== slotsHtml) $('#slot').innerHTML = slotsHtml = html;
-  if (!visibleIntervals().some(iv => iv.id === $('#slot').value)) $('#slot').value = intervalNow();
+  if (!slots.some(iv => iv.id === $('#slot').value)) $('#slot').value = intervalNow(slots);
 }
 
 // Texto de una pauta: nombre (medio), dosis (texto principal) e indicaciones (gris, recortadas a unas dos líneas).
@@ -258,7 +264,7 @@ const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 async function renderToma() {
   const day = selectedDay();
   const slot = selectedSlot();
-  if (!slot) { $('#toma').innerHTML = emptyList('No hay intervalos visibles. Actívalos en Pautas › Intervalos.'); return; }
+  if (!slot) { $('#toma').innerHTML = emptyList(visibleIntervals().length ? 'Nada que tomar este día.' : 'No hay intervalos visibles. Actívalos en Pautas › Intervalos.'); return; }
   const { pending, taken: takenRows } = dayRows(slot, day);
   const taken = sortTaken(takenRows, slot);
   const done = taken.length, total = pending.length + taken.length;
@@ -1414,7 +1420,7 @@ function render() {
   keepScroll($('#manager ion-content'), () => { renderPautas(); renderCosts(); renderIntervals(); renderPdfMonths(); });
 }
 
-$('#day').addEventListener('ionChange', renderToma);
+$('#day').addEventListener('ionChange', () => { renderSlots(); renderToma(); });
 $('#slot').addEventListener('ionChange', renderToma);
 // El nombre de una fila de la toma: si ese día ya está tomada, como se tomó; si no, el de la pauta.
 const rowName = id => (state.log.find(e => e.day === selectedDay() && e.slot === selectedSlot() && String(e.id) === id) ?? med(id)).name;
