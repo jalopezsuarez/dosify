@@ -5,7 +5,7 @@ const KEY = 'dosify';
 //   more by default just add another one there) with new ids.
 // · products: in product order: { id, name, notes (directions), refs (references), memo (free notes),
 //   cost (€ per container) and units (doses per container), integers or '', created and updated (ISO: when it was
-//   created and when any of its fields or schedules last changed), and schedules: [{ dose (starts with the
+//   created and when it was last saved), and schedules: [{ dose (starts with the
 //   amount of each dose), start, days, timings: [ids of the timings it is taken at; at least one] }]. Without
 //   schedules a product does not show on the home screen.
 // · records: doses taken: { at, day, id (product), timing (timing id), name, dose, notes (the product as it was taken) }
@@ -327,15 +327,9 @@ async function renderHome() {
 // ---------- Products ----------
 
 const manager = $('#manager');
-// New product with its timestamps; updating one stamps «updated» only when some field or schedule really changed.
-const PRODUCT_FIELDS = ['name', 'notes', 'refs', 'memo', 'cost', 'units', 'schedules'];
-const fingerprint = m => JSON.stringify(PRODUCT_FIELDS.map(f => m[f]));
+// New product with its timestamps; saving one (editor or assistant) stamps «updated», even with nothing changed.
 const newProduct = values => { const now = new Date().toISOString(); return { id: newId(), ...values, created: now, updated: now }; };
-function updateProduct(m, values) {
-  const before = fingerprint(m);
-  Object.assign(m, values);
-  if (fingerprint(m) !== before) m.updated = new Date().toISOString();
-}
+const updateProduct = (m, values) => Object.assign(m, values, { updated: new Date().toISOString() });
 // Last change of a product, for Estadísticas: date and time as title and, below, how long ago.
 const updatedLabel = m => m ? `<ion-label><p>Últimos cambios</p><h2>${dateTime(m.updated)}</h2><p>${relative(m.updated)}</p></ion-label>` : readLabel('Últimos cambios', '');
 
@@ -348,8 +342,8 @@ const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-
 
 // Product row: name (with the container end on the right), today's schedule (dose and timings), the notes
 // in grey and the costs.
-// Dot before the name in the product list: primary if the product was changed (any field or schedule) since Products was
-// opened this time, light grey otherwise. The snapshot is taken each time Products opens, so going back home resets it.
+// Dot before the name in the product list: primary if the product was saved since Products was opened this time, light
+// grey otherwise. The snapshot is taken each time Products opens, so going back home resets it.
 let updatedAtOpen = new Map();
 const snapshotUpdated = () => { updatedAtOpen = new Map(state.products.map(m => [m.id, m.updated])); };
 const changedDot = m => `<span class="dot${updatedAtOpen.get(m.id) === m.updated ? '' : ' changed'}"></span>`;
@@ -909,7 +903,7 @@ function systemPrompt() {
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
-- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, created y updated = fecha de creación y de última modificación en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
+- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
 Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; coste del envase, al día = coste ÷ dosis por envase × dosis al día, y al mes = al día × días del mes actual, en euros; fin del envase actual con reinicio automático al gastar cada envase, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; tomas registradas, primera toma, dosis tomadas y coste consumido = dosis tomadas × coste ÷ dosis por envase; null es que no se puede calcular):
 ${JSON.stringify(summary)}
