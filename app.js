@@ -510,12 +510,12 @@ async function importCSV(file) {
 
 // ---------- PDF ----------
 
-// Registro mensual en PDF con la plantilla «Medication log»: título, mes y tabla de 5 columnas con filas fijas.
+// Registro mensual en PDF con la plantilla «Registro de tomas»: título, mes y tabla de 5 columnas con filas fijas.
 // Se escribe el PDF a mano (sin librerías) con las fuentes estándar Helvetica y Helvetica-Bold, que no hace falta incrustar.
 const A4 = { w: 595.28, h: 841.89 };
 // Anchos de Helvetica (caracteres 32–126, en milésimas de em) para medir y recortar texto; Helvetica-Bold solo para el título.
 const HELV = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
-const HELV_BOLD_CAPS = { ' ': 278, A: 722, C: 722, D: 722, E: 667, I: 278, M: 833, N: 722, O: 778, T: 611 };
+const HELV_BOLD_CAPS = { ' ': 278, E: 667, G: 778, I: 278, O: 778, R: 722, S: 667, T: 611 };
 const textWidth = (text, size) => [...text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')]
   .reduce((w, c) => w + (HELV[c.charCodeAt(0) - 32] ?? 556), 0) * size / 1000;
 const fitText = (text, size, max) => { let t = String(text ?? ''); if (textWidth(t, size) <= max) return t; while (t && textWidth(`${t}…`, size) > max) t = t.slice(0, -1); return `${t.trimEnd()}…`; };
@@ -542,7 +542,7 @@ function pdfPages(month, rows) {
   // Medidas de la plantilla (908 px de ancho) pasadas a puntos de A4.
   const k = A4.w / 908, X = px => px * k, Y = px => A4.h - px * k;
   const cols = [67, 153, 247, 545, 647, 835];
-  const head = ['DATE', 'TIME', 'MEDICATION / SUPPLEMENT', 'DOSE', 'NOTES'];
+  const head = ['FECHA', 'HORA', 'PRODUCTO', 'DOSIS', 'INDICACIONES'];
   const rowH = 38.4, top = 126, headH = 38;
   const perPage = Math.floor((A4.h / k - 56 - top - headH) / rowH);
   const pages = [];
@@ -551,10 +551,10 @@ function pdfPages(month, rows) {
     const text = (font, size, x, y, t, gray = 0.13) => c.push(`BT /${font} ${size} Tf ${gray} g ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfText(t)}) Tj ET`);
     // Título y mes
     const title = 26;
-    text('F2', title, X(67), Y(85), 'MEDICATION');
-    const bold = [...'MEDICATION '].reduce((w, ch) => w + HELV_BOLD_CAPS[ch], 0) * title / 1000;
-    text('F1', title, X(67) + bold, Y(85), 'LOG');
-    text('F1', 8.5, X(610), Y(75), 'MONTH');
+    text('F2', title, X(67), Y(85), 'REGISTRO');
+    const bold = [...'REGISTRO '].reduce((w, ch) => w + HELV_BOLD_CAPS[ch], 0) * title / 1000;
+    text('F1', title, X(67) + bold, Y(85), 'DE TOMAS');
+    text('F1', 8.5, X(610), Y(75), 'MES');
     text('F1', 10, X(684), Y(73), month);
     c.push(`0.55 G 0.6 w [0.8 1.2] 0 d ${X(678).toFixed(2)} ${Y(77).toFixed(2)} m ${X(835).toFixed(2)} ${Y(77).toFixed(2)} l S [] 0 d`);
     // Cabecera gris de la tabla
