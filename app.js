@@ -118,9 +118,9 @@ const takenAs = e => ({ id: e.id, ...snap(e) });
 // Filas de un día y momento: pendientes (productos vigentes sin toma) y tomadas (sus tomas, también las de productos que ya
 // no están en el momento o se borraron).
 function dayRows(timing, day) {
-  const entries = state.records.filter(e => e.day === day && e.timing === timing);
-  const pending = doses(timing, day).filter(m => !entries.some(e => e.id === m.id));
-  return { pending, taken: entries.map(e => ({ ...takenAs(e), entry: e })) };
+  const records = state.records.filter(e => e.day === day && e.timing === timing);
+  const pending = doses(timing, day).filter(m => !records.some(e => e.id === m.id));
+  return { pending, taken: records.map(e => ({ ...takenAs(e), record: e })) };
 }
 
 // ---------- Toma ----------
@@ -190,18 +190,18 @@ const viewButton = id => `
         <ion-icon slot="icon-only" name="information-circle" color="${productOf(id) ? supplyColor(id) : 'medium'}" size="large"></ion-icon>
       </ion-button>`;
 // Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
-const doseItem = (m, timing, entry, sorting) => `
+const doseItem = (m, timing, record, sorting) => `
     <ion-item data-id="${m.id}">
-      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-timing="${timing}" ${entry ? 'checked' : ''} ${sorting ? 'disabled' : ''}></ion-checkbox>
+      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-timing="${timing}" ${record ? 'checked' : ''} ${sorting ? 'disabled' : ''}></ion-checkbox>
       <ion-label class="ion-text-wrap">
         <h2 class="medium">${esc(m.name)}</h2>
-        ${doseLine([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}
+        ${doseLine([record && time(record.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
       </ion-label>
       ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : viewButton(m.id)}
     </ion-item>`;
 // Cada toma va en su propia lista inset: filas independientes.
-const doseRow = (m, timing, entry) => `<ion-list inset="true">${doseItem(m, timing, entry)}</ion-list>`;
+const doseRow = (m, timing, record) => `<ion-list inset="true">${doseItem(m, timing, record)}</ion-list>`;
 
 // Botón de la cabecera de una sección (Pendiente, Tomas).
 const headerButton = (id, icon, label) => `<ion-button id="${id}" fill="clear" aria-label="${label}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
@@ -211,13 +211,13 @@ let sortingPending = false;
 
 // «Tomas»: su botón abre un action sheet para elegir el orden; el icono muestra el elegido.
 // No se guarda: al abrir la app siempre empieza en el orden de tomas.
-const ORDERS = {
+const SORTS = {
   records: { icon: 'reorder-three-outline', label: 'Orden de tomas' },
   recent: { icon: 'arrow-up-outline', label: 'Más reciente arriba' },
   oldest: { icon: 'arrow-down-outline', label: 'Más reciente abajo' },
   products: { icon: 'list-outline', label: 'Orden de productos' },
 };
-let order = 'records';
+let sortMode = 'records';
 
 // Action sheet compartido: opciones + «Cancelar»; onCancel se llama si se cierra sin elegir.
 function sheet(header, buttons, onCancel) {
@@ -228,15 +228,15 @@ function sheet(header, buttons, onCancel) {
   if (onCancel) el.onDidDismiss().then(({ role }) => role === 'cancel' || role === 'backdrop' ? onCancel() : null);
 }
 
-const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([key, o]) => (
-  { text: o.label, role: key === order ? 'selected' : undefined, handler: () => { order = key; renderToma(); } })));
+const chooseSort = () => sheet('Ordenar tomas', Object.entries(SORTS).map(([key, o]) => (
+  { text: o.label, role: key === sortMode ? 'selected' : undefined, handler: () => { sortMode = key; renderHome(); } })));
 // Posición en el orden de productos; las tomas de productos borrados van al final.
 const productIndex = id => { const i = state.products.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
 const byProducts = (a, b) => (productIndex(a.id) - productIndex(b.id)) || 0;
 const sortTaken = (rows, timing) => [...rows].sort(
-  order === 'records' ? (a, b) => (pos(a, timing) - pos(b, timing)) || byProducts(a, b)
-  : order === 'products' ? byProducts
-  : (a, b) => a.entry.at.localeCompare(b.entry.at) * (order === 'oldest' ? 1 : -1));
+  sortMode === 'records' ? (a, b) => (pos(a, timing) - pos(b, timing)) || byProducts(a, b)
+  : sortMode === 'products' ? byProducts
+  : (a, b) => a.record.at.localeCompare(b.record.at) * (sortMode === 'oldest' ? 1 : -1));
 
 // Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
 const move = (list, { from, to = from }) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l; };
@@ -263,23 +263,23 @@ async function keepScroll(content, paint) {
 
 const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
-async function renderToma() {
+async function renderHome() {
   const day = selectedDay();
   const timing = selectedTiming();
-  if (!timing) { $('#toma').innerHTML = emptyList(visibleTimings().length ? 'Nada que tomar este día.' : 'No hay momentos visibles. Actívalos en Productos › Momentos.'); return; }
+  if (!timing) { $('#home').innerHTML = emptyList(visibleTimings().length ? 'Nada que tomar este día.' : 'No hay momentos visibles. Actívalos en Productos › Momentos.'); return; }
   const { pending, taken: takenRows } = dayRows(timing, day);
   const taken = sortTaken(takenRows, timing);
   const done = taken.length, total = pending.length + taken.length;
-  const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  const dateLabel = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // Conserva la posición del scroll al volver a pintar (p. ej. al marcar una toma al final de la lista).
-  await keepScroll($('#toma'), () => { $('#toma').innerHTML = `
+  await keepScroll($('#home'), () => { $('#home').innerHTML = `
     <ion-list inset="true">
       <ion-item lines="none">
         <div slot="start">${ring(done, total, `${total ? Math.round(done / total * 100) : 0}%`, 88, 8.5)}</div>
         <ion-label>
           <h2>${done} de ${total} tomadas</h2>
-          <p>${day === today() ? 'hoy, ' : ''}${date}</p>
+          <p>${day === today() ? 'hoy, ' : ''}${dateLabel}</p>
         </ion-label>
       </ion-item>
     </ion-list>
@@ -292,9 +292,9 @@ async function renderToma() {
       : pending.map(m => doseRow(m, timing)).join('')}
     <ion-list-header>
       <ion-label>Tomas</ion-label>
-      ${headerButton('toma-sort', ORDERS[order].icon, ORDERS[order].label)}
+      ${headerButton('taken-sort', SORTS[sortMode].icon, SORTS[sortMode].label)}
     </ion-list-header>
-    ${taken.map(m => doseRow(m, timing, m.entry)).join('') || emptyList('Sin tomas.')}`; });
+    ${taken.map(m => doseRow(m, timing, m.record)).join('') || emptyList('Sin tomas.')}`; });
 }
 
 // ---------- Productos ----------
@@ -330,7 +330,7 @@ const productRow = m => paused(m) ? `
   </ion-item>`;
 
 // Costes y envase. Las dosis al día son la cantidad de la dosis de hoy (la de su pauta, si la hay) por cada
-// momento visible del producto.
+// momento visible de su pauta de hoy.
 const perDayUnits = m => amount(doseOn(m, today())) * timingsOn(m, today()).filter(id => timingOf(id).visible).length;
 const perDay = m => m.cost / m.units * perDayUnits(m);
 const monthDays = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
@@ -413,12 +413,12 @@ function openShopping() {
 // abre su propia lista. Desde allí se editan y, con una pauta nueva, vuelven a los activos.
 const pausedModal = $('#paused');
 function renderProducts() {
-  const live = state.products.filter(m => !paused(m)), off = state.products.filter(paused);
-  $('#list-count').textContent = live.length;
-  $('#list').innerHTML = live.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
-  $('#paused-row').classList.toggle('ion-hide', !off.length);
-  $('#paused-count').textContent = off.length;
-  $('#paused-list').innerHTML = off.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos pausados.');
+  const active = state.products.filter(m => !paused(m)), stopped = state.products.filter(paused);
+  $('#list-count').textContent = active.length;
+  $('#list').innerHTML = active.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
+  $('#paused-row').classList.toggle('ion-hide', !stopped.length);
+  $('#paused-count').textContent = stopped.length;
+  $('#paused-list').innerHTML = stopped.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos pausados.');
 }
 
 // Momentos: casilla de visible a la izquierda; tocar la fila abre su editor.
@@ -443,8 +443,7 @@ function ask(header, handler) {
 
 // ---------- CSV ----------
 
-const cell = v => typeof v === 'boolean' ? String(v) : v;
-const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(cell(v)).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
+const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
 
 function parseCSV(text) {
   const rows = [[]];
@@ -547,16 +546,16 @@ function pdfPages(month, rows) {
   const pages = [];
   for (let p = 0; p === 0 || p * perPage < rows.length; p++) {
     const c = [];
-    const text = (font, size, x, y, t, gray = 0.13) => c.push(`BT /${font} ${size} Tf ${gray} g ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfText(t)}) Tj ET`);
+    const put = (font, size, x, y, t, gray = 0.13) => c.push(`BT /${font} ${size} Tf ${gray} g ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfText(t)}) Tj ET`);
     // Título y mes
     const title = 26;
-    text('F2', title, X(67), Y(85), 'DOSIFY');
-    text('F1', 8.5, X(610), Y(75), 'MES');
-    text('F1', 10, X(684), Y(73), month);
+    put('F2', title, X(67), Y(85), 'DOSIFY');
+    put('F1', 8.5, X(610), Y(75), 'MES');
+    put('F1', 10, X(684), Y(73), month);
     c.push(`0.55 G 0.6 w [0.8 1.2] 0 d ${X(678).toFixed(2)} ${Y(77).toFixed(2)} m ${X(835).toFixed(2)} ${Y(77).toFixed(2)} l S [] 0 d`);
     // Cabecera gris de la tabla
     c.push(`0.85 g ${X(67).toFixed(2)} ${Y(top + headH).toFixed(2)} ${(X(835) - X(67)).toFixed(2)} ${(headH * k).toFixed(2)} re f`);
-    head.forEach((h, i) => { const mid = (X(cols[i]) + X(cols[i + 1])) / 2; text('F1', 8.5, mid - textWidth(h, 8.5) / 2, Y(top + headH / 2) - 3, h); });
+    head.forEach((h, i) => { const mid = (X(cols[i]) + X(cols[i + 1])) / 2; put('F1', 8.5, mid - textWidth(h, 8.5) / 2, Y(top + headH / 2) - 3, h); });
     // Filas de la página
     const pageRows = rows.slice(p * perPage, (p + 1) * perPage);
     pageRows.forEach((r, n) => {
@@ -564,7 +563,7 @@ function pdfPages(month, rows) {
       const mid = Y(top + headH + rowH * n + rowH / 2) - 3, lead = 9.5;
       r.forEach((v, i) => {
         const left = X(cols[i]), w = X(cols[i + 1]) - left, lines = wrap(v, 8.5, w - 8);
-        lines.forEach((t, j) => text('F1', 8.5, i < 2 ? left + (w - textWidth(t, 8.5)) / 2 : left + 4, mid + ((lines.length - 1) / 2 - j) * lead, t));
+        lines.forEach((t, j) => put('F1', 8.5, i < 2 ? left + (w - textWidth(t, 8.5)) / 2 : left + 4, mid + ((lines.length - 1) / 2 - j) * lead, t));
       });
     });
     // Rejilla
@@ -603,7 +602,7 @@ const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es
 // Tomas del mes por fecha y hora: fecha, hora, y el producto tal como se tomó: nombre, dosis y, en notas, indicaciones.
 function exportPDF(y, m) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
-  const rows = state.records.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.at.localeCompare(b.at)).map(e => {
+  const rows = state.records.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => {
     return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), e.name, e.dose, e.notes];
   });
   download(`dosify-${prefix}.pdf`, pdfFile(pdfPages(monthName(y, m), rows)), 'application/pdf');
@@ -641,8 +640,8 @@ function openEditor(product = {}) {
   schedules = structuredClone(product.schedules ?? []);
   renderSchedules();
   for (const id of ['#delete', '#delete-header']) $(id).classList.toggle('ion-hide', !editing);
-  $('#history-section').classList.toggle('ion-hide', !editing);
-  $('#history-count').textContent = editing ? `${state.records.filter(e => e.id === editing).length} tomas` : '';
+  $('#stats-section').classList.toggle('ion-hide', !editing);
+  $('#history-count').textContent = editing ? recordCount(editing) : '';
   rememberScroll();
   editor.present();
 }
@@ -725,6 +724,9 @@ function saveSchedule() {
 
 // ---------- Registro de un producto ----------
 
+// Cuántas tomas tiene un producto («1 toma», «12 tomas»), para la fila «Registro» del editor y de la ficha.
+const recordCount = id => { const n = state.records.filter(e => e.id === id).length; return `${n} ${n === 1 ? 'toma' : 'tomas'}`; };
+
 // Todas las tomas del producto: resumen (desde cuándo, cuántas, dosis y coste estimado) y, debajo, agrupadas por la
 // pauta que valía cada día (de la más reciente a la más antigua; las que no tenían, en «Sin pauta»).
 const historyModal = $('#history');
@@ -766,8 +768,8 @@ let viewing = null;
 const readRow = (name, value, links) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${(links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label></ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-function openView(id, entry) {
-  const m = productOf(id), p = m ?? { name: entry.name, notes: entry.notes, refs: '', memo: '', cost: '', units: '', schedules: [] };
+function openView(id, record) {
+  const m = productOf(id), p = m ?? { name: record.name, notes: record.notes, refs: '', memo: '', cost: '', units: '', schedules: [] };
   viewing = id;
   $('#view-title').textContent = p.name;
   $('#view-edit').classList.toggle('ion-hide', !m);
@@ -775,8 +777,8 @@ function openView(id, entry) {
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
-    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Momento', label(entry.timing)) + readRow('Dosis', entry.dose)) : '')
-    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${state.records.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
+    + (record ? readSection('Toma', readRow('Día', longDate(record.day)) + readRow('Hora', time(record.at)) + readRow('Momento', label(record.timing)) + readRow('Dosis', record.dose)) : '')
+    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('El producto se borró: se muestra lo que guarda la toma.')}</ion-list>`);
   viewModal.present();
 }
@@ -812,7 +814,7 @@ function saveTimingEditor() {
 
 // Conversación con un modelo compatible con OpenAI (POST {url}/chat/completions). La configuración (URL base, API key y
 // modelo) se guarda aparte de los datos, solo en este navegador, y no va en el CSV. En cada petición el asistente recibe
-// todos los datos de la app; puede cambiarlos con herramientas, y cada cambio pide confirmación antes de aplicarse.
+// todos los datos de la app; puede cambiarlos con herramientas, y cada cambio sale como una propuesta editable que se guarda o se descarta.
 const AI_KEY = 'dosify-asistente';
 // Sin valores por defecto: hasta rellenar los tres campos, el asistente no se puede usar.
 const AI_FIELDS = ['url', 'key', 'model'];
@@ -838,13 +840,13 @@ function systemPrompt() {
   const summary = state.products.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), pausado: paused(m),
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, state.records.some(e => e.id === m.id && e.day === today() && e.timing === id) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.records.filter(e => e.id === m.id).length }));
-  return `Eres el asistente de Dosify, una app para llevar productos de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
+  return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
-- timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos que ese día tienen algún producto pendiente o toma hecha.
+- timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó).
-Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
+Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día (la cantidad de la dosis de hoy por cada momento visible de su pauta), costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
@@ -877,7 +879,7 @@ const tools = () => [
         label: stringProp('Texto principal (o etiqueta del campo)'), detail: stringProp('Texto secundario'), placeholder: stringProp('Texto de ayuda del campo'),
         checked: { type: 'boolean', description: 'check o toggle: marcado de inicio' }, value: { description: 'Valor inicial: texto en input, textarea, radio, select o chips; lista de valores en chips multiple' },
         input: { type: 'string', enum: ['text', 'number', 'date', 'time'], description: 'input: tipo de campo' }, multiple: { type: 'boolean', description: 'chips: se pueden marcar varios' }, required: { type: 'boolean', description: 'input o textarea: obligatorio' },
-        options: { type: 'array', description: 'radio, chips o select: opciones', items: { type: 'object', required: ['label'], properties: { value: stringProp('Valor (si no, el texto)'), label: stringProp('Texto'), detail: stringProp('Texto secundario'), action: ACTION } } },
+        options: { type: 'array', description: 'radio, chips o select: opciones', items: { type: 'object', required: ['label'], properties: { value: stringProp('Valor (si no, el texto)'), label: stringProp('Texto'), detail: stringProp('Texto secundario (solo en radio)'), action: ACTION } } },
         action: ACTION,
       } } },
     } } },
@@ -886,14 +888,15 @@ const tools = () => [
   tool('crear_producto', 'Úsala en cuanto pidan crear o añadir un producto (medicamento o suplemento), aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', productProps()),
   tool('modificar_producto', 'Úsala en cuanto pidan modificar, cambiar o editar algo de un producto (dosis, pauta, momentos, coste…), aunque no digan el valor nuevo: abre un formulario con el producto y tus cambios, si los hay', { id: stringProp('Id del producto'), ...productProps() }, ['id']),
   tool('borrar_producto', 'Úsala en cuanto pidan borrar o eliminar un producto (sus tomas se conservan)', { id: stringProp('Id del producto') }, ['id']),
-  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
+  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), time: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
   tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
   tool('modificar_momento', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: timingIds() }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
 
 // Formularios de las propuestas. Para cada herramienta: draft (los datos editables a partir de lo que propone el
-// asistente, o null si no vale), title, fields (el HTML de los campos), validate (campos mal) y apply (guarda y
-// devuelve el resumen). Los valores del borrador son texto, como en los campos.
+// asistente, o null si no vale), title, brief (resumen en la lista de propuestas), fields (el HTML de los campos;
+// interfaz usa blocks, una lista por sección), validate (campos mal), apply (guarda y devuelve el resumen) y, si hace
+// falta, button o danger (texto y color del botón de guardar). Los valores del borrador son texto, como en los campos.
 const str = v => v == null ? '' : String(v);
 const productFields = d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
@@ -919,14 +922,15 @@ const productValidate = d => [
 ];
 const productValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), cost: int(d.cost), units: int(d.units, 1),
   schedules: d.schedules.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), timings: p.timings })) });
-const timingChips = (d, timings = visibleTimings().map(ti => ti.id)) => timings.map(id => chipToggle('pick-timing', id, label(id), d.timing === id)).join('');
+// Chips de momento de una toma: los visibles y, si está oculto, el elegido (para que siempre se vea marcado).
+const timingChips = d => [...new Set([...visibleTimings().map(ti => ti.id), d.timing])].filter(timingOf).map(id => chipToggle('pick-timing', id, label(id), d.timing === id)).join('');
 const recordFields = (d, withTime) => `
   <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${timingChips(d)}</p></ion-label></ion-item>
-  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
-const recordDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, date(str(a.day)) || today())[0] ?? timingIds()[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
-const recordValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
+  <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="time" type="time" label="Hora" label-placement="stacked" value="${esc(d.time)}"></ion-input>` : ''}</ion-item>`;
+const recordDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, date(str(a.day)) || today())[0] ?? timingIds()[0], day: date(str(a.day)) || today(), time: /^\d{1,2}:\d{2}$/.test(str(a.time)) ? str(a.time).padStart(5, '0') : '' }; };
+const recordValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.time === '' || /^\d{1,2}:\d{2}$/.test(d.time) ? [] : ['time'])];
 const productBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.schedules[0]?.dose || 'sin dosis'} · ${(d.schedules[0]?.timings ?? []).map(label).join(', ') || 'sin momentos'}`;
-const recordBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
+const recordBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}${d.time ? ` ${d.time}` : ''}`;
 // Interfaz dinámica: secciones (una lista cada una) de elementos hechos con componentes de Ionic. Cada elemento tiene
 // una clave; su valor (marcado, elegido o escrito) se guarda en el borrador, vuelve al asistente al aplicar y puede ir
 // en los argumentos de las acciones como {{clave}}. Las acciones (de elementos marcados o elegidos, de un botón
@@ -979,7 +983,7 @@ const uiValue = (e, d) => {
 };
 // {{clave}} en los argumentos de una acción: el valor del elemento (tal cual si es todo el texto; si no, dentro de él).
 const fill = (args, values) => JSON.parse(JSON.stringify(args), (k, v) => typeof v !== 'string' ? v
-  : /^\{\{\w+\}\}$/.test(v) ? values[v.slice(2, -2)] ?? '' : v.replace(/\{\{(\w+)\}\}/g, (_, key) => str(values[key])));
+  : /^\{\{[^{}]+\}\}$/.test(v) ? values[v.slice(2, -2)] ?? '' : v.replace(/\{\{([^{}]+)\}\}/g, (_, key) => str(values[key])));
 const runAction = (label, a) => {
   const f = FORMS[a.tool], d = f.draft(a.args);
   if (!d) return `${label}: no se ha podido (no existe)`;
@@ -988,8 +992,8 @@ const runAction = (label, a) => {
 };
 const FORMS = {
   interfaz: {
-    draft: uiDraft, title: d => esc(d.title), button: d => d.confirm, blocks: uiBlocks, fields: uiBlocks,
-    brief: d => `${uiElements(d).filter(e => e.type !== 'text').length} elementos`,
+    draft: uiDraft, title: d => esc(d.title), button: d => d.confirm, blocks: uiBlocks,
+    brief: d => { const n = uiElements(d).filter(e => e.type !== 'text').length; return `${n} ${n === 1 ? 'elemento' : 'elementos'}`; },
     validate: d => uiElements(d).filter(e => (e.type === 'input' || e.type === 'textarea') && e.required && !str(d.values[e.key]).trim()).map(e => `@${e.key}`),
     apply: d => {
       const runs = [], run = (label, a) => { if (a) runs.push(runAction(label, { tool: a.tool, args: fill(a.args, d.values) })); };
@@ -1030,7 +1034,7 @@ const FORMS = {
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
       if (!state.records.some(e => e.id === d.id && e.timing === d.timing && e.day === d.day)) {
-        const at = d.hora ? new Date(`${d.day}T${d.hora.padStart(5, '0')}`) : new Date();
+        const at = d.time ? new Date(`${d.day}T${d.time.padStart(5, '0')}`) : new Date();
         state.records.unshift({ at: at.toISOString(), day: d.day, id: d.id, timing: d.timing, ...snapOn(m, d.day) });
       }
       return `«${m.name}» marcado en ${label(d.timing)} el ${shortDate(d.day)}`;
@@ -1046,7 +1050,7 @@ const FORMS = {
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
     fields: d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
-  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" value="${esc(d.end)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" placeholder="Sin hora" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" placeholder="Sin hora" value="${esc(d.end)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>${chipToggle('visible', 'visible', 'Visible en la toma', d.visible)}</p></ion-label></ion-item>`,
     validate: d => [...(hour(d.start) === null ? ['start'] : []), ...(hour(d.end) === null ? ['end'] : [])],
     apply: d => { Object.assign(timingOf(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Momento «${label(d.id)}» cambiado`; },
@@ -1061,14 +1065,13 @@ const pending = () => chatView.filter(v => v.who === 'proposal' && v.status === 
 const pushToolResult = (callId, content) => { if (!chat.some(m => m.role === 'tool' && m.tool_call_id === callId)) chat.push({ role: 'tool', tool_call_id: callId, content }); };
 // Los datos finales de una propuesta, descritos en texto para el asistente.
 function describe(tool, d) {
-  const dateText = k => shortDate(k);
   if (tool === 'crear_producto' || tool === 'modificar_producto') {
     const v = productValues(d);
     return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
       v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
-      v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${dateText(p.start)} durante ${p.days} días en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
+      v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${p.days} ${p.days === 1 ? 'día' : 'días'} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
   }
-  if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.timing)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
+  if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
   if (tool === 'modificar_momento') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
   if (tool === 'interfaz') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
   return d.name;
@@ -1090,7 +1093,7 @@ function decide(v, saved) {
 // Guarda una propuesta si sus datos valen; si no, marca en rojo los campos que fallan con su mensaje debajo. El mensaje
 // (errorText) se pone solo entonces y se quita al escribir: con él fijo, Ionic dibuja debajo del campo una sección con
 // su propio borde aunque el mensaje esté oculto, y el campo sale con dos líneas.
-const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', hora: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24' };
+const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24' };
 const SCHEDULE_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero' };
 function trySave(v, card) {
   if (v.status !== 'pending') return false;
@@ -1155,8 +1158,8 @@ function drawCharts() {
 
 // Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, la
 // hora del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
-// hay ninguna guardada), al terminar cada respuesta (se vacían al enviar la pregunta y las nuevas siguen, la mitad, el
-// hilo de lo respondido y, la otra mitad, van libres), al pulsar «Otras» o tras «Limpiar». Si el servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
+// hay ninguna guardada; también al cargar la app, en segundo plano), al terminar cada respuesta (se vacían al enviar la pregunta y las nuevas siguen, la mitad, el
+// hilo de lo respondido y, la otra mitad, van libres), al pulsar «Otras» o tras «Limpiar». Si el servicio falla o tarda más de 25 s, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
 const SUGGEST_KEY = 'dosify-sugerencias';
 let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
@@ -1174,7 +1177,7 @@ function suggestionPool() {
     ...(products.length ? ['¿Qué me falta por tomar hoy?', h >= 20 ? '¿Me queda algo pendiente de hoy antes de dormir?' : h < 12 ? '¿Qué tengo que tomar a lo largo del día de hoy?' : '¿Qué me queda por tomar en lo que falta de día?'] : []),
     // Envases y compras
     ...products.filter(m => runsOut(m)).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
-    ...(products.some(m => runsOut(m)) ? ['¿Qué tengo que comprar en los próximos 14 días? Hazme la lista con precios.', '¿Qué envase se me acaba antes?'] : []),
+    ...(products.some(m => runsOut(m)) ? [`¿Qué tengo que comprar en los próximos ${SHOP_DAYS} días? Hazme la lista con precios.`, '¿Qué envase se me acaba antes?'] : []),
     ...(products.some(m => m.units === '' || m.cost === '') ? ['Hazme un formulario para completar el coste y las dosis por envase de los productos que no lo tienen.'] : []),
     // Costes
     ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por producto.', '¿Qué producto me sale más caro al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por producto.'] : []),
@@ -1304,7 +1307,7 @@ function openProposalEditor(i) {
 const allRow = () => pending().length > 1 ? `<div class="proposal-actions"><ion-button fill="outline" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button data-act="save-all">Guardar todas (${pending().length})</ion-button></div>` : '';
 function renderChat() {
   saveChat();
-  const ready = ai.key && ai.model && ai.url;
+  const ready = aiReady();
   charts.forEach(c => c.destroy()); charts = [];
   chatBody.innerHTML = (chatView.length ? chatBlocks() + allRow()
     : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus productos, tomas, consumos o costes. También puedo crear o cambiar datos: te lo propongo en un formulario que revisas y guardas.' : 'Configura el asistente en Productos › Asistente (URL base, API key y modelo).')}</ion-list>`)
@@ -1342,6 +1345,7 @@ function repairChat() {
   chat = out;
 }
 // Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
+const existingTimings = () => `Los momentos que hay ahora son: ${state.timings.map(ti => `«${label(ti.id)}» (id ${ti.id})`).join(', ')}.`;
 const existing = () => state.products.length ? `Los productos que hay ahora son: ${state.products.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ningún producto: si hace falta, créalo.';
 // Última fila de cada mensaje: iconos para copiarlo, verlo en una pantalla donde se puede seleccionar el texto (en
 // móvil Ionic lo impide en la app) y, si es tuyo, editarlo (pasa a la caja de escribir). Los tuyos, a la derecha; los
@@ -1362,9 +1366,12 @@ const MESSAGE_ACTIONS = {
 $('#text-close').onclick = () => textModal.dismiss();
 
 // Envía la pregunta y atiende las herramientas que pida el asistente hasta que responda con texto.
+// El asistente solo se puede usar con URL base, API key y modelo.
+const aiReady = () => !!(ai.url && ai.key && ai.model);
+
 async function sendChat() {
   const question = String(chatInput.value ?? '').trim();
-  if (!question || chatBusy) return;
+  if (!question || chatBusy || !aiReady()) return;
   chatInput.value = '';
   // Las propuestas pendientes (de este turno o de otra sesión) se dan por descartadas antes de seguir, y el bucle que
   // las esperaba, si lo hay, se cancela: cambiar de época hace que termine sin pedir otra respuesta.
@@ -1393,7 +1400,7 @@ async function sendChat() {
         if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya has propuesto ese mismo cambio en este turno, no se propone otra vez.'); continue; }
         seen.add(key);
         const form = FORMS[call.function.name], draft = form?.draft(args);
-        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${form ? `no existe ${call.function.name === 'modificar_momento' ? 'ese momento' : 'ningún producto con ese id'}. ${existing()}` : 'herramienta desconocida.'}`); continue; }
+        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${!form ? 'herramienta desconocida.' : call.function.name === 'interfaz' ? 'la interfaz no tiene ninguna sección con elementos válidos.' : call.function.name === 'modificar_momento' ? `no existe ese momento. ${existingTimings()}` : `no existe ningún producto con ese id. ${existing()}`}`); continue; }
         chatView.push({ who: 'proposal', id: call.id, tool: call.function.name, draft, status: 'pending' });
         waits.push(new Promise(resolve => resolvers.set(call.id, resolve)));
       }
@@ -1415,35 +1422,35 @@ async function sendChat() {
 function render() {
   renderTimingTabs();
   renderDays();
-  renderToma();
+  renderHome();
   keepScroll($('#manager ion-content'), () => { renderProducts(); renderCosts(); renderTimingRows(); renderPdfMonths(); });
 }
 
-$('#day').addEventListener('ionChange', () => { renderTimingTabs(); renderToma(); });
-$('#timing').addEventListener('ionChange', renderToma);
+$('#day').addEventListener('ionChange', () => { renderTimingTabs(); renderHome(); });
+$('#timing').addEventListener('ionChange', renderHome);
 // El nombre de una fila de la toma: si ese día ya está tomada, como se tomó; si no, el del producto.
 const rowName = id => (state.records.find(e => e.day === selectedDay() && e.timing === selectedTiming() && String(e.id) === id) ?? productOf(id)).name;
 // Marcar o desmarcar se confirma en un action sheet; si se cancela, la casilla vuelve a como estaba.
-$('#toma').addEventListener('ionChange', e => {
+$('#home').addEventListener('ionChange', e => {
   const { id, timing } = e.target.dataset;
   const { checked } = e.detail;
-  sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, timing, checked) }], renderToma);
+  sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, timing, checked) }], renderHome);
 });
 // El (i) de una fila abre la ficha del producto; desde la toma, con la toma de ese día y momento si ya está hecha.
-const viewFrom = (e, fromToma) => {
+const viewFrom = (e, fromHome) => {
   const id = e.target.closest('[data-view]')?.dataset.view;
-  if (id) openView(id, fromToma ? state.records.find(x => x.day === selectedDay() && x.timing === selectedTiming() && String(x.id) === id) : undefined);
+  if (id) openView(id, fromHome ? state.records.find(x => x.day === selectedDay() && x.timing === selectedTiming() && String(x.id) === id) : undefined);
   return !!id;
 };
-$('#toma').addEventListener('click', e => {
+$('#home').addEventListener('click', e => {
   if (viewFrom(e, true)) return;
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
-  if (e.target.closest('#toma-sort')) chooseOrder();
-  if (e.target.closest('#pending-sort')) { sortingPending = !sortingPending; renderToma(); }
+  if (e.target.closest('#taken-sort')) chooseSort();
+  if (e.target.closest('#pending-sort')) { sortingPending = !sortingPending; renderHome(); }
 });
 // Al soltar, complete() deja la fila en su sitio en pantalla: solo se guarda el orden, sin repintar ni mover el scroll.
-$('#toma').addEventListener('ionReorderEnd', e => {
+$('#home').addEventListener('ionReorderEnd', e => {
   const timing = selectedTiming();
   reorderPending(timing, move([...e.target.children].map(el => state.products.find(m => m.id === el.dataset.id)), e.detail));
   e.detail.complete();
@@ -1476,10 +1483,10 @@ $('#list').addEventListener('ionReorderEnd', e => {
   state.products = [...move(state.products.filter(m => !paused(m)), e.detail), ...state.products.filter(paused)];
   e.detail.complete();
   save();
-  renderToma();
+  renderHome();
 });
 
-// Momentos: la casilla cambia si es visible; tocar la fila (fuera de la casilla y del asa) abre su editor.
+// Momentos: la casilla cambia si es visible; tocar la fila (fuera de la casilla) abre su editor.
 $('#timings').addEventListener('ionChange', e => {
   timingOf(e.target.dataset.timing).visible = e.detail.checked;
   save();
@@ -1526,7 +1533,7 @@ $('#delete').onclick = () => ask('¿Eliminar este producto?', () => {
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
-$('#chat-new').onclick = () => { chatEpoch++; suggested = []; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
+$('#chat-new').onclick = () => { chatEpoch++; suggested = []; suggestRequest++; suggestLoading = null; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
 // Interacción con las propuestas: campos (se escriben en el borrador), chips (momentos, pautas, visible)
 // y botones (guardar, descartar, todas).
@@ -1561,7 +1568,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   const p = proposalOf(e.target); if (!p) return;
   // Botón de una interfaz: aplica al instante (en la vista de edición, por su «Guardar», que vuelca la copia).
   const uiButton = e.target.closest('[data-ui-button]')?.dataset.uiButton;
-  if (uiButton !== undefined) { p.v.draft.pressed = uiButton; if ('edit' in p.card.dataset) $('#proposal-save').click(); else if (trySave(p.v, p.card)) renderChat(); return; }
+  if (uiButton !== undefined) { p.v.draft.pressed = uiButton; if ('edit' in p.card.dataset) $('#proposal-save').click(); else if (trySave(p.v, p.card)) renderChat(); else p.v.draft.pressed = null; return; }
   if (act === 'save') { if (trySave(p.v, p.card)) renderChat(); return; }
   if (act === 'discard') { decide(p.v, false); return renderChat(); }
   const chip = e.target.closest('ion-chip[data-chip]'); if (!chip) return;
@@ -1577,7 +1584,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
 $('#proposal-cancel').onclick = () => proposalEditor.dismiss();
 $('#proposal-save').onclick = () => {
   const real = chatView[proposalEdit.i], card = $('#proposal-body [data-proposal]');
-  if (!trySave(proposalEdit.v, card)) return;
+  if (!trySave(proposalEdit.v, card)) { proposalEdit.v.draft.pressed = null; return; }
   real.draft = proposalEdit.v.draft; real.status = proposalEdit.v.status; real.text = proposalEdit.v.text; delete real.bad;
   proposalEditor.dismiss(); renderChat();
 };
@@ -1604,6 +1611,6 @@ renderTimingTabs();
 $('#timing').value = timingNow();
 render();
 // Al cargar, si el asistente está configurado y no hay sugerencias guardadas, se piden en segundo plano.
-if (ai.key && ai.model && ai.url) setTimeout(() => { if (!suggestLoading && !suggested.length) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
+if (aiReady()) setTimeout(() => { if (!suggestLoading && !suggested.length) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
 // Al cargar, hoy (el último día) siempre a la vista.
 $('#day').componentOnReady().then(() => requestAnimationFrame(() => { $('#day').scrollLeft = $('#day').scrollWidth; }));

@@ -49,9 +49,17 @@
     /* Peso medio para títulos (Ionic no trae utilidad de font-weight) */
     :root .medium { font-weight: 500; }
     /* Oculta la barra de scroll del selector de días (la regla de Ionic para ello no se aplica) */
+    .ion-color-teal {
+      --ion-color-base: var(--ion-color-teal) !important;
+      --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
+      --ion-color-contrast: var(--ion-color-teal-contrast) !important;
+      --ion-color-contrast-rgb: var(--ion-color-teal-contrast-rgb) !important;
+      --ion-color-shade: var(--ion-color-teal-shade) !important;
+      --ion-color-tint: var(--ion-color-teal-tint) !important;
+    }
     #day { scrollbar-width: none; }
     #day::-webkit-scrollbar { display: none; }
-    /* En móvil Ionic impide seleccionar texto en toda la app; en «Seleccionar texto» del asistente se permite */
+    /* En móvil Ionic impide seleccionar texto en toda la app; en la pantalla «Texto» del asistente se permite */
     #text-body { -webkit-user-select: text; user-select: text; }
     /* Teclado en el navegador (iOS): la app se encoge a la zona visible (--keyboard la pone app.js con visualViewport),
        así la caja de escribir queda sobre el teclado sin que Safari desplace la página y oculte la cabecera */
@@ -65,6 +73,7 @@
     #chat-input { --padding-start: 8px; --padding-end: 8px; }
     /* Respuestas en Markdown: tablas con bordes finos y scroll horizontal si no caben; las gráficas, con alto fijo */
     #chat-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; margin: 6px 0; }
+    #chat-body th, #chat-body td { border: 1px solid var(--ion-color-step-250, #d0d0d0); padding: 4px 8px; text-align: left; white-space: nowrap; }
     #chat-body .md-chart { position: relative; height: 220px; margin: 6px 0; }
     #chat-body .md-p { margin: 0 0 6px; }
     /* Chips de las propuestas del asistente, algo más grandes (ion-chip no tiene tamaño configurable) */
@@ -72,15 +81,6 @@
     /* Botones de las propuestas («Descartar» / «Guardar», «todas»): fuera de la lista, a medias y al ancho de las listas */
     #chat-body .proposal-actions { display: flex; gap: 12px; margin: 0 16px 16px; }
     #chat-body .proposal-actions ion-button { flex: 1; margin: 0; height: 44px; font-size: 16px; }
-    #chat-body th, #chat-body td { border: 1px solid var(--ion-color-step-250, #d0d0d0); padding: 4px 8px; text-align: left; white-space: nowrap; }
-    .ion-color-teal {
-      --ion-color-base: var(--ion-color-teal) !important;
-      --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
-      --ion-color-contrast: var(--ion-color-teal-contrast) !important;
-      --ion-color-contrast-rgb: var(--ion-color-teal-contrast-rgb) !important;
-      --ion-color-shade: var(--ion-color-teal-shade) !important;
-      --ion-color-tint: var(--ion-color-teal-tint) !important;
-    }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core@9.0.8/dist/ionic/ionic.esm.js"></script>
   <script type="module" src="app.js"></script>
@@ -105,7 +105,7 @@
       <ion-segment id="timing"></ion-segment>
     </ion-toolbar>
   </ion-header>
-  <ion-content id="toma" color="light"></ion-content>
+  <ion-content id="home" color="light"></ion-content>
 
   <ion-modal id="manager">
     <ion-header>
@@ -180,7 +180,7 @@
         <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
         <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
       </ion-list>
-      <div id="history-section">
+      <div id="stats-section">
         <ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>
         <ion-list inset="true">
           <ion-item button="true" id="open-history"><ion-label>Registro</ion-label><ion-note slot="end" id="history-count"></ion-note></ion-item>
