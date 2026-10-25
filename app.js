@@ -153,8 +153,8 @@ const ring = (done, total, label, size = 44, font = 11, color = 'primary') => `
 const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return dayKey(d); };
 function renderDays() {
   const recent = Array.from({ length: DAYS + 1 }, (_, i) => daysAgo(DAYS - i));
-  const logged = state.records.map(e => e.day).filter(day => day >= daysAgo(DAYS_MAX));
-  const keys = [...new Set([...logged, ...recent, $('#day').value].filter(Boolean))].sort();
+  const recorded = state.records.map(e => e.day).filter(day => day >= daysAgo(DAYS_MAX));
+  const keys = [...new Set([...recorded, ...recent, $('#day').value].filter(Boolean))].sort();
   $('#day').innerHTML = keys.map(key => {
     const d = fromKey(key);
     const rows = visibleTimings().map(ti => dayRows(ti.id, key));
@@ -212,12 +212,12 @@ let sortingPending = false;
 // «Tomas»: su botón abre un action sheet para elegir el orden; el icono muestra el elegido.
 // No se guarda: al abrir la app siempre empieza en el orden de tomas.
 const ORDERS = {
-  tomas: { icon: 'reorder-three-outline', label: 'Orden de tomas' },
+  records: { icon: 'reorder-three-outline', label: 'Orden de tomas' },
   recent: { icon: 'arrow-up-outline', label: 'Más reciente arriba' },
   oldest: { icon: 'arrow-down-outline', label: 'Más reciente abajo' },
-  productos: { icon: 'list-outline', label: 'Orden de productos' },
+  products: { icon: 'list-outline', label: 'Orden de productos' },
 };
-let order = 'tomas';
+let order = 'records';
 
 // Action sheet compartido: opciones + «Cancelar»; onCancel se llama si se cierra sin elegir.
 function sheet(header, buttons, onCancel) {
@@ -234,8 +234,8 @@ const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([ke
 const productIndex = id => { const i = state.products.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
 const byProducts = (a, b) => (productIndex(a.id) - productIndex(b.id)) || 0;
 const sortTaken = (rows, timing) => [...rows].sort(
-  order === 'tomas' ? (a, b) => (pos(a, timing) - pos(b, timing)) || byProducts(a, b)
-  : order === 'productos' ? byProducts
+  order === 'records' ? (a, b) => (pos(a, timing) - pos(b, timing)) || byProducts(a, b)
+  : order === 'products' ? byProducts
   : (a, b) => a.entry.at.localeCompare(b.entry.at) * (order === 'oldest' ? 1 : -1));
 
 // Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
@@ -510,7 +510,7 @@ async function importCSV(file) {
 
 // ---------- PDF ----------
 
-// Registro mensual en PDF con la plantilla «Medication records»: título, mes y tabla de 5 columnas con filas fijas.
+// Registro mensual en PDF con la plantilla «Medication log»: título, mes y tabla de 5 columnas con filas fijas.
 // Se escribe el PDF a mano (sin librerías) con las fuentes estándar Helvetica y Helvetica-Bold, que no hace falta incrustar.
 const A4 = { w: 595.28, h: 841.89 };
 // Anchos de Helvetica (caracteres 32–126, en milésimas de em) para medir y recortar texto; Helvetica-Bold solo para el título.
@@ -518,7 +518,7 @@ const HELV = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 3
 const HELV_BOLD_CAPS = { ' ': 278, A: 722, C: 722, D: 722, E: 667, I: 278, M: 833, N: 722, O: 778, T: 611 };
 const textWidth = (text, size) => [...text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')]
   .reduce((w, c) => w + (HELV[c.charCodeAt(0) - 32] ?? 556), 0) * size / 1000;
-const fit = (text, size, max) => { let t = String(text ?? ''); if (textWidth(t, size) <= max) return t; while (t && textWidth(`${t}…`, size) > max) t = t.slice(0, -1); return `${t.trimEnd()}…`; };
+const fitText = (text, size, max) => { let t = String(text ?? ''); if (textWidth(t, size) <= max) return t; while (t && textWidth(`${t}…`, size) > max) t = t.slice(0, -1); return `${t.trimEnd()}…`; };
 // Reparte el texto en como mucho «lines» líneas que quepan en «max»; lo que sobre se recorta con «…» en la última.
 function wrap(text, size, max, lines = 2) {
   const words = String(text ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean), out = [];
@@ -532,7 +532,7 @@ function wrap(text, size, max, lines = 2) {
     out.push(line);
   }
   if (words.length) out[lines - 1] = `${out[lines - 1]} ${words.join(' ')}`;
-  if (out.length) out[out.length - 1] = fit(out.at(-1), size, max);
+  if (out.length) out[out.length - 1] = fitText(out.at(-1), size, max);
   return out;
 }
 // Texto de PDF en WinAnsi (latin-1): se escapan \ ( ) y lo que no cabe en latin-1 pasa a «?».
@@ -616,8 +616,8 @@ function exportPDF(y, m) {
 // al más antiguo; por defecto, el más reciente. Sin tomas en ese tiempo, la fila y el botón quedan desactivados.
 const pdfMonth = $('#pdf-month');
 function renderPdfMonths() {
-  const now = new Date(), logged = new Set(state.records.map(e => e.day.slice(0, 7)));
-  const months = Array.from({ length: 6 }, (_, i) => dayKey(new Date(now.getFullYear(), now.getMonth() - i, 1)).slice(0, 7)).filter(k => logged.has(k));
+  const now = new Date(), recorded = new Set(state.records.map(e => e.day.slice(0, 7)));
+  const months = Array.from({ length: 6 }, (_, i) => dayKey(new Date(now.getFullYear(), now.getMonth() - i, 1)).slice(0, 7)).filter(k => recorded.has(k));
   pdfMonth.innerHTML = months.map(k => `<ion-select-option value="${k}">${monthName(Number(k.slice(0, 4)), Number(k.slice(5)) - 1)}</ion-select-option>`).join('');
   if (!months.includes(pdfMonth.value)) pdfMonth.value = months[0];
   pdfMonth.disabled = $('#export-pdf').disabled = !months.length;
@@ -904,8 +904,8 @@ const productFields = d => `
   <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" value="${esc(d.units)}"></ion-input></ion-item>
   ${d.schedules.map((p, i) => `
-  <ion-item><ion-input data-schedule="dose" data-row="${i}" label="Pauta ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-schedule" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
-  <ion-item><ion-input data-schedule="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-schedule="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
+  <ion-item><ion-input data-schedule-field="dose" data-row="${i}" label="Pauta ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-schedule" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
+  <ion-item><ion-input data-schedule-field="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-schedule-field="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>Momentos de la pauta ${i + 1}</p><p>${visibleTimings().map(ti => `<ion-chip data-chip="schedule-timing" data-row="${i}" data-value="${esc(ti.id)}" ${p.timings.includes(ti.id) ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(label(ti.id))}</ion-label></ion-chip>`).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un momento</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
   <ion-item lines="none"><ion-label><p>${chipAction('add-schedule', 'Añadir pauta', 'add-outline')}</p></ion-label></ion-item>`;
 const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
@@ -921,13 +921,13 @@ const productValidate = d => [
 const productValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), cost: int(d.cost), units: int(d.units, 1),
   schedules: d.schedules.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), timings: p.timings })) });
 const timingChips = (d, timings = visibleTimings().map(ti => ti.id)) => timings.map(id => chipToggle('pick-timing', id, label(id), d.timing === id)).join('');
-const tomaFields = (d, withTime) => `
+const recordFields = (d, withTime) => `
   <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${timingChips(d)}</p></ion-label></ion-item>
   <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
-const tomaDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, date(str(a.day)) || today())[0] ?? timingIds()[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
-const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
+const recordDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, date(str(a.day)) || today())[0] ?? timingIds()[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
+const recordValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
 const productBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.schedules[0]?.dose || 'sin dosis'} · ${(d.schedules[0]?.timings ?? []).map(label).join(', ') || 'sin momentos'}`;
-const tomaBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
+const recordBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
 // Interfaz dinámica: secciones (una lista cada una) de elementos hechos con componentes de Ionic. Cada elemento tiene
 // una clave; su valor (marcado, elegido o escrito) se guarda en el borrador, vuelve al asistente al aplicar y puede ir
 // en los argumentos de las acciones como {{clave}}. Las acciones (de elementos marcados o elegidos, de un botón
@@ -1027,7 +1027,7 @@ const FORMS = {
     apply: d => { state.products = state.products.filter(m => m.id !== d.id); return `Producto «${d.name}» borrado`; },
   },
   registrar_toma: {
-    draft: tomaDraft, title: () => 'Marcar toma', brief: tomaBrief, fields: d => tomaFields(d, true), validate: tomaValidate,
+    draft: recordDraft, title: () => 'Marcar toma', brief: recordBrief, fields: d => recordFields(d, true), validate: recordValidate,
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
       if (!state.records.some(e => e.id === d.id && e.timing === d.timing && e.day === d.day)) {
@@ -1038,7 +1038,7 @@ const FORMS = {
     },
   },
   quitar_toma: {
-    draft: tomaDraft, title: () => 'Dejar pendiente', brief: tomaBrief, fields: d => tomaFields(d, false), validate: tomaValidate,
+    draft: recordDraft, title: () => 'Dejar pendiente', brief: recordBrief, fields: d => recordFields(d, false), validate: recordValidate,
     apply: d => { state.records = state.records.filter(e => !(e.id === d.id && e.timing === d.timing && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.timing)} el ${shortDate(d.day)}`; },
   },
   modificar_momento: {
@@ -1099,7 +1099,7 @@ function trySave(v, card) {
   for (const f of bad) {
     const [field, row] = f.split(':');
     if (field === 'timings') { v.draft.schedules[Number(row)].bad = true; continue; }
-    const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-schedule="${field}"][data-row="${row}"]`);
+    const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-schedule-field="${field}"][data-row="${row}"]`);
     if (!el) continue;
     el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : SCHEDULE_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
@@ -1154,7 +1154,7 @@ function drawCharts() {
   }
 }
 
-// Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, el
+// Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, la
 // hora del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
 // hay ninguna guardada), al terminar cada respuesta (se vacían al enviar la pregunta y las nuevas siguen, la mitad, el
 // hilo de lo respondido y, la otra mitad, van libres), al pulsar «Otras» o tras «Limpiar». Si el servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
@@ -1166,9 +1166,9 @@ function suggestionPool() {
   const timing = timingNow(), timingName = timing ? label(timing) : 'ahora';
   const taken = (m, id) => state.records.some(e => e.id === m.id && e.day === day && e.timing === id);
   const pendingNow = products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day) && !taken(m, timing));
-  const logged = products.filter(m => state.records.some(e => e.id === m.id)), priced = products.filter(m => m.cost !== ''), ending = products.filter(m => m.schedules.length && scheduleEnd(m.schedules.at(-1)) <= addDays(day, 7));
+  const recorded = products.filter(m => state.records.some(e => e.id === m.id)), priced = products.filter(m => m.cost !== ''), ending = products.filter(m => m.schedules.length && scheduleEnd(m.schedules.at(-1)) <= addDays(day, 7));
   const week = state.records.filter(e => e.day >= addDays(day, -7)).length, pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  const some = products.length ? pick(products) : null, withLog = logged.length ? pick(logged) : null;
+  const some = products.length ? pick(products) : null, withRecords = recorded.length ? pick(recorded) : null;
   return [
     // Ahora mismo
     ...(pendingNow.length ? [`Hazme una lista con check para marcar lo que me toca en ${timingName}.`, `¿Qué me queda por tomar en ${timingName}?`] : []),
@@ -1183,7 +1183,7 @@ function suggestionPool() {
     // Historial
     ...(state.records.length ? ['¿Cómo he cumplido las tomas esta semana? Hazme una tabla por día.', '¿Qué tomas se me olvidaron en los últimos 7 días?', 'Hazme una gráfica de las tomas por día de los últimos 14 días.'] : []),
     ...(week > 7 ? ['¿Qué día de la semana se me olvidan más tomas?', '¿En qué momento cumplo peor?'] : []),
-    ...(withLog ? [`Resume el registro de ${withLog.name} en una tabla.`, `¿A qué hora suelo tomar ${withLog.name}?`, `¿Cuántas dosis de ${withLog.name} llevo tomadas en total?`] : []),
+    ...(withRecords ? [`Resume el registro de ${withRecords.name} en una tabla.`, `¿A qué hora suelo tomar ${withRecords.name}?`, `¿Cuántas dosis de ${withRecords.name} llevo tomadas en total?`] : []),
     // Pautas
     ...products.filter(m => m.schedules.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus pautas?`),
     ...(ending.length ? [`¿Qué productos terminan esta semana y cuándo?`] : []),
@@ -1197,8 +1197,7 @@ function suggestionPool() {
   ];
 }
 const localSuggestions = count => { const asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content)); return [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count); };
-// Caché que se refresca por detrás: si hay sugerencias guardadas, aunque sean de otro estado, salen al instante y se
-// piden las nuevas en segundo plano (mientras, un indicador junto a «Otras»); solo sin nada guardado sale el aviso.
+// Las guardadas salen tal cual; si no hay ninguna se piden (y mientras llegan, solo la fila de carga).
 function suggestions(count) {
   if (!suggested.length && !suggestLoading) requestSuggestions(count, []);
   return suggested.length ? suggested : null;
@@ -1542,10 +1541,10 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionCh
 });
 for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionInput', e => {
   const p = proposalOf(e.target); if (!p) return;
-  const { field, schedule, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
+  const { field, scheduleField, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
   if (ui !== undefined) p.v.draft.values[ui] = value;
   if (field) p.v.draft[field] = value;
-  if (schedule) p.v.draft.schedules[Number(row)][schedule] = value;
+  if (scheduleField) p.v.draft.schedules[Number(row)][scheduleField] = value;
   e.target.classList.remove('ion-invalid'); e.target.errorText = undefined;
   saveChat();
 });
