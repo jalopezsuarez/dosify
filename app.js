@@ -1,20 +1,23 @@
 const KEY = 'dosify';
 // Modelo:
-// · moments: los de DEFAULT_MOMENTS (para tener más basta añadir otro allí), siempre en ese orden fijo:
-//   { id, name, start, end (horas), visible, order: [ids de producto en el orden de tomas] }
+// · moments: momentos de toma, en el orden guardado (no se reordenan): { id (aleatorio), name, start, end (horas),
+//   visible, order: [ids de producto en el orden de tomas] }. Si no hay ninguno válido, los de DEFAULT_MOMENTS (para
+//   tener más por defecto basta añadir otro allí) con ids nuevos.
 // · products: productos, en el orden de productos: { id, name, notes (indicaciones), refs (referencias), memo (notas),
 //   cost (€ por envase) y units (dosis por envase), enteros o vacíos, y plans: [pautas { dose (empieza por la
 //   cantidad de cada toma), start, days, moments: [ids de los momentos en que se toma; al menos uno] }]. Sin
 //   pautas, un producto no sale en la toma.
 // · log: tomas: { at, day, id (del producto), moment (id de momento), name, dose, notes (el producto tal como se tomó) }
 const DEFAULT_MOMENTS = [
-  { id: 'm1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
-  { id: 'm2', name: 'Almuerzo', start: 12, end: 18, visible: true, order: [] },
-  { id: 'm3', name: 'Cena', start: 18, end: 24, visible: true, order: [] },
-  { id: 'm4', name: 'Demanda', start: '', end: '', visible: true, order: [] },
+  { name: 'Desayuno', start: 6, end: 12 },
+  { name: 'Almuerzo', start: 12, end: 18 },
+  { name: 'Cena', start: 18, end: 24 },
+  { name: 'Demanda', start: '', end: '' },
 ];
-const MOMENT_IDS = DEFAULT_MOMENTS.map(mo => mo.id);
+// Todos los ids (momentos, productos) son aleatorios.
 const newId = () => crypto.randomUUID().slice(0, 8);
+const defaultMoments = () => DEFAULT_MOMENTS.map(d => ({ id: newId(), ...d, visible: true, order: [] }));
+const momentIds = () => state.moments.map(mo => mo.id);
 const TEXT = ['name', 'notes', 'refs', 'memo'];
 const SEP = ';';
 const DAYS = 7; // días anteriores que siempre se muestran
@@ -25,7 +28,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Texto plano con saltos de línea y enlaces (http, https o www.) pulsables, que se abren en otra pestaña.
 const linkify = text => esc(text).replace(/\n/g, '<br>').replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
-const yes = v => !['', '0', 'no', 'false'].includes(String(v).toLowerCase());
+const yes = v => ['1', 'yes', 'true', 'sí', 'si'].includes(String(v).trim().toLowerCase());
 const dayKey = d => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 const fromKey = key => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
 const today = () => dayKey(new Date());
@@ -43,25 +46,26 @@ const list = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
 const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d+$/.test(t) && Number(t) >= min ? Number(t) : null; };
 // Cantidad de cada toma: el número con que empieza la dosis («1 comprimido», «0,5 ml»); 0 si no empieza por número.
 const amount = dose => Number(String(dose).match(/^\s*(\d+(?:[.,]\d+)?)/)?.[1].replace(',', '.')) || 0;
-// Pautas válidas (dosis con número, fecha y duración), en orden de fecha de inicio y, a igual fecha, de duración.
-// Pautas válidas (dosis con número, fecha, duración y al menos un momento), en orden de fecha de inicio y,
-// a igual fecha, de duración; las incompletas se descartan.
-const cleanPlans = v => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, moments: MOMENT_IDS.filter(id => list(p.moments).includes(id)) } : null)
+// Pautas válidas (dosis con número, fecha, duración y al menos un momento de los que existen), en orden de fecha de
+// inicio y, a igual fecha, de duración; las incompletas se descartan.
+const cleanPlans = (v, ids = momentIds()) => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, moments: ids.filter(id => list(p.moments).includes(id)) } : null)
   .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.moments.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
-  const products = arr(raw?.products).filter(m => text(m.id) && text(m.name)).map(m => ({
-    id: m.id, name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
-    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', plans: cleanPlans(m.plans),
+  // Momentos: los guardados con id, en su orden (nombre, horas y visibilidad con valor por defecto si faltan); si no
+  // queda ninguno, los de por defecto con ids nuevos.
+  const saved = arr(raw?.moments).filter(mo => text(mo.id)).map(mo => ({ id: mo.id, name: text(mo.name), start: hour(mo.start) ?? '', end: hour(mo.end) ?? '',
+    visible: typeof mo.visible === 'boolean' ? mo.visible : true, order: list(mo.order) }));
+  const moments = saved.length ? saved : defaultMoments();
+  const ids = moments.map(mo => mo.id);
+  // Productos: sin nombre se descartan; sin id, uno nuevo; sus pautas, solo las válidas con momentos que existen.
+  const products = arr(raw?.products).filter(m => text(m.name)).map(m => ({
+    id: text(m.id) || newId(), name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
+    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', plans: cleanPlans(m.plans, ids),
   }));
-  // Los momentos van siempre en el orden fijo de DEFAULT_MOMENTS; de lo guardado se toman nombre, horas, visibilidad y orden de tomas.
-  const saved = arr(raw?.moments);
-  const moments = DEFAULT_MOMENTS.map(d => {
-    const mo = saved.find(x => x.id === d.id) ?? d;
-    return { id: d.id, name: typeof mo.name === 'string' ? mo.name : d.name, start: hour(mo.start) ?? d.start,
-      end: hour(mo.end) ?? d.end, visible: typeof mo.visible === 'boolean' ? mo.visible : d.visible, order: list(mo.order).filter(id => products.some(m => m.id === id)) };
-  });
-  const log = arr(raw?.log).filter(e => date(e.day) && MOMENT_IDS.includes(e.moment) && !isNaN(new Date(e.at)))
+  for (const mo of moments) mo.order = mo.order.filter(id => products.some(m => m.id === id));
+  // Tomas: con día, momento existente y fecha válidos; las demás se descartan.
+  const log = arr(raw?.log).filter(e => date(e.day) && ids.includes(e.moment) && !isNaN(new Date(e.at)))
     .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, moment: e.moment, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
     .sort((a, b) => b.at.localeCompare(a.at));
   return { moments, products, log };
@@ -79,7 +83,6 @@ const hours = mo => mo.start !== '' && mo.end !== '' ? `${mo.start}–${mo.end} 
 const label = id => { const mo = momentOf(id); return mo.name || hours(mo) || 'Sin nombre'; };
 // ¿La hora h cae en el momento? Admite momentos que pasan de medianoche (p. ej. 22–6).
 const within = (mo, h) => mo.start === '' || mo.end === '' ? false : mo.start <= mo.end ? h >= mo.start && h < mo.end : h >= mo.start || h < mo.end;
-// Momento que se abre al cargar: el visible que incluye la hora actual; si ninguno, el próximo en empezar; si no, el primero.
 // De una lista de momentos, el de ahora: el que incluye la hora actual; si ninguno, el próximo en empezar; si no
 // tienen horas, el primero.
 function momentNow(list = visibleMoments()) {
@@ -164,7 +167,6 @@ function renderDays() {
   }).join('');
 }
 
-// Pestañas de momentos visibles, en su orden. Solo se repintan si cambian; si el elegido deja de verse, se abre el de ahora.
 let momentTabsHtml = '';
 // Pestañas de la toma: solo los momentos visibles con algo ese día (algún producto pendiente o toma hecha). Si el
 // seleccionado deja de estar, pasa al de ahora entre los que quedan.
@@ -300,14 +302,14 @@ async function renderToma() {
 const manager = $('#manager');
 // Un producto está inactivo si no tiene pauta vigente ni futura (también si no tiene ninguna): va en la lista
 // de inactivos, en gris, sin costes.
-const finished = m => !planOn(m, today()) && !m.plans.some(p => p.start > today());
+const inactive = m => !planOn(m, today()) && !m.plans.some(p => p.start > today());
 // Línea de la pauta en la lista: la dosis y los momentos visibles, separados por puntos («1 cápsula ·
 // Desayuno · Almuerzo»), de la pauta de hoy (o de la última); sin pautas, «Sin pauta».
 const planText = m => { const p = planOn(m, today()) ?? m.plans.at(-1); return p ? [p.dose, ...p.moments.filter(id => momentOf(id).visible).map(label)].map(esc).join(' · ') : 'Sin pauta'; };
 
 // Fila de un producto: nombre (con el fin del envase a la derecha), la pauta de hoy (dosis y momentos), las
 // indicaciones en gris y los costes.
-const productRow = m => finished(m) ? `
+const productRow = m => inactive(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap" color="medium">
       <h2 class="medium">${esc(m.name)}</h2>
@@ -367,11 +369,11 @@ function costLine(m) {
 }
 // Próximas compras: los envases que se acaban en los próximos SHOP_DAYS días, del más urgente al menos.
 const SHOP_DAYS = 14;
-const shopping = () => state.products.filter(m => !finished(m)).map(m => ({ m, end: runsOut(m) })).filter(x => x.end && daysLeft(x.end) <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
+const shopping = () => state.products.filter(m => !inactive(m)).map(m => ({ m, end: runsOut(m) })).filter(x => x.end && daysLeft(x.end) <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
 const inDays = n => n <= 0 ? 'Se acaba hoy' : n === 1 ? 'Queda 1 día' : `Quedan ${n} días`;
 
 function renderCosts() {
-  const products = state.products.filter(m => !finished(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
+  const products = state.products.filter(m => !inactive(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
   const row = (title, text, extra = '', icon = '') => `<ion-item${extra}>${icon}<ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
   const daily = full.reduce((sum, m) => sum + perDay(m), 0), shop = shopping();
   // Costes del conjunto: total de los envases y, con las dosis por envase, al día y al mes (los días del mes actual);
@@ -386,7 +388,7 @@ function renderCosts() {
     </ion-list>` : '';
 }
 
-// Lista de próximas compras: nombre, precio si lo tiene, días que quedan, fecha prevista y el (i) con la ficha de la
+// Lista de próximas compras: nombre, precio si lo tiene, días que quedan, fecha prevista y el (i) con la ficha del
 // producto (como en la toma); al final, el total.
 const shoppingModal = $('#shopping');
 function openShopping() {
@@ -409,17 +411,17 @@ function openShopping() {
 
 // Lista de productos: solo los activos; los inactivos van aparte, en la fila «Inactivos» (solo si hay alguno), que
 // abre su propia lista. Desde allí se editan y, con una pauta nueva, vuelven a los activos.
-const finishedModal = $('#finished');
+const inactiveModal = $('#inactive');
 function renderProducts() {
-  const live = state.products.filter(m => !finished(m)), done = state.products.filter(finished);
+  const live = state.products.filter(m => !inactive(m)), off = state.products.filter(inactive);
   $('#list-count').textContent = live.length;
   $('#list').innerHTML = live.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
-  $('#finished-row').classList.toggle('ion-hide', !done.length);
-  $('#finished-count').textContent = done.length;
-  $('#finished-list').innerHTML = done.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos inactivos.');
+  $('#inactive-row').classList.toggle('ion-hide', !off.length);
+  $('#inactive-count').textContent = off.length;
+  $('#inactive-list').innerHTML = off.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos inactivos.');
 }
 
-// Momentos: casilla de visible a la izquierda, asa de ordenar a la derecha; tocar la fila abre su editor.
+// Momentos: casilla de visible a la izquierda; tocar la fila abre su editor.
 const momentRow = mo => `
   <ion-item detail="false" data-moment="${mo.id}">
     <ion-checkbox slot="start" aria-label="Visible" data-moment="${mo.id}" ${mo.visible ? 'checked' : ''}></ion-checkbox>
@@ -441,7 +443,7 @@ function ask(header, handler) {
 
 // ---------- CSV ----------
 
-const cell = v => typeof v === 'boolean' ? (v ? 'sí' : 'no') : v;
+const cell = v => typeof v === 'boolean' ? String(v) : v;
 const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(cell(v)).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
 
 function parseCSV(text) {
@@ -469,23 +471,22 @@ function download(name, data, type = 'text/csv') {
   setTimeout(() => URL.revokeObjectURL(a.href));
 }
 
-// Un solo CSV con columnas compartidas; cada tipo de fila usa las suyas:
-// · momento: id, nombre, desde y hasta (horas), visible y orden (ids de producto separados por espacios), en su orden fijo.
-// · producto: id, nombre, indicaciones, referencias, notas, coste (€ por envase) y envase (dosis por envase). En el orden
-//   de productos, cada uno seguido de sus filas «pauta»: id del producto, momentos (ids separados por espacios), dosis,
-//   desde (fecha de inicio) y dias (duración).
-// · toma: id del producto, momentos (el de la toma), fecha («AAAA-MM-DD HH:MM») y el producto como se tomó: nombre,
-//   dosis e indicaciones.
-const HEAD = ['tipo', 'id', 'nombre', 'momentos', 'desde', 'hasta', 'fecha', 'dias', 'dosis', 'indicaciones', 'referencias', 'notas', 'coste', 'envase', 'visible', 'orden'];
-const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
+// Un solo CSV con columnas compartidas, con los nombres de los campos de los datos; cada tipo de fila usa las suyas:
+// · moment: id, name, start y end (horas), visible (true/false) y order (ids de producto separados por espacios), en su orden.
+// · product: id, name, notes, refs, memo, cost (€ por envase) y units (dosis por envase). En el orden de productos, cada
+//   uno seguido de sus filas «plan»: id del producto, dose, start (fecha de inicio), days (duración) y moments (ids
+//   separados por espacios).
+// · intake: id del producto, moments (el de la toma), at («AAAA-MM-DD HH:MM») y el producto como se tomó: name, dose y notes.
+const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'moments', 'visible', 'order', 'at'];
+const csvRow = (type, o) => HEAD.map(h => h === 'type' ? type : o[h] ?? '');
 
 const exportCSV = () => csv([
   HEAD,
-  ...state.moments.map(mo => csvRow('momento', { id: mo.id, nombre: mo.name, desde: mo.start, hasta: mo.end, visible: mo.visible, orden: mo.order.join(' ') })),
-  ...state.products.flatMap(m => [csvRow('producto', { id: m.id, nombre: m.name, indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units }),
-    ...m.plans.map(p => csvRow('pauta', { id: m.id, momentos: p.moments.join(' '), dosis: p.dose, desde: p.start, dias: p.days }))]),
+  ...state.moments.map(mo => csvRow('moment', { id: mo.id, name: mo.name, start: mo.start, end: mo.end, visible: mo.visible, order: mo.order.join(' ') })),
+  ...state.products.flatMap(m => [csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units }),
+    ...m.plans.map(p => csvRow('plan', { id: m.id, dose: p.dose, start: p.start, days: p.days, moments: p.moments.join(' ') }))]),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, momentos: e.moment, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
+    .map(e => csvRow('intake', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, moments: e.moment, at: `${e.day} ${time(e.at)}` })),
 ]);
 
 // Lee las filas a objetos y los limpia con clean(), como los datos guardados.
@@ -496,14 +497,14 @@ async function importCSV(file) {
   const words = v => v.split(/\s+/).filter(Boolean);
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
-    if (c.tipo === 'momento') raw.moments.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
-    if (c.tipo === 'producto') raw.products.push({ id: c.id || newId(), name: c.nombre, notes: c.indicaciones, refs: c.referencias, memo: c.notas, cost: c.coste, units: c.envase, plans: [] });
-    if (c.tipo === 'pauta') raw.products.find(m => m.id === c.id)?.plans.push({ dose: c.dosis, start: c.desde, days: int(c.dias, 1), moments: words(c.momentos) });
-    if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, moment: c.momentos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
+    if (c.type === 'moment') raw.moments.push({ id: c.id, name: c.name, start: c.start, end: c.end, visible: c.visible === '' ? true : yes(c.visible), order: words(c.order) });
+    if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, cost: c.cost, units: c.units, plans: [] });
+    if (c.type === 'plan') raw.products.find(m => m.id === c.id)?.plans.push({ dose: c.dose, start: c.start, days: int(c.days, 1), moments: words(c.moments) });
+    if (c.type === 'intake') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, moment: c.moments, name: c.name, dose: c.dose, notes: c.notes }); }
   }
   if (!raw.moments.length && !raw.products.length && !raw.log.length) return;
   const apply = () => { Object.assign(state, clean(raw)); save(); render(); };
-  state.products.length || state.log.length ? ask('¿Reemplazar los momentos, los productos y las tomas actuales?', apply) : apply();
+  ask('¿Reemplazar los momentos, los productos y las tomas actuales?', apply);
 }
 
 // ---------- PDF ----------
@@ -683,15 +684,14 @@ const planEditor = $('#plan-editor');
 const planField = name => $(`[name="${name}"]`, planEditor);
 const shortDate = key => fromKey(key).toLocaleDateString('es');
 
-// Cada pauta con su fecha de inicio, duración y hasta cuándo vale (antes, si la siguiente empieza antes).
 // Hasta qué día vale una pauta: su último día o, si la siguiente empieza antes, la víspera de esta.
 const planUntil = (all, p) => { const next = all.find(q => q.start > p.start); return next && next.start <= planEnd(p) ? addDays(next.start, -1) : planEnd(p); };
 
 // Fechas, duración y momentos de una pauta («24/10/2026 – 22/11/2026 · 30 días · Desayuno, Cena»).
 const planLine = (all, p) => `${shortDate(p.start)} – ${shortDate(planUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'} · ${p.moments.map(label).join(', ') || 'sin momentos'}`;
 // Momentos de una pauta: una casilla por momento visible, con sus horas de subtítulo; los ocultos conservan su valor.
-const momentBoxes = moments => visibleMoments().map(mo => `<ion-item><ion-checkbox name="ps-${mo.id}" ${moments.includes(mo.id) ? 'checked' : ''}><ion-label><h2>${esc(label(mo.id))}</h2><p>${hours(mo) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay momentos visibles.');
-const readMoments = old => MOMENT_IDS.filter(id => momentOf(id).visible ? planField(`ps-${id}`).checked : old.includes(id));
+const momentBoxes = moments => visibleMoments().map(mo => `<ion-item><ion-checkbox name="moment-${mo.id}" ${moments.includes(mo.id) ? 'checked' : ''}><ion-label><h2>${esc(label(mo.id))}</h2><p>${hours(mo) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay momentos visibles.');
+const readMoments = old => momentIds().filter(id => momentOf(id).visible ? planField(`moment-${id}`).checked : old.includes(id));
 function renderPlans() {
   plans = cleanPlans(plans);
   $('#plan-list').innerHTML = plans.map((p, i) => `<ion-item button="true" data-plan="${i}"><ion-label><h2>${esc(p.dose)}</h2><p>${esc(planLine(plans, p))}</p></ion-label></ion-item>`).join('')
@@ -835,38 +835,38 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // Lo que sabe el asistente: qué es la app, cómo son los datos, cálculos ya hechos por producto y todos los datos en JSON.
 function systemPrompt() {
   const now = new Date();
-  const summary = state.products.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), inactivo: finished(m),
+  const summary = state.products.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), inactivo: inactive(m),
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(momentsOn(m, today()).map(id => [id, state.log.some(e => e.id === m.id && e.day === today() && e.moment === id) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
   return `Eres el asistente de Dosify, una app para llevar productos de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
-- moments: momentos de toma, siempre en este orden fijo (id fijo m1, m2, m3, m4; por defecto Desayuno, Almuerzo, Cena y Demanda, pero name es el nombre que ve el usuario y puede haberse cambiado; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). En la toma de cada día solo se ven los momentos que ese día tienen algún producto pendiente o toma hecha.
+- moments: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_MOMENTS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plans = pautas { dose, start AAAA-MM-DD, days, moments = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus moments y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está inactivo: no sale en la toma y va en la lista «Inactivos» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los moments de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, moment = momento, name, dose y notes = el producto tal como se tomó).
 Cálculos por producto (dosis de hoy, si está inactivo, qué tomas de hoy están tomadas o pendientes por momento, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ moments: state.moments, products: state.products, log: state.log })}
-Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otra.
-Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a interfaz y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action registrar_toma (id, moment, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions modificar_producto con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué producto?» → radio o buttons con las candidatas; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
-Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.`;
+Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
+Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a interfaz y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action registrar_toma (id, moment, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions modificar_producto con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
 }
 
 // Herramientas: qué puede cambiar el asistente. Cada llamada se convierte en una propuesta: una tarjeta editable en la
 // conversación (campos, chips de momentos, filas de pauta) que el usuario guarda o descarta.
 const stringProp = description => ({ type: 'string', description });
-const productProps = {
+const productProps = () => ({
   name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
   cost: { type: 'integer', description: '€ por envase' }, units: { type: 'integer', description: 'Dosis por envase' },
   plans: { type: 'array', description: 'Pautas (sustituyen a las que haya); sin ellas el producto no sale en la toma', items: { type: 'object', required: ['dose', 'start', 'days', 'moments'],
-    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, moments: { type: 'array', items: { type: 'string', enum: MOMENT_IDS }, description: 'Ids de los momentos en que se toma con esta pauta (al menos uno)' } } } },
-};
+    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, moments: { type: 'array', items: { type: 'string', enum: momentIds() }, description: 'Ids de los momentos en que se toma con esta pauta (al menos uno)' } } } },
+});
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const ACTIONS = ['crear_producto', 'modificar_producto', 'borrar_producto', 'registrar_toma', 'quitar_toma', 'modificar_momento'];
 const UI_TYPES = ['text', 'check', 'toggle', 'radio', 'chips', 'select', 'input', 'textarea', 'button'];
 const ACTION = { type: 'object', description: 'Acción: una de las otras herramientas con sus argumentos; en los argumentos, {{clave}} se sustituye por el valor del elemento con esa clave', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } };
-const TOOLS = [
+const tools = () => [
   tool('interfaz', 'Úsala siempre que haga falta interacción (elegir, marcar, repasar o confirmar una lista, rellenar o editar datos, responder entre opciones): compone una interfaz con componentes de la app a partir de secciones y elementos (texto, casillas, interruptores, radios, chips, selector, campos de texto, número, fecha y hora, área de texto y botones). Al aplicar se ejecutan las acciones de los elementos marcados o elegidos y las acciones globales, y recibes el valor de cada elemento.', {
     title: stringProp('Título de la interfaz'), confirm: stringProp('Texto del botón de aplicar, p. ej. «Marcar» o «Guardar»'),
     sections: { type: 'array', description: 'Secciones: cada una, un bloque (lista) con título opcional y sus elementos', items: { type: 'object', required: ['elements'], properties: {
@@ -883,12 +883,12 @@ const TOOLS = [
     } } },
     actions: { type: 'array', description: 'Acciones globales al aplicar (p. ej. modificar_producto con los valores de los campos como {{clave}})', items: ACTION },
   }, ['title', 'sections']),
-  tool('crear_producto', 'Úsala en cuanto pidan crear o añadir un producto (medicamento o suplemento), aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', productProps),
-  tool('modificar_producto', 'Úsala en cuanto pidan modificar, cambiar o editar algo de un producto (dosis, pauta, momentos, coste…), aunque no digan el valor nuevo: abre un formulario con el producto y tus cambios, si los hay', { id: stringProp('Id del producto'), ...productProps }, ['id']),
+  tool('crear_producto', 'Úsala en cuanto pidan crear o añadir un producto (medicamento o suplemento), aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', productProps()),
+  tool('modificar_producto', 'Úsala en cuanto pidan modificar, cambiar o editar algo de un producto (dosis, pauta, momentos, coste…), aunque no digan el valor nuevo: abre un formulario con el producto y tus cambios, si los hay', { id: stringProp('Id del producto'), ...productProps() }, ['id']),
   tool('borrar_producto', 'Úsala en cuanto pidan borrar o eliminar un producto (sus tomas se conservan)', { id: stringProp('Id del producto') }, ['id']),
-  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
-  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
-  tool('modificar_momento', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: MOMENT_IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
+  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), moment: { type: 'string', enum: momentIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
+  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), moment: { type: 'string', enum: momentIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
+  tool('modificar_momento', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: momentIds() }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
 
 // Formularios de las propuestas. Para cada herramienta: draft (los datos editables a partir de lo que propone el
@@ -911,7 +911,7 @@ const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" dat
 const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
 const productDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
   cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
-  plans: (Array.isArray(a.plans) ? a.plans : base.plans).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), moments: MOMENT_IDS.filter(id => list(p.moments).includes(id)) })) });
+  plans: (Array.isArray(a.plans) ? a.plans : base.plans).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), moments: momentIds().filter(id => list(p.moments).includes(id)) })) });
 // Una pauta sin momentos no vale (se marca en su fila: «Marca al menos un momento»).
 const productValidate = d => [
   ...(d.name.trim() ? [] : ['name']), ...(int(d.cost) === null ? ['cost'] : []), ...(int(d.units, 1) === null ? ['units'] : []),
@@ -923,7 +923,7 @@ const momentChips = (d, moments = visibleMoments().map(mo => mo.id)) => moments.
 const tomaFields = (d, withTime) => `
   <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${momentChips(d)}</p></ion-label></ion-item>
   <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
-const tomaDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, moment: MOMENT_IDS.includes(a.moment) ? a.moment : momentsOn(m, date(str(a.day)) || today())[0] ?? MOMENT_IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
+const tomaDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, moment: momentIds().includes(a.moment) ? a.moment : momentsOn(m, date(str(a.day)) || today())[0] ?? momentIds()[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
 const productBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plans[0]?.dose || 'sin dosis'} · ${(d.plans[0]?.moments ?? []).map(label).join(', ') || 'sin momentos'}`;
 const tomaBrief = d => `${d.name} · ${label(d.moment)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
@@ -1033,7 +1033,7 @@ const FORMS = {
         const at = d.hora ? new Date(`${d.day}T${d.hora.padStart(5, '0')}`) : new Date();
         state.log.unshift({ at: at.toISOString(), day: d.day, id: d.id, moment: d.moment, ...snapOn(m, d.day) });
       }
-      return `«${m.name}» marcada en ${label(d.moment)} el ${shortDate(d.day)}`;
+      return `«${m.name}» marcado en ${label(d.moment)} el ${shortDate(d.day)}`;
     },
   },
   quitar_toma: {
@@ -1041,7 +1041,7 @@ const FORMS = {
     apply: d => { state.log = state.log.filter(e => !(e.id === d.id && e.moment === d.moment && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.moment)} el ${shortDate(d.day)}`; },
   },
   modificar_momento: {
-    draft: a => { const mo = MOMENT_IDS.includes(a.id) && momentOf(a.id); return mo && { id: mo.id, name: str(a.name ?? mo.name), start: str(a.start ?? mo.start), end: str(a.end ?? mo.end), visible: typeof a.visible === 'boolean' ? a.visible : mo.visible }; },
+    draft: a => { const mo = momentOf(a.id); return mo && { id: mo.id, name: str(a.name ?? mo.name), start: str(a.start ?? mo.start), end: str(a.end ?? mo.end), visible: typeof a.visible === 'boolean' ? a.visible : mo.visible }; },
     title: d => `Cambiar el momento «${esc(label(d.id))}»`,
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
     fields: d => `
@@ -1161,7 +1161,7 @@ const SUGGEST_KEY = 'dosify-sugerencias';
 let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
 function suggestionPool() {
-  const products = state.products.filter(m => !finished(m)), day = today(), h = new Date().getHours();
+  const products = state.products.filter(m => !inactive(m)), day = today(), h = new Date().getHours();
   const moment = momentNow(), momentName = moment ? label(moment) : 'ahora';
   const taken = (m, id) => state.log.some(e => e.id === m.id && e.day === day && e.moment === id);
   const pendingNow = products.filter(m => momentsOn(m, day).includes(moment) && onDay(m, day) && !taken(m, moment));
@@ -1177,7 +1177,7 @@ function suggestionPool() {
     ...(products.some(m => runsOut(m)) ? ['¿Qué tengo que comprar en los próximos 14 días? Hazme la lista con precios.', '¿Qué envase se me acaba antes?'] : []),
     ...(products.some(m => m.units === '' || m.cost === '') ? ['Hazme un formulario para completar el coste y las dosis por envase de los productos que no lo tienen.'] : []),
     // Costes
-    ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por producto.', '¿Qué producto me sale más cara al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por producto.'] : []),
+    ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por producto.', '¿Qué producto me sale más caro al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por producto.'] : []),
     ...(priced.length && state.log.length ? ['¿Cuánto me he gastado este mes según las tomas registradas?'] : []),
     // Historial
     ...(state.log.length ? ['¿Cómo he cumplido las tomas esta semana? Hazme una tabla por día.', '¿Qué tomas se me olvidaron en los últimos 7 días?', 'Hazme una gráfica de las tomas por día de los últimos 14 días.'] : []),
@@ -1186,7 +1186,7 @@ function suggestionPool() {
     // Pautas
     ...products.filter(m => m.plans.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus pautas?`),
     ...(ending.length ? [`¿Qué productos terminan esta semana y cuándo?`] : []),
-    ...(state.products.some(finished) ? ['¿Qué productos tengo inactivos y por qué?'] : []),
+    ...(state.products.some(inactive) ? ['¿Qué productos tengo inactivos y por qué?'] : []),
     // Cambios con formulario
     ...(some ? [`Quiero cambiar los momentos de la pauta de ${some.name}.`, `Añade una pauta nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
     ...(products.length ? ['Hazme una tabla con mis productos: dosis de hoy, momentos, coste y fin del envase.', 'Revisa mis productos y dime si ves algo raro o incompleto.', 'Quiero añadir un producto nuevo.'] : ['Ayúdame a crear mi primer producto.', 'Crea un producto de ejemplo para ver cómo funciona.']),
@@ -1320,7 +1320,7 @@ function renderChat() {
 async function askModel() {
   const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` },
-    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...chat], tools: TOOLS }),
+    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...chat], tools: tools() }),
   });
   if (!res.ok) throw new Error(`El servicio respondió ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const message = (await res.json()).choices?.[0]?.message;
@@ -1343,7 +1343,7 @@ function repairChat() {
   chat = out;
 }
 // Lo que existe ahora mismo, para que el asistente se corrija cuando se refiere a algo que no está.
-const existing = () => state.products.length ? `Los productos que hay ahora son: ${state.products.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ningún producto: si hace falta, créala.';
+const existing = () => state.products.length ? `Los productos que hay ahora son: ${state.products.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ningún producto: si hace falta, créalo.';
 // Última fila de cada mensaje: iconos para copiarlo, verlo en una pantalla donde se puede seleccionar el texto (en
 // móvil Ionic lo impide en la app) y, si es tuyo, editarlo (pasa a la caja de escribir). Los tuyos, a la derecha; los
 // del asistente, a la izquierda.
@@ -1457,12 +1457,12 @@ $('#sort').onclick = () => {
   $('#sort ion-icon').name = $('#list').disabled ? 'swap-vertical-outline' : 'checkmark-outline';
 };
 $('#add').onclick = () => openEditor();
-$('#open-finished').onclick = () => finishedModal.present();
+$('#open-inactive').onclick = () => inactiveModal.present();
 $('#costs').addEventListener('click', e => { if (e.target.closest('#open-shopping')) openShopping(); });
 $('#shopping-close').onclick = () => shoppingModal.dismiss();
 $('#shopping-body').addEventListener('click', e => viewFrom(e, false));
-$('#finished-close').onclick = () => finishedModal.dismiss();
-$('#finished-list').addEventListener('click', e => {
+$('#inactive-close').onclick = () => inactiveModal.dismiss();
+$('#inactive-list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(productOf(id));
 });
@@ -1474,7 +1474,7 @@ $('#list').addEventListener('click', e => {
 // Igual en Productos: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
 $('#list').addEventListener('ionReorderEnd', e => {
   // Se ordenan los activos (los de la lista); los inactivos quedan detrás.
-  state.products = [...move(state.products.filter(m => !finished(m)), e.detail), ...state.products.filter(finished)];
+  state.products = [...move(state.products.filter(m => !inactive(m)), e.detail), ...state.products.filter(inactive)];
   e.detail.complete();
   save();
   renderToma();
@@ -1487,7 +1487,7 @@ $('#moments').addEventListener('ionChange', e => {
   render();
 });
 $('#moments').addEventListener('click', e => {
-  if (e.target.closest('ion-checkbox, ion-reorder')) return;
+  if (e.target.closest('ion-checkbox')) return;
   const id = e.target.closest('ion-item')?.dataset.moment;
   if (id) openMomentEditor(id);
 });
@@ -1571,7 +1571,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   if (kind === 'ui') { const k = chip.dataset.ui, multi = uiElements(d).find(x => x.key === k)?.multiple, cur = d.values[k]; d.values[k] = multi ? (cur.includes(value) ? cur.filter(x => x !== value) : [...cur, value]) : cur === value ? '' : value; refreshCard(p.card, p.v); }
   if (kind === 'visible') { d.visible = !d.visible; chip.outline = !d.visible; chip.color = d.visible ? 'primary' : 'medium'; }
   if (kind === 'add-plan') { d.plans.push({ dose: d.plans.at(-1)?.dose ?? '', start: today(), days: '', moments: d.plans.at(-1)?.moments ?? [] }); refreshCard(p.card, p.v); }
-  if (kind === 'plan-moment') { const ps = d.plans[Number(row)]; ps.moments = ps.moments.includes(value) ? ps.moments.filter(x => x !== value) : MOMENT_IDS.filter(id => id === value || ps.moments.includes(id)); delete ps.bad; refreshCard(p.card, p.v); }
+  if (kind === 'plan-moment') { const ps = d.plans[Number(row)]; ps.moments = ps.moments.includes(value) ? ps.moments.filter(x => x !== value) : momentIds().filter(id => id === value || ps.moments.includes(id)); delete ps.bad; refreshCard(p.card, p.v); }
   if (kind === 'remove-plan') { d.plans.splice(Number(row), 1); refreshCard(p.card, p.v); }
   saveChat();
 });

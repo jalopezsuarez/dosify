@@ -125,8 +125,8 @@
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
       </ion-list>
-      <ion-list inset="true" id="finished-row">
-        <ion-item button="true" id="open-finished"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Inactivos</ion-label><ion-note slot="end" id="finished-count"></ion-note></ion-item>
+      <ion-list inset="true" id="inactive-row">
+        <ion-item button="true" id="open-inactive"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Inactivos</ion-label><ion-note slot="end" id="inactive-count"></ion-note></ion-item>
       </ion-list>
       <div id="costs"></div>
       <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
@@ -232,15 +232,15 @@
     <ion-content id="shopping-body" color="light"></ion-content>
   </ion-modal>
 
-  <ion-modal id="finished">
+  <ion-modal id="inactive">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="finished-close">Cerrar</ion-button></ion-buttons>
+        <ion-buttons slot="start"><ion-button id="inactive-close">Cerrar</ion-button></ion-buttons>
         <ion-title>Inactivos</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
-      <ion-list inset="true" id="finished-list"></ion-list>
+      <ion-list inset="true" id="inactive-list"></ion-list>
     </ion-content>
   </ion-modal>
 
