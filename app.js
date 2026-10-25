@@ -836,7 +836,7 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 function systemPrompt() {
   const now = new Date();
   const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), inactiva: finished(m),
-    tomas_hoy: onDay(m, today()) ? Object.fromEntries(momentsOn(m, today()).map(sl => [sl, state.log.some(e => e.id === m.id && e.day === today() && e.moment === sl) ? 'tomada' : 'pendiente'])) : {},
+    tomas_hoy: onDay(m, today()) ? Object.fromEntries(momentsOn(m, today()).map(id => [id, state.log.some(e => e.id === m.id && e.day === today() && e.moment === id) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
   return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
@@ -886,8 +886,8 @@ const TOOLS = [
   tool('crear_pauta', 'Úsala en cuanto pidan crear o añadir una pauta o producto, aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', medProps),
   tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, momentos, coste…), aunque no digan el valor nuevo: abre un formulario con la pauta y tus cambios, si los hay', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
   tool('borrar_pauta', 'Úsala en cuanto pidan borrar o eliminar una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
-  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primero de la pauta y hoy)', { id: stringProp('Id de la pauta'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
-  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id de la pauta'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
+  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento de la pauta ese día y hoy)', { id: stringProp('Id de la pauta'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero de la pauta ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
+  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id de la pauta'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero de la pauta ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
   tool('modificar_momento', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: MOMENT_IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
 
@@ -1154,7 +1154,7 @@ function drawCharts() {
 }
 
 // Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, el
-// momento del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
+// hora del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
 // hay ninguna guardada), al terminar cada respuesta (se vacían al enviar la pregunta y las nuevas siguen, la mitad, el
 // hilo de lo respondido y, la otra mitad, van libres), al pulsar «Otras» o tras «Limpiar». Si el servicio falla, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
 const SUGGEST_KEY = 'dosify-sugerencias';
@@ -1163,7 +1163,7 @@ let suggestLoading = null; // promesa de la petición en curso
 function suggestionPool() {
   const meds = state.meds.filter(m => !finished(m)), day = today(), h = new Date().getHours();
   const moment = momentNow(), momentName = moment ? label(moment) : 'ahora';
-  const taken = (m, sl) => state.log.some(e => e.id === m.id && e.day === day && e.moment === sl);
+  const taken = (m, id) => state.log.some(e => e.id === m.id && e.day === day && e.moment === id);
   const pendingNow = meds.filter(m => momentsOn(m, day).includes(moment) && onDay(m, day) && !taken(m, moment));
   const logged = meds.filter(m => state.log.some(e => e.id === m.id)), priced = meds.filter(m => m.cost !== ''), ending = meds.filter(m => m.plan.length && planEnd(m.plan.at(-1)) <= addDays(day, 7));
   const week = state.log.filter(e => e.day >= addDays(day, -7)).length, pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -1220,7 +1220,7 @@ async function askSuggestions(count, exclude) {
   const recent = chat.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-6).map(m => ({ role: m.role, content: m.content }));
   const asked = chat.filter(m => m.role === 'user').map(m => m.content);
   const linked = recent.some(m => m.role === 'assistant') ? ` La mitad de ellas (${Math.ceil(count / 2)}) deben seguir el hilo de tu última respuesta y de la conversación: profundizar, detallar o actuar sobre lo que acabas de decir (por ejemplo, si has mostrado una tabla, pedir una gráfica, un detalle o un cambio sobre esos mismos datos); la otra mitad, libres: otras cosas útiles ahora mismo con sus datos.` : '';
-  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, momentos, envases, costes, historial) y útiles según el momento del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
+  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, momentos, envases, costes, historial) y útiles según la hora del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
   const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal: AbortSignal.timeout(25000),
     body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: ask }] }),
