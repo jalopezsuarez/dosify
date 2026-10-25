@@ -354,8 +354,8 @@ function updateProduct(m, values, all = false) {
   for (const e of recordsOfProduct(m.id)) if (all || e.day >= today()) Object.assign(e, snapOn(m, e.day, e.dose));
 }
 const deleteProduct = id => { state.products = state.products.filter(m => m.id !== id); for (const ti of state.timings) ti.order = ti.order.filter(x => x !== id); };
-// Last change of a product, for Estadísticas: date and time as title and, below, how long ago.
-const updatedLabel = m => m ? `<ion-label><p>Últimos cambios</p><h2>${dateTime(m.updated)}</h2><p>${relative(m.updated)}</p></ion-label>` : readLabel('Últimos cambios', '');
+// Last change of a product, for Estadísticas: «25 de octubre a las 9:19 · Hace 6 horas», all in one line.
+const updatedLabel = m => readLabel('Último cambio', m ? `${dateTime(m.updated)} · ${relative(m.updated)}` : '');
 
 // A product is paused when it has no current or future schedule (also when it has none): it goes in the
 // paused list, in grey, without costs.
@@ -810,7 +810,7 @@ function openHistory(id) {
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
 // Otros datos, Toma (only when opened from home on a dose already taken: that record) and Estadísticas, one block
-// each: «Registro», the estimated next purchase and «Últimos cambios». For a deleted product it shows what the record
+// each: «Registro», the estimated next purchase and «Último cambio». For a deleted product it shows what the record
 // stores (name, notes and the dose) and «—» elsewhere.
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
