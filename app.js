@@ -36,7 +36,7 @@ const today = () => dayKey(new Date());
 // Dates and times shown to the user, one rule everywhere: the first figure without zero padding, the inner ones with it
 // («9/02», «5:06»), and the year only when it is not the current one («9/02/2027»). Keys are «YYYY-MM-DD»; `at` is ISO.
 const otherYear = key => key.slice(0, 4) !== today().slice(0, 4);
-const dayMonth = key => `${Number(key.slice(8, 10))}/${key.slice(5, 7)}`;
+const dayMonth = key => `${Number(key.slice(8, 10))}/${key.slice(5, 7)}`; // only where the year is already shown (PDF rows)
 const shortDate = key => otherYear(key) ? `${dayMonth(key)}/${key.slice(0, 4)}` : dayMonth(key);
 const longDate = (key, weekday = true) => fromKey(key).toLocaleDateString('es', { ...(weekday ? { weekday: 'long' } : {}), day: 'numeric', month: 'long', ...(otherYear(key) ? { year: 'numeric' } : {}) });
 const monthName = key => { const t = fromKey(`${key.slice(0, 7)}-01`).toLocaleDateString('es', { month: 'long' }); return `${t[0].toUpperCase()}${t.slice(1)}${otherYear(key) ? ` ${key.slice(0, 4)}` : ''}`; };
@@ -190,7 +190,7 @@ function renderDays() {
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
         ${ring(done, total, `${done}/${total}`)}
-        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${dayMonth(key)}</ion-label>
+        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${shortDate(key)}</ion-label>
       </ion-segment-button>`;
   }).join('');
 }
@@ -395,11 +395,12 @@ const supplyColor = id => { const m = productOf(id); return m && runningOut(m) ?
 // («12/04 · Dentro de 3 semanas»), in rose when under 7 days; without units or schedule, nothing.
 const purchaseText = m => { const end = runsOut(m); return end ? `<ion-text ${runningOut(m) ? 'color="rose"' : ''}>${shortDate(end)} · ${until(daysLeft(end))}</ion-text>` : ''; };
 const purchaseRow = m => `<ion-item>${readLabel('Fecha estimada de compra', m ? purchaseText(m) : '', true)}</ion-item>`;
-// Container end («5/01») on the right of the product row, level with the name: grey; rose and medium weight if running out.
+// Container end («5/01», the same day as «Fecha estimada de compra» in the product view) on the right of the product row,
+// level with the name: grey; rose and medium weight if running out.
 const endNote = id => {
   const m = productOf(id), end = m && runsOut(m);
   if (!end) return '';
-  return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${dayMonth(end)}</ion-note>`;
+  return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${shortDate(end)}</ion-note>`;
 };
 // Cost line of a product row: «30 €/ud · 15 €/mes · 1 €/día», with whatever can be computed.
 function costLine(m) {
