@@ -336,7 +336,7 @@ function updateProduct(m, values) {
   if (fingerprint(m) !== before) m.updated = new Date().toISOString();
 }
 // Last change of a product, for Estadísticas: date and time as title and, below, how long ago.
-const updatedLabel = m => `<ion-label><p>Última modificación</p><h2>${m ? dateTime(m.updated) : '—'}</h2>${m ? `<p>${relative(m.updated)}</p>` : ''}</ion-label>`;
+const updatedLabel = m => `<ion-label><p>Últimos cambios</p><h2>${m ? dateTime(m.updated) : '—'}</h2>${m ? `<p>${relative(m.updated)}</p>` : ''}</ion-label>`;
 
 // A product is paused when it has no current or future schedule (also when it has none): it goes in the
 // paused list, in grey, without costs.
