@@ -348,10 +348,15 @@ const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-
 
 // Product row: name (with the container end on the right), today's schedule (dose and timings), the notes
 // in grey and the costs.
+// Dot before the name in the product list: primary if the product was changed (any field or schedule) since Products was
+// opened this time, light grey otherwise. The snapshot is taken each time Products opens, so going back home resets it.
+let updatedAtOpen = new Map();
+const snapshotUpdated = () => { updatedAtOpen = new Map(state.products.map(m => [m.id, m.updated])); };
+const changedDot = m => `<span class="dot${updatedAtOpen.get(m.id) === m.updated ? '' : ' changed'}"></span>`;
 const productRow = m => paused(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap" color="medium">
-      <h2 class="medium">${esc(m.name)}</h2>
+      <h2 class="medium">${changedDot(m)}${esc(m.name)}</h2>
       <p>${scheduleText(m)}</p>
       ${notesLine(m)}
     </ion-label>
@@ -360,7 +365,7 @@ const productRow = m => paused(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap">
       ${endNote(m.id)}
-      <h2 class="medium">${esc(m.name)}</h2>
+      <h2 class="medium">${changedDot(m)}${esc(m.name)}</h2>
       <p><ion-text color="dark">${scheduleText(m)}</ion-text></p>
       ${notesLine(m)}
       ${costLine(m) ? `<p><ion-text color="teal" class="medium">${costLine(m)}</ion-text></p>` : ''}
@@ -1546,7 +1551,7 @@ $('#home').addEventListener('ionReorderEnd', e => {
   e.detail.complete();
 });
 
-$('#manage').onclick = () => manager.present();
+$('#manage').onclick = () => { snapshotUpdated(); renderProducts(); manager.present(); };
 $('#close').onclick = () => manager.dismiss();
 $('#sort').onclick = () => {
   $('#list').disabled = !$('#list').disabled;

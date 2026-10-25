@@ -56,6 +56,9 @@
     }
     /* Medium weight for titles (Ionic has no font-weight utility) */
     :root .medium { font-weight: 500; }
+    /* Product list: dot before the name, primary when the product changed since Products was opened */
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; background: var(--ion-color-step-200, #d7d8da); }
+    .dot.changed { background: var(--ion-color-primary); }
     /* Hides the scrollbar of the day picker (Ionic's own rule does not apply) */
     #day { scrollbar-width: none; }
     #day::-webkit-scrollbar { display: none; }
