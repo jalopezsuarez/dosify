@@ -4,7 +4,8 @@ const KEY = 'dosify';
 //   visible, order: [product ids in record order] }. If none is valid, those of DEFAULT_TIMINGS (to have
 //   more by default just add another one there) with new ids.
 // · products: in product order: { id, name, notes (directions), refs (references), memo (free notes),
-//   cost (€ per container) and units (doses per container), integers or '', and schedules: [{ dose (starts with the
+//   cost (€ per container) and units (doses per container), integers or '', created and updated (ISO: when it was
+//   created and when any of its fields or schedules last changed), and schedules: [{ dose (starts with the
 //   amount of each dose), start, days, timings: [ids of the timings it is taken at; at least one] }]. Without
 //   schedules a product does not show on the home screen.
 // · records: doses taken: { at, day, id (product), timing (timing id), name, dose, notes (the product as it was taken) }
@@ -37,10 +38,24 @@ const today = () => dayKey(new Date());
 const otherYear = key => key.slice(0, 4) !== today().slice(0, 4);
 const dayMonth = key => `${Number(key.slice(8, 10))}/${key.slice(5, 7)}`;
 const shortDate = key => otherYear(key) ? `${dayMonth(key)}/${key.slice(0, 4)}` : dayMonth(key);
-const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', ...(otherYear(key) ? { year: 'numeric' } : {}) });
+const longDate = (key, weekday = true) => fromKey(key).toLocaleDateString('es', { ...(weekday ? { weekday: 'long' } : {}), day: 'numeric', month: 'long', ...(otherYear(key) ? { year: 'numeric' } : {}) });
 const monthName = key => { const t = fromKey(`${key.slice(0, 7)}-01`).toLocaleDateString('es', { month: 'long' }); return `${t[0].toUpperCase()}${t.slice(1)}${otherYear(key) ? ` ${key.slice(0, 4)}` : ''}`; };
 const time = iso => { const d = new Date(iso); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const hhmm = iso => time(iso).padStart(5, '0'); // data format («05:06»), for the CSV
+const dateTime = iso => `${longDate(dayKey(new Date(iso)), false)} a las ${time(iso)}`; // «23 de octubre a las 6:02»
+// How long ago, in plain words: «Hace un momento», «Hace 3 minutos», «Ayer», «Hace 2 semanas»…
+const ago = (n, one, many) => `Hace ${n} ${n === 1 ? one : many}`;
+function relative(iso) {
+  const minutes = Math.floor((Date.now() - new Date(iso)) / 60000), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
+  if (minutes < 1) return 'Hace un momento';
+  if (hours < 1) return ago(minutes, 'minuto', 'minutos');
+  if (days < 1) return ago(hours, 'hora', 'horas');
+  if (days === 1) return 'Ayer';
+  if (days < 7) return ago(days, 'días', 'días');
+  if (days < 30) return ago(Math.floor(days / 7), 'semana', 'semanas');
+  if (days < 365) return ago(Math.floor(days / 30), 'mes', 'meses');
+  return ago(Math.floor(days / 365), 'año', 'años');
+}
 const empty = text => `<ion-item lines="none"><ion-label color="medium" class="ion-text-center">${text}</ion-label></ion-item>`;
 // Whole hour from 0 to 24 or '' (no hour); null if invalid.
 const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d{1,2}$/.test(t) && Number(t) <= 24 ? Number(t) : null; };
@@ -49,6 +64,7 @@ const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\
 // understood are dropped. No compatibility with older formats.
 const asText = v => typeof v === 'string' ? v : '';
 const date = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+const stamp = v => { const t = new Date(v ?? ''); return isNaN(t) ? '' : t.toISOString(); }; // ISO timestamp or ''
 const asList = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
 // Integer ≥ min or '' (empty); null if something else was written.
 const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d+$/.test(t) && Number(t) >= min ? Number(t) : null; };
@@ -66,11 +82,13 @@ function clean(raw) {
     visible: typeof ti.visible === 'boolean' ? ti.visible : true, order: asList(ti.order) }));
   const timings = saved.length ? saved : defaultTimings();
   const ids = timings.map(ti => ti.id);
-  // Products: dropped without a name; a new id if missing; only valid schedules with existing timings.
-  const products = arr(raw?.products).filter(m => asText(m.name)).map(m => ({
+  // Products: dropped without a name; a new id if missing; only valid schedules with existing timings; created and
+  // updated default to now and to created.
+  const now = new Date().toISOString();
+  const products = arr(raw?.products).filter(m => asText(m.name)).map(m => { const created = stamp(m.created) || now; return {
     id: asText(m.id) || newId(), name: m.name, notes: asText(m.notes), refs: asText(m.refs), memo: asText(m.memo),
-    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', schedules: cleanSchedules(m.schedules, ids),
-  }));
+    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', created, updated: stamp(m.updated) || created, schedules: cleanSchedules(m.schedules, ids),
+  }; });
   for (const ti of timings) ti.order = ti.order.filter(id => products.some(m => m.id === id));
   // Records: need a valid day, an existing timing and a valid date; the rest are dropped. Newest first, at most RECORDS_MAX.
   const records = arr(raw?.records).filter(e => date(e.day) && ids.includes(e.timing) && !isNaN(new Date(e.at)))
@@ -308,6 +326,18 @@ async function renderHome() {
 // ---------- Products ----------
 
 const manager = $('#manager');
+// New product with its timestamps; updating one stamps «updated» only when some field or schedule really changed.
+const PRODUCT_FIELDS = ['name', 'notes', 'refs', 'memo', 'cost', 'units', 'schedules'];
+const fingerprint = m => JSON.stringify(PRODUCT_FIELDS.map(f => m[f]));
+const newProduct = values => { const now = new Date().toISOString(); return { id: newId(), ...values, created: now, updated: now }; };
+function updateProduct(m, values) {
+  const before = fingerprint(m);
+  Object.assign(m, values);
+  if (fingerprint(m) !== before) m.updated = new Date().toISOString();
+}
+// Last change of a product, for Estadísticas: date and time as title and, below, how long ago.
+const updatedLabel = m => `<ion-label><p>Última modificación</p><h2>${m ? dateTime(m.updated) : '—'}</h2>${m ? `<p>${relative(m.updated)}</p>` : ''}</ion-label>`;
+
 // A product is paused when it has no current or future schedule (also when it has none): it goes in the
 // paused list, in grey, without costs.
 const paused = m => !scheduleOn(m, today()) && !m.schedules.some(p => p.start > today());
@@ -478,18 +508,19 @@ function download(name, data, type = 'text/csv') {
 
 // One CSV with shared columns named after the data fields; each row type uses its own:
 // · timing: id, name, start and end (hours), visible (true/false) and order (space-separated product ids), in order.
-// · product: id, name, notes, refs, memo, cost (€ per container) and units (doses per container).
+// · product: id, name, notes, refs, memo, cost (€ per container), units (doses per container), created and updated («YYYY-MM-DD HH:MM», local time).
 // · schedule: product id, dose, start (start date), days (duration) and timings (space-separated ids).
 // · record: product id, timing, at («YYYY-MM-DD HH:MM», local time) and the product as taken: name, dose and notes.
 // Each column is a data field with the same name; the record's «day» is inside «at».
 // Exported by type: timings and products in their order, schedules by start date and records by day and time.
-const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'order', 'at'];
+const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'order', 'at', 'created', 'updated'];
+const csvStamp = iso => `${dayKey(new Date(iso))} ${hhmm(iso)}`; // «YYYY-MM-DD HH:MM», local time
 const csvRow = (type, o) => HEAD.map(h => h === 'type' ? type : o[h] ?? '');
 
 const exportCSV = () => csv([
   HEAD,
   ...state.timings.map(ti => csvRow('timing', { id: ti.id, name: ti.name, start: ti.start, end: ti.end, visible: ti.visible, order: ti.order.join(' ') })),
-  ...state.products.map(m => csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units })),
+  ...state.products.map(m => csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units, created: csvStamp(m.created), updated: csvStamp(m.updated) })),
   ...state.products.flatMap(m => m.schedules.map(p => ({ id: m.id, ...p }))).sort((a, b) => a.start.localeCompare(b.start))
     .map(p => csvRow('schedule', { id: p.id, dose: p.dose, start: p.start, days: p.days, timings: p.timings.join(' ') })),
   ...[...state.records].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
@@ -505,7 +536,7 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     if (c.type === 'timing') raw.timings.push({ id: c.id, name: c.name, start: c.start, end: c.end, visible: c.visible === '' ? true : yes(c.visible), order: words(c.order) });
-    if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, cost: c.cost, units: c.units, schedules: [] });
+    if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, cost: c.cost, units: c.units, created: c.created.replace(' ', 'T'), updated: c.updated.replace(' ', 'T'), schedules: [] });
     if (c.type === 'schedule') raw.products.find(m => m.id === c.id)?.schedules.push({ dose: c.dose, start: c.start, days: int(c.days, 1), timings: words(c.timings) });
     if (c.type === 'record') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.records.push({ at: `${day}T${hhmm}`, day, id: c.id, timing: c.timing, name: c.name, dose: c.dose, notes: c.notes }); }
   }
@@ -644,6 +675,7 @@ function openEditor(product = {}) {
   for (const id of ['#delete', '#delete-header']) $(id).classList.toggle('ion-hide', !editing);
   $('#stats-section').classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
+  $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
   rememberScroll();
   editor.present();
 }
@@ -659,11 +691,11 @@ function saveEditor() {
   if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
   product.schedules = cleanSchedules(schedules);
   const done = () => { save(); render(); editor.dismiss(); };
-  if (!old) return state.products.push({ id: newId(), ...product }), done();
+  if (!old) return state.products.push(newProduct(product)), done();
   // Changing the product: records from today on show the new one; if what the history shows changes
   // (name, notes) and there are earlier records, the user chooses whether those change too. The dose lives in the schedule.
   const apply = all => {
-    Object.assign(old, product);
+    updateProduct(old, product);
     for (const e of state.records) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snapOn(old, e.day, e.dose));
     done();
   };
@@ -779,7 +811,7 @@ function openView(id, record) {
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
     + (record ? readSection('Toma', readRow('Día', longDate(record.day)) + readRow('Hora', time(record.at)) + readRow('Momento', label(record.timing)) + readRow('Dosis', record.dose)) : '')
-    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`)
+    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item><ion-item>${updatedLabel(m)}</ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('El producto se borró: se muestra lo que guarda la toma.')}</ion-list>`);
   viewModal.present();
 }
@@ -845,7 +877,7 @@ function systemPrompt() {
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
-- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
+- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, created y updated = fecha de creación y de última modificación en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
 Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día (la cantidad de la dosis de hoy por cada momento visible de su pauta), costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
@@ -1032,14 +1064,14 @@ const FORMS = {
   create_product: {
     draft: a => productDraft({ name: '', notes: '', refs: '', memo: '', cost: '', units: '', schedules: [] }, a),
     title: () => 'Nuevo producto', brief: productBrief, fields: productFields, validate: productValidate,
-    apply: d => { const v = productValues(d); state.products.push({ id: newId(), ...v }); return `Producto «${v.name}» creado`; },
+    apply: d => { const v = productValues(d); state.products.push(newProduct(v)); return `Producto «${v.name}» creado`; },
   },
   edit_product: {
     draft: a => { const m = productOf(a.id); return m && { id: m.id, ...productDraft(m, a) }; },
     title: d => `Cambiar el producto «${productOf(d.id)?.name ?? d.name}»`, brief: productBrief, fields: productFields, validate: productValidate,
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
-      Object.assign(m, productValues(d));
+      updateProduct(m, productValues(d));
       for (const e of state.records) if (e.id === m.id && e.day >= today()) Object.assign(e, snapOn(m, e.day, e.dose));
       return `Producto «${m.name}» cambiado`;
     },
