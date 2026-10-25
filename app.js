@@ -391,10 +391,10 @@ function runsOut(m) {
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
 const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
 const supplyColor = id => { const m = productOf(id); return m && runningOut(m) ? 'rose' : 'teal'; };
-// Estimated purchase date, for Otros datos (editor and product view): the container end and how far ahead it is
+// Estimated purchase date, for Otros datos of the product view: the container end and how far ahead it is
 // («12/04 · Dentro de 3 semanas»), in rose when under 7 days; without units or schedule, nothing.
 const purchaseText = m => { const end = runsOut(m); return end ? `<ion-text ${runningOut(m) ? 'color="rose"' : ''}>${shortDate(end)} · ${until(daysLeft(end))}</ion-text>` : ''; };
-const purchaseLabel = m => readLabel('Fecha estimada de compra', m ? purchaseText(m) : '', true);
+const purchaseRow = m => `<ion-item>${readLabel('Fecha estimada de compra', m ? purchaseText(m) : '', true)}</ion-item>`;
 // Container end («5/01») on the right of the product row, level with the name: grey; rose and medium weight if running out.
 const endNote = id => {
   const m = productOf(id), end = m && runsOut(m);
@@ -681,7 +681,6 @@ function openEditor(product = {}) {
   $('#stats-section').classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
-  $('#purchase').innerHTML = purchaseLabel(productOf(editing)); $('#purchase').classList.toggle('ion-hide', !editing);
   rememberScroll();
   editor.present();
 }
@@ -817,7 +816,7 @@ function openView(id, record) {
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
-    + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}<ion-item>${purchaseLabel(m)}</ion-item></ion-list>`
+    + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}${purchaseRow(m)}</ion-list>`
     + (record ? readSection('Toma', readRow('Día', longDate(record.day)) + readRow('Hora', time(record.at)) + readRow('Momento', label(record.timing)) + readRow('Dosis', record.dose)) : '')
     + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item><ion-item>${updatedLabel(m)}</ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('El producto se borró: se muestra lo que guarda la toma.')}</ion-list>`);
