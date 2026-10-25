@@ -809,8 +809,8 @@ function openHistory(id) {
 // ---------- Product view (ficha) ----------
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
-// Otros datos and Estadísticas («Registro», below it the dose taken when opened from home, then the estimated next
-// purchase and «Últimos cambios», each on its own). For a deleted product it shows what the record
+// Otros datos and Estadísticas, three blocks: the estimated next purchase; «Registro» with, below it, the dose taken
+// when opened from home; and «Últimos cambios». For a deleted product it shows what the record
 // stores (name, notes and the dose) and «—» elsewhere.
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
@@ -828,8 +828,8 @@ function openView(id, record) {
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
-    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>${record ? `<ion-item>${recordLabel(record)}</ion-item>` : ''}`)
-    + `<ion-list inset="true">${purchaseRow(m)}</ion-list>`
+    + readSection('Estadísticas', purchaseRow(m))
+    + `<ion-list inset="true"><ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>${record ? `<ion-item>${recordLabel(record)}</ion-item>` : ''}</ion-list>`
     + `<ion-list inset="true"><ion-item>${updatedLabel(m)}</ion-item></ion-list>`
     + (m ? '' : emptyList('El producto se borró: se muestra lo que guarda la toma.'));
   viewModal.present();
