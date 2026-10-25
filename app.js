@@ -726,7 +726,8 @@ function saveSchedule() {
 // ---------- Registro de un producto ----------
 
 // Cuántas tomas tiene un producto («1 toma», «12 tomas»), para la fila «Registro» del editor y de la ficha.
-const recordCount = id => { const n = state.records.filter(e => e.id === id).length; return `${n} ${n === 1 ? 'toma' : 'tomas'}`; };
+const tomas = n => `${n} ${n === 1 ? 'toma' : 'tomas'}`;
+const recordCount = id => tomas(state.records.filter(e => e.id === id).length);
 
 // Todas las tomas del producto: resumen (desde cuándo, cuántas, dosis y coste estimado) y, debajo, agrupadas por la
 // pauta que valía cada día (de la más reciente a la más antigua; las que no tenían, en «Sin pauta»).
@@ -846,14 +847,14 @@ Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
-- records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó).
+- records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está modificar_tomas.
 Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día (la cantidad de la dosis de hoy por cada momento visible de su pauta), costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
 Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a interfaz y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action registrar_toma (id, timing, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions modificar_producto con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
-Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, o corregir tomas ya guardadas (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
 }
 
 // Herramientas: qué puede cambiar el asistente. Cada llamada se convierte en una propuesta: una tarjeta editable en la
@@ -866,7 +867,7 @@ const productProps = () => ({
     properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, timings: { type: 'array', items: { type: 'string', enum: timingIds() }, description: 'Ids de los momentos en que se toma con esta pauta (al menos uno)' } } } },
 });
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
-const ACTIONS = ['crear_producto', 'modificar_producto', 'borrar_producto', 'registrar_toma', 'quitar_toma', 'modificar_momento'];
+const ACTIONS = ['crear_producto', 'modificar_producto', 'borrar_producto', 'registrar_toma', 'quitar_toma', 'modificar_tomas', 'modificar_momento'];
 const UI_TYPES = ['text', 'check', 'toggle', 'radio', 'chips', 'select', 'input', 'textarea', 'button'];
 const ACTION = { type: 'object', description: 'Acción: una de las otras herramientas con sus argumentos; en los argumentos, {{clave}} se sustituye por el valor del elemento con esa clave', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } };
 const tools = () => [
@@ -891,13 +892,15 @@ const tools = () => [
   tool('borrar_producto', 'Úsala en cuanto pidan borrar o eliminar un producto (sus tomas se conservan)', { id: stringProp('Id del producto') }, ['id']),
   tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), time: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
   tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
+  tool('modificar_tomas', 'Úsala en cuanto pidan corregir, cambiar o reescribir tomas ya guardadas (la dosis, las indicaciones o el nombre con que quedaron), una o muchas a la vez, aunque no digan el valor nuevo: abre un formulario con el producto, los días, el momento y los valores nuevos', { id: stringProp('Id del producto'), from: stringProp('Primer día AAAA-MM-DD; si no, el de su primera toma'), to: stringProp('Último día AAAA-MM-DD; si no, el de su última toma'), timing: { type: 'string', enum: timingIds(), description: 'Solo las tomas de ese momento; si no, de todos' }, dose: stringProp('Dosis nueva (empieza por un número); vacía, no cambia'), notes: stringProp('Indicaciones nuevas; vacías, no cambian'), name: stringProp('Nombre nuevo; vacío, no cambia') }, ['id']),
   tool('modificar_momento', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: timingIds() }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
 
 // Formularios de las propuestas. Para cada herramienta: draft (los datos editables a partir de lo que propone el
 // asistente, o null si no vale), title, brief (resumen en la lista de propuestas), fields (el HTML de los campos;
 // interfaz usa blocks, una lista por sección), validate (campos mal), apply (guarda y devuelve el resumen) y, si hace
-// falta, button o danger (texto y color del botón de guardar). Los valores del borrador son texto, como en los campos.
+// falta, button o danger (texto y color del botón de guardar) y live (texto de la tarjeta que se recalcula al escribir en un
+// campo, en el elemento [data-live]). Los valores del borrador son texto, como en los campos.
 const str = v => v == null ? '' : String(v);
 const productFields = d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
@@ -932,6 +935,25 @@ const recordDraft = a => { const m = productOf(a.id); return m && { id: m.id, na
 const recordValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.time === '' || /^\d{1,2}:\d{2}$/.test(d.time) ? [] : ['time'])];
 const productBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.schedules[0]?.dose || 'sin dosis'} · ${(d.schedules[0]?.timings ?? []).map(label).join(', ') || 'sin momentos'}`;
 const recordBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}${d.time ? ` ${d.time}` : ''}`;
+// Corregir tomas ya guardadas: las del producto entre dos días (por defecto, de su primera a su última toma) y, si se
+// elige, de un momento; los valores nuevos (dosis, indicaciones, nombre) vacíos no cambian nada. Vale también para un
+// producto borrado (sus tomas conservan su id).
+const recordsOf = d => state.records.filter(e => e.id === d.id && e.day >= d.from && e.day <= d.to && (!d.timing || e.timing === d.timing));
+const recordsDraft = a => {
+  const id = str(a.id), days = state.records.filter(e => e.id === id).map(e => e.day).sort(), product = productOf(id)?.name ?? state.records.find(e => e.id === id)?.name;
+  return product ? { id, product, from: date(str(a.from)) || days[0] || today(), to: date(str(a.to)) || days.at(-1) || today(), timing: timingIds().includes(a.timing) ? a.timing : '', dose: str(a.dose), notes: str(a.notes), name: str(a.name) } : null;
+};
+const recordsFields = d => `
+  <ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(d.product)}</h2><p data-live>${recordsLive(d)}</p><p>${chipToggle('pick-timing', '', 'Todos', !d.timing)}${timingChips(d)}</p></ion-label></ion-item>
+  <ion-item><ion-input data-field="from" type="date" label="Desde" label-placement="stacked" value="${esc(d.from)}"></ion-input><ion-input data-field="to" type="date" label="Hasta" label-placement="stacked" value="${esc(d.to)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="dose" label="Dosis nueva" label-placement="stacked" placeholder="Sin cambio" value="${esc(d.dose)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="notes" label="Indicaciones nuevas" label-placement="stacked" placeholder="Sin cambio" value="${esc(d.notes)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="name" label="Nombre nuevo" label-placement="stacked" placeholder="Sin cambio" value="${esc(d.name)}"></ion-input></ion-item>`;
+const recordsLive = d => `${tomas(recordsOf(d).length)} entre esos días`;
+const recordsValidate = d => [...(date(d.from) ? [] : ['from']), ...(date(d.to) && d.to >= d.from ? [] : ['to']), ...(d.dose.trim() === '' || amount(d.dose) ? [] : ['dose'])];
+const recordsChanges = d => Object.fromEntries(['name', 'dose', 'notes'].map(k => [k, d[k].trim()]).filter(([, v]) => v));
+const recordsBrief = d => `${d.product} · ${tomas(recordsOf(d).length)} · ${shortDate(d.from)} – ${shortDate(d.to)}${d.timing ? ` · ${label(d.timing)}` : ''}`;
+const recordsText = d => { const c = recordsChanges(d), names = { name: 'nombre', dose: 'dosis', notes: 'indicaciones' }; return Object.entries(c).map(([k, v]) => `${names[k]} «${v}»`).join(', ') || 'sin cambios'; };
 // Interfaz dinámica: secciones (una lista cada una) de elementos hechos con componentes de Ionic. Cada elemento tiene
 // una clave; su valor (marcado, elegido o escrito) se guarda en el borrador, vuelve al asistente al aplicar y puede ir
 // en los argumentos de las acciones como {{clave}}. Las acciones (de elementos marcados o elegidos, de un botón
@@ -1045,6 +1067,10 @@ const FORMS = {
     draft: recordDraft, title: () => 'Dejar pendiente', brief: recordBrief, fields: d => recordFields(d, false), validate: recordValidate,
     apply: d => { state.records = state.records.filter(e => !(e.id === d.id && e.timing === d.timing && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.timing)} el ${shortDate(d.day)}`; },
   },
+  modificar_tomas: {
+    draft: recordsDraft, title: () => 'Corregir tomas', brief: recordsBrief, fields: recordsFields, live: recordsLive, validate: recordsValidate,
+    apply: d => { const rows = recordsOf(d), changes = recordsChanges(d); for (const e of rows) Object.assign(e, changes); return `${tomas(rows.length)} de «${d.product}» ${rows.length === 1 ? 'cambiada' : 'cambiadas'}: ${recordsText(d)}`; },
+  },
   modificar_momento: {
     draft: a => { const ti = timingOf(a.id); return ti && { id: ti.id, name: str(a.name ?? ti.name), start: str(a.start ?? ti.start), end: str(a.end ?? ti.end), visible: typeof a.visible === 'boolean' ? a.visible : ti.visible }; },
     title: d => `Cambiar el momento «${esc(label(d.id))}»`,
@@ -1073,6 +1099,7 @@ function describe(tool, d) {
       v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${p.days} ${p.days === 1 ? 'día' : 'días'} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
   }
   if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
+  if (tool === 'modificar_tomas') return `${tomas(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`;
   if (tool === 'modificar_momento') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
   if (tool === 'interfaz') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
   return d.name;
@@ -1094,7 +1121,7 @@ function decide(v, saved) {
 // Guarda una propuesta si sus datos valen; si no, marca en rojo los campos que fallan con su mensaje debajo. El mensaje
 // (errorText) se pone solo entonces y se quita al escribir: con él fijo, Ionic dibuja debajo del campo una sección con
 // su propio borde aunque el mensaje esté oculto, y el campo sale con dos líneas.
-const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24' };
+const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24', from: 'Pon el día', to: 'Día igual o posterior a «Desde»', dose: 'Empieza por un número, o vacía' };
 const SCHEDULE_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero' };
 function trySave(v, card) {
   if (v.status !== 'pending') return false;
@@ -1397,11 +1424,11 @@ async function sendChat() {
       const waits = [], seen = new Set();
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-        const key = `${call.function.name} ${call.function.name === 'crear_producto' ? str(args.name).trim().toLowerCase() : call.function.name === 'interfaz' ? str(args.title).trim().toLowerCase() : [args.id, args.timing, args.day].map(str).join('|')}`;
+        const key = `${call.function.name} ${call.function.name === 'crear_producto' ? str(args.name).trim().toLowerCase() : call.function.name === 'interfaz' ? str(args.title).trim().toLowerCase() : [args.id, args.timing, args.day, args.from, args.to].map(str).join('|')}`;
         if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya has propuesto ese mismo cambio en este turno, no se propone otra vez.'); continue; }
         seen.add(key);
         const form = FORMS[call.function.name], draft = form?.draft(args);
-        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${!form ? 'herramienta desconocida.' : call.function.name === 'interfaz' ? 'la interfaz no tiene ninguna sección con elementos válidos.' : call.function.name === 'modificar_momento' ? `no existe ese momento. ${existingTimings()}` : `no existe ningún producto con ese id. ${existing()}`}`); continue; }
+        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${!form ? 'herramienta desconocida.' : call.function.name === 'interfaz' ? 'la interfaz no tiene ninguna sección con elementos válidos.' : call.function.name === 'modificar_momento' ? `no existe ese momento. ${existingTimings()}` : call.function.name === 'modificar_tomas' ? `no hay ningún producto ni toma con ese id. ${existing()}` : `no existe ningún producto con ese id. ${existing()}`}`); continue; }
         chatView.push({ who: 'proposal', id: call.id, tool: call.function.name, draft, status: 'pending' });
         waits.push(new Promise(resolve => resolvers.set(call.id, resolve)));
       }
@@ -1550,7 +1577,7 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   const p = proposalOf(e.target); if (!p) return;
   const { field, scheduleField, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
   if (ui !== undefined) p.v.draft.values[ui] = value;
-  if (field) p.v.draft[field] = value;
+  if (field) { p.v.draft[field] = value; const live = p.card.querySelector('[data-live]'); if (live && FORMS[p.v.tool].live) live.textContent = FORMS[p.v.tool].live(p.v.draft); }
   if (scheduleField) p.v.draft.schedules[Number(row)][scheduleField] = value;
   e.target.classList.remove('ion-invalid'); e.target.errorText = undefined;
   saveChat();
