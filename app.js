@@ -476,8 +476,9 @@ function download(name, data, type = 'text/csv') {
 // · product: id, name, notes, refs, memo, cost (€ por envase) y units (dosis por envase). En el orden de productos, cada
 //   uno seguido de sus filas «plan»: id del producto, dose, start (fecha de inicio), days (duración) y moments (ids
 //   separados por espacios).
-// · intake: id del producto, moments (el de la toma), at («AAAA-MM-DD HH:MM») y el producto como se tomó: name, dose y notes.
-const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'moments', 'visible', 'order', 'at'];
+// · intake: id del producto, moment (el de la toma), at («AAAA-MM-DD HH:MM», hora local) y el producto como se tomó: name, dose y notes.
+// Cada columna es un campo de los datos con el mismo nombre; «day» de la toma va dentro de «at».
+const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'moments', 'moment', 'visible', 'order', 'at'];
 const csvRow = (type, o) => HEAD.map(h => h === 'type' ? type : o[h] ?? '');
 
 const exportCSV = () => csv([
@@ -486,7 +487,7 @@ const exportCSV = () => csv([
   ...state.products.flatMap(m => [csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units }),
     ...m.plans.map(p => csvRow('plan', { id: m.id, dose: p.dose, start: p.start, days: p.days, moments: p.moments.join(' ') }))]),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => csvRow('intake', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, moments: e.moment, at: `${e.day} ${time(e.at)}` })),
+    .map(e => csvRow('intake', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, moment: e.moment, at: `${e.day} ${time(e.at)}` })),
 ]);
 
 // Lee las filas a objetos y los limpia con clean(), como los datos guardados.
@@ -500,7 +501,7 @@ async function importCSV(file) {
     if (c.type === 'moment') raw.moments.push({ id: c.id, name: c.name, start: c.start, end: c.end, visible: c.visible === '' ? true : yes(c.visible), order: words(c.order) });
     if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, cost: c.cost, units: c.units, plans: [] });
     if (c.type === 'plan') raw.products.find(m => m.id === c.id)?.plans.push({ dose: c.dose, start: c.start, days: int(c.days, 1), moments: words(c.moments) });
-    if (c.type === 'intake') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, moment: c.moments, name: c.name, dose: c.dose, notes: c.notes }); }
+    if (c.type === 'intake') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, moment: c.moment, name: c.name, dose: c.dose, notes: c.notes }); }
   }
   if (!raw.moments.length && !raw.products.length && !raw.log.length) return;
   const apply = () => { Object.assign(state, clean(raw)); save(); render(); };
