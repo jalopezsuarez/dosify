@@ -11,6 +11,7 @@ const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
   { id: 'i2', name: 'Almuerzo', start: 12, end: 18, visible: true, order: [] },
   { id: 'i3', name: 'Cena', start: 18, end: 24, visible: true, order: [] },
+  { id: 'i4', name: 'Demanda', start: '', end: '', visible: true, order: [] }, // a demanda: sin horas
 ];
 const IDS = DEFAULT_INTERVALS.map(iv => iv.id);
 const newId = () => crypto.randomUUID().slice(0, 8);
@@ -835,7 +836,7 @@ function systemPrompt() {
   return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
-- intervals: intervalos de toma (id fijo i1, i2, i3; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
+- intervals: intervalos de toma (id fijo i1, i2, i3, i4; name es el nombre que ve el usuario; start y end, horas; order, ids de pauta en el orden de tomas).
 - meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, slots = ids de los intervalos en que se toma con esa programación, al menos uno }). Cada día vale la última programación que haya empezado, si su duración llega a ese día, en sus slots y con su dose (que empieza por la cantidad de cada toma). Una pauta sin programaciones no sale en la toma: para que se tome hay que darle una programación. Para cambiar los intervalos de una pauta, cambia los slots de su programación (o crea otra con otros).
 - log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = pauta, slot = intervalo, name, dose y notes = la pauta tal como se tomó).
 Cálculos por pauta (dosis de hoy, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase):
