@@ -770,8 +770,8 @@ function saveSchedule() {
 
 // ---------- Product history ----------
 
-// A record as a row: «25/10 · 15 gramos» and, below, «9:30 · Desayuno»; optionally with a small title on top.
-const recordLabel = (e, title = '') => `<ion-label>${title ? `<p>${title}</p>` : ''}<h2>${shortDate(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at)} · ${esc(label(e.timing))}</p></ion-label>`;
+// A record as a row: «25/10 · 15 gramos» and, below, «9:30 · Desayuno».
+const recordLabel = e => `<ion-label><h2>${shortDate(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at)} · ${esc(label(e.timing))}</p></ion-label>`;
 
 // How many records a product has («1 toma», «12 tomas»), for the «Registro» row of the editor and the product view.
 const recordsLabel = n => count(n, 'toma', 'tomas');
@@ -809,9 +809,9 @@ function openHistory(id) {
 // ---------- Product view (ficha) ----------
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
-// Otros datos, Toma (only when opened from home on a dose already taken: that record) and Estadísticas, one block
-// each: «Registro», the estimated next purchase and «Último cambio». For a deleted product it shows what the record
-// stores (name, notes and the dose) and «—» elsewhere.
+// Otros datos (ending with the estimated next purchase, on its own) and Estadísticas, one block each: «Registro» and
+// «Último cambio». For a deleted product it shows what the record it was opened from stores (name and notes) and «—»
+// elsewhere.
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
 let viewing = null;
@@ -828,10 +828,10 @@ function openView(id, record) {
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
-    + (record ? readSection('Toma', `<ion-item>${recordLabel(record, 'Esta toma')}</ion-item>`) : '')
+    + `<ion-list inset="true">${purchaseRow(m)}</ion-list>`
     + '<ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>'
     + [`<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
-      purchaseRow(m), `<ion-item>${updatedLabel(m)}</ion-item>`].map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
+      `<ion-item>${updatedLabel(m)}</ion-item>`].map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
     + (m ? '' : emptyList('El producto se borró: se muestra lo que guarda la toma.'));
   viewModal.present();
 }
