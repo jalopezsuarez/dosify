@@ -1,6 +1,6 @@
 const KEY = 'dosify';
 // Modelo:
-// · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), en su orden:
+// · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), siempre en ese orden fijo:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
 // · meds: pautas, en el orden de pautas: { id, name, notes (indicaciones), refs (referencias), memo (notas),
 //   cost (€ por envase) y units (dosis por envase), enteros o vacíos, y plan: [programaciones { dose (empieza por la
@@ -54,13 +54,13 @@ function clean(raw) {
     id: m.id, name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
     cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', plan: cleanPlan(m.plan),
   }));
+  // Los intervalos van siempre en el orden fijo de DEFAULT_INTERVALS; de lo guardado se toman nombre, horas, visibilidad y orden de tomas.
   const saved = arr(raw?.intervals);
   const intervals = DEFAULT_INTERVALS.map(d => {
     const iv = saved.find(x => x.id === d.id) ?? d;
-    const at = saved.indexOf(iv);
-    return { at: at < 0 ? Infinity : at, id: d.id, name: typeof iv.name === 'string' ? iv.name : d.name, start: hour(iv.start) ?? d.start,
+    return { id: d.id, name: typeof iv.name === 'string' ? iv.name : d.name, start: hour(iv.start) ?? d.start,
       end: hour(iv.end) ?? d.end, visible: typeof iv.visible === 'boolean' ? iv.visible : d.visible, order: list(iv.order).filter(id => meds.some(m => m.id === id)) };
-  }).sort((a, b) => a.at - b.at).map(({ at, ...iv }) => iv);
+  });
   const log = arr(raw?.log).filter(e => date(e.day) && IDS.includes(e.slot) && !isNaN(new Date(e.at)))
     .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, slot: e.slot, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
     .sort((a, b) => b.at.localeCompare(a.at));
@@ -421,7 +421,6 @@ const intervalRow = iv => `
       <h2 class="medium">${esc(label(iv.id))}</h2>
       <p>${hours(iv) || 'Sin horas'}</p>
     </ion-label>
-    <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
 
 const renderIntervals = () => { $('#intervals').innerHTML = state.intervals.map(intervalRow).join(''); };
@@ -1485,15 +1484,6 @@ $('#intervals').addEventListener('click', e => {
   if (e.target.closest('ion-checkbox, ion-reorder')) return;
   const id = e.target.closest('ion-item')?.dataset.interval;
   if (id) openIntervalEditor(id);
-});
-// Al soltar no se repinta la lista de intervalos (el scroll no salta); sí lo que depende de su orden.
-$('#intervals').addEventListener('ionReorderEnd', e => {
-  state.intervals = move(state.intervals, e.detail);
-  e.detail.complete();
-  save();
-  renderSlots();
-  renderToma();
-  renderPautas();
 });
 $('#open-record').onclick = () => openRecord(editing);
 $('#record-close').onclick = () => recordModal.dismiss();
