@@ -297,14 +297,14 @@ const finished = m => m.plan.length > 0 && !planOn(m, today()) && !m.plan.some(p
 // Desayuno · Almuerzo»), de la programación de hoy (o de la última); sin programaciones, «Sin programación».
 const planText = m => { const p = planOn(m, today()) ?? m.plan.at(-1); return p ? [p.dose, ...p.slots.filter(id => interval(id).visible).map(label)].map(esc).join(' · ') : 'Sin programación'; };
 
-// Fila de una pauta: nombre (con el fin del envase a la derecha), las indicaciones en gris, la programación de hoy
-// (dosis e intervalos) y los costes.
+// Fila de una pauta: nombre (con el fin del envase a la derecha), la programación de hoy (dosis e intervalos), las
+// indicaciones en gris y los costes.
 const pautaRow = m => finished(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap" color="medium">
       <h2 class="medium">${esc(m.name)}</h2>
-      ${notesLine(m)}
       <p>${planText(m)}</p>
+      ${notesLine(m)}
     </ion-label>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>` : `
@@ -312,8 +312,8 @@ const pautaRow = m => finished(m) ? `
     <ion-label class="ion-text-wrap">
       ${endNote(m.id)}
       <h2 class="medium">${esc(m.name)}</h2>
-      ${notesLine(m)}
       <p><ion-text color="dark">${planText(m)}</ion-text></p>
+      ${notesLine(m)}
       ${costLine(m) ? `<p><ion-text color="teal" class="medium">${costLine(m)}</ion-text></p>` : ''}
     </ion-label>
     <ion-reorder slot="end"></ion-reorder>
