@@ -32,7 +32,15 @@ const yes = v => ['1', 'yes', 'true', 'sí', 'si'].includes(String(v).trim().toL
 const dayKey = d => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 const fromKey = key => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
 const today = () => dayKey(new Date());
-const time = iso => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+// Dates and times shown to the user, one rule everywhere: the first figure without zero padding, the inner ones with it
+// («9/02», «5:06»), and the year only when it is not the current one («9/02/2027»). Keys are «YYYY-MM-DD»; `at` is ISO.
+const otherYear = key => key.slice(0, 4) !== today().slice(0, 4);
+const dayMonth = key => `${Number(key.slice(8, 10))}/${key.slice(5, 7)}`;
+const shortDate = key => otherYear(key) ? `${dayMonth(key)}/${key.slice(0, 4)}` : dayMonth(key);
+const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', ...(otherYear(key) ? { year: 'numeric' } : {}) });
+const monthName = key => { const t = fromKey(`${key.slice(0, 7)}-01`).toLocaleDateString('es', { month: 'long' }); return `${t[0].toUpperCase()}${t.slice(1)}${otherYear(key) ? ` ${key.slice(0, 4)}` : ''}`; };
+const time = iso => { const d = new Date(iso); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const hhmm = iso => time(iso).padStart(5, '0'); // data format («05:06»), for the CSV
 const empty = text => `<ion-item lines="none"><ion-label color="medium" class="ion-text-center">${text}</ion-label></ion-item>`;
 // Whole hour from 0 to 24 or '' (no hour); null if invalid.
 const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d{1,2}$/.test(t) && Number(t) <= 24 ? Number(t) : null; };
@@ -163,7 +171,7 @@ function renderDays() {
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
         ${ring(done, total, `${done}/${total}`)}
-        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}</ion-label>
+        <ion-label>${d.toLocaleDateString('es', { weekday: 'narrow' })} ${dayMonth(key)}</ion-label>
       </ion-segment-button>`;
   }).join('');
 }
@@ -271,7 +279,6 @@ async function renderHome() {
   const { pending, taken: takenRows } = dayRows(timing, day);
   const taken = sortTaken(takenRows, timing);
   const done = taken.length, total = pending.length + taken.length;
-  const dateLabel = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // Keeps the scroll position when re-rendering (e.g. when checking a dose at the end of the list).
   await keepScroll($('#home'), () => { $('#home').innerHTML = `
@@ -280,7 +287,7 @@ async function renderHome() {
         <div slot="start">${ring(done, total, `${total ? Math.round(done / total * 100) : 0}%`, 88, 8.5)}</div>
         <ion-label>
           <h2>${done} de ${total} tomadas</h2>
-          <p>${day === today() ? 'hoy, ' : ''}${dateLabel}</p>
+          <p>${day === today() ? 'hoy, ' : ''}${longDate(day)}</p>
         </ion-label>
       </ion-item>
     </ion-list>
@@ -349,10 +356,6 @@ function runsOut(m) {
   const left = m.units - sum(taken) % m.units - pendingToday;
   return addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
 }
-const dayMonth = key => `${Number(key.slice(8))}/${key.slice(5, 7)}`; // «5/01», no year
-const shortDate = key => fromKey(key).toLocaleDateString('es'); // «5/1/2026»
-const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-const dayMonthYear = key => key.slice(0, 4) === today().slice(0, 4) ? dayMonth(key) : `${dayMonth(key)}/${key.slice(0, 4)}`; // year only when not the current one
 // Container running out warning: under 7 days. Turns the home (i) and the product's end date rose.
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
 const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
@@ -490,7 +493,7 @@ const exportCSV = () => csv([
   ...state.products.flatMap(m => m.schedules.map(p => ({ id: m.id, ...p }))).sort((a, b) => a.start.localeCompare(b.start))
     .map(p => csvRow('schedule', { id: p.id, dose: p.dose, start: p.start, days: p.days, timings: p.timings.join(' ') })),
   ...[...state.records].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => csvRow('record', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, timing: e.timing, at: `${e.day} ${time(e.at)}` })),
+    .map(e => csvRow('record', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, timing: e.timing, at: `${e.day} ${hhmm(e.at)}` })),
 ]);
 
 // Reads rows into objects and cleans them with clean(), like stored data.
@@ -602,13 +605,10 @@ function pdfFile(pages) {
   return Uint8Array.from(out, ch => ch.charCodeAt(0));
 }
 
-const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es', { month: 'long' }); return `${t[0].toUpperCase()}${t.slice(1)} ${y}`; };
-
-// Records of the month by date and time: date, time, and the product as taken: name, dose and notes.
-function exportPDF(y, m) {
-  const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
-  const rows = state.records.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => [dayMonth(e.day), time(e.at), e.name, e.dose, e.notes]);
-  download(`dosify-${prefix}.pdf`, pdfFile(pdfPages(monthName(y, m), rows)), 'application/pdf');
+// Records of a month («YYYY-MM») by date and time: date, time, and the product as taken: name, dose and notes.
+function exportPDF(month) {
+  const rows = state.records.filter(e => e.day.startsWith(month)).sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => [dayMonth(e.day), time(e.at), e.name, e.dose, e.notes]);
+  download(`dosify-${month}.pdf`, pdfFile(pdfPages(monthName(month), rows)), 'application/pdf');
 }
 
 // PDF month (ion-select as action sheet): of the last 6 months, only those with records, newest first;
@@ -617,11 +617,11 @@ const pdfMonth = $('#pdf-month');
 function renderPdfMonths() {
   const now = new Date(), recorded = new Set(state.records.map(e => e.day.slice(0, 7)));
   const months = Array.from({ length: 6 }, (_, i) => dayKey(new Date(now.getFullYear(), now.getMonth() - i, 1)).slice(0, 7)).filter(k => recorded.has(k));
-  pdfMonth.innerHTML = months.map(k => `<ion-select-option value="${k}">${monthName(Number(k.slice(0, 4)), Number(k.slice(5)) - 1)}</ion-select-option>`).join('');
+  pdfMonth.innerHTML = months.map(k => `<ion-select-option value="${k}">${monthName(k)}</ion-select-option>`).join('');
   if (!months.includes(pdfMonth.value)) pdfMonth.value = months[0];
   pdfMonth.disabled = $('#export-pdf').disabled = !months.length;
 }
-const exportPdfMonth = () => exportPDF(Number(pdfMonth.value.slice(0, 4)), Number(pdfMonth.value.slice(5)) - 1);
+const exportPdfMonth = () => exportPDF(pdfMonth.value);
 
 // ---------- Product editor ----------
 
@@ -686,7 +686,7 @@ const scheduleField = name => $(`[name="${name}"]`, scheduleEditor);
 const scheduleUntil = (all, p) => { const next = all.find(q => q.start > p.start); return next && next.start <= scheduleEnd(p) ? addDays(next.start, -1) : scheduleEnd(p); };
 
 // Schedule row (editor list and product view), like the home rows: the dose as title, below the dates it applies and the
-// duration («24/10/2026 – 22/11/2026 · 30 días») and, if any, a third grey line with its timings («Desayuno, Cena»).
+// duration («24/10 – 22/11 · 30 días») and, if any, a third grey line with its timings («Desayuno, Cena»).
 const scheduleDates = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}`;
 const scheduleRow = (all, p) => `<h2 class="medium">${esc(p.dose)}</h2>${doseLine(scheduleDates(all, p))}${p.timings.length ? `<p>${esc(p.timings.map(label).join(', '))}</p>` : ''}`;
 // Timings of a schedule: a checkbox per visible timing, with its hours as subtitle; hidden ones keep their value.
@@ -746,7 +746,7 @@ function openHistory(id) {
   const groups = new Map();
   for (const e of taken) {
     const p = scheduleOn(m, e.day), key = p ? `${p.start}|${p.days}` : '';
-    if (!groups.has(key)) groups.set(key, { title: p ? `${dayMonthYear(p.start)} · ${esc(p.dose)}` : 'Sin pauta', rows: [] });
+    if (!groups.has(key)) groups.set(key, { title: p ? `${shortDate(p.start)} · ${esc(p.dose)}` : 'Sin pauta', rows: [] });
     groups.get(key).rows.push(e);
   }
   $('#history-title').textContent = m.name;
@@ -754,7 +754,7 @@ function openHistory(id) {
     <ion-list inset="true">${summary.map(([k, v]) => item(k, v)).join('')}</ion-list>
     ${[...groups.values()].map(g => `
       <ion-list-header><ion-label>${g.title} (${g.rows.length})</ion-label></ion-list-header>
-      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${dayMonthYear(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at).replace(/^0/, '')} · ${esc(label(e.timing))}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
+      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${shortDate(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at)} · ${esc(label(e.timing))}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
     || '<ion-list inset="true">' + empty('Sin tomas registradas.') + '</ion-list>'}`;
   historyModal.present();
 }
