@@ -173,7 +173,6 @@ const takenAs = e => ({ id: e.id, ...snap(e) });
 // A record is identified by product, timing and day.
 const recordOf = (id, timing, day) => state.records.find(e => e.id === id && e.timing === timing && e.day === day);
 const recordsOfProduct = id => state.records.filter(e => e.id === id);
-const lastRecord = id => recordsOfProduct(id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at))[0];
 const addRecord = (m, timing, day, at = new Date()) => state.records.unshift({ at: at.toISOString(), day, id: m.id, timing, ...snapOn(m, day) });
 const removeRecord = (id, timing, day) => { state.records = state.records.filter(e => !(e.id === id && e.timing === timing && e.day === day)); };
 // Rows of a day and timing: pending (current products without a record) and taken (their records, including products no
@@ -698,8 +697,6 @@ function openEditor(product = {}) {
   for (const id of ['#delete', '#delete-header', '#stats-section']) $(id).classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
-  const last = editing && lastRecord(editing);
-  $('#last-record').innerHTML = last ? `<ion-item>${recordLabel(last, 'Esta toma')}</ion-item>` : ''; $('#last-record').classList.toggle('ion-hide', !last);
   rememberScroll();
   editor.present();
 }
@@ -812,8 +809,8 @@ function openHistory(id) {
 // ---------- Product view (ficha) ----------
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
-// Otros datos and Estadísticas, one block each: the dose taken when opened from home, «Registro», the estimated next
-// purchase and «Últimos cambios». For a deleted product it shows what the record
+// Otros datos, Toma (only when opened from home on a dose already taken: that record) and Estadísticas, one block
+// each: «Registro», the estimated next purchase and «Últimos cambios». For a deleted product it shows what the record
 // stores (name, notes and the dose) and «—» elsewhere.
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
@@ -831,9 +828,10 @@ function openView(id, record) {
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
+    + (record ? readSection('Toma', `<ion-item>${recordLabel(record, 'Esta toma')}</ion-item>`) : '')
     + '<ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>'
-    + [record && `<ion-item>${recordLabel(record, 'Esta toma')}</ion-item>`, `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
-      purchaseRow(m), `<ion-item>${updatedLabel(m)}</ion-item>`].filter(Boolean).map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
+    + [`<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
+      purchaseRow(m), `<ion-item>${updatedLabel(m)}</ion-item>`].map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
     + (m ? '' : emptyList('El producto se borró: se muestra lo que guarda la toma.'));
   viewModal.present();
 }
