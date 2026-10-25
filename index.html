@@ -119,14 +119,14 @@
     </ion-header>
     <ion-content color="light">
       <ion-list-header>
-        <ion-label>Productos (<span id="list-count">0</span>)</ion-label>
+        <ion-label>Activos (<span id="list-count">0</span>)</ion-label>
         <ion-button id="sort" fill="clear" aria-label="Ordenar"><ion-icon slot="icon-only" name="swap-vertical-outline"></ion-icon></ion-button>
       </ion-list-header>
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
       </ion-list>
-      <ion-list inset="true" id="inactive-row">
-        <ion-item button="true" id="open-inactive"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Inactivos</ion-label><ion-note slot="end" id="inactive-count"></ion-note></ion-item>
+      <ion-list inset="true" id="paused-row">
+        <ion-item button="true" id="open-paused"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Pausados</ion-label><ion-note slot="end" id="paused-count"></ion-note></ion-item>
       </ion-list>
       <div id="costs"></div>
       <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
@@ -232,15 +232,15 @@
     <ion-content id="shopping-body" color="light"></ion-content>
   </ion-modal>
 
-  <ion-modal id="inactive">
+  <ion-modal id="paused">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="inactive-close">Cerrar</ion-button></ion-buttons>
-        <ion-title>Inactivos</ion-title>
+        <ion-buttons slot="start"><ion-button id="paused-close">Cerrar</ion-button></ion-buttons>
+        <ion-title>Pausados</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
-      <ion-list inset="true" id="inactive-list"></ion-list>
+      <ion-list inset="true" id="paused-list"></ion-list>
     </ion-content>
   </ion-modal>
 

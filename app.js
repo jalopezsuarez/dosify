@@ -300,16 +300,16 @@ async function renderToma() {
 // ---------- Productos ----------
 
 const manager = $('#manager');
-// Un producto está inactivo si no tiene pauta vigente ni futura (también si no tiene ninguna): va en la lista
-// de inactivos, en gris, sin costes.
-const inactive = m => !scheduleOn(m, today()) && !m.schedules.some(p => p.start > today());
+// Un producto está pausado si no tiene pauta vigente ni futura (también si no tiene ninguna): va en la lista
+// de pausados, en gris, sin costes.
+const paused = m => !scheduleOn(m, today()) && !m.schedules.some(p => p.start > today());
 // Línea de la pauta en la lista: la dosis y los momentos visibles, separados por puntos («1 cápsula ·
 // Desayuno · Almuerzo»), de la pauta de hoy (o de la última); sin pautas, «Sin pauta».
 const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-1); return p ? [p.dose, ...p.timings.filter(id => timingOf(id).visible).map(label)].map(esc).join(' · ') : 'Sin pauta'; };
 
 // Fila de un producto: nombre (con el fin del envase a la derecha), la pauta de hoy (dosis y momentos), las
 // indicaciones en gris y los costes.
-const productRow = m => inactive(m) ? `
+const productRow = m => paused(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap" color="medium">
       <h2 class="medium">${esc(m.name)}</h2>
@@ -369,11 +369,11 @@ function costLine(m) {
 }
 // Próximas compras: los envases que se acaban en los próximos SHOP_DAYS días, del más urgente al menos.
 const SHOP_DAYS = 14;
-const shopping = () => state.products.filter(m => !inactive(m)).map(m => ({ m, end: runsOut(m) })).filter(x => x.end && daysLeft(x.end) <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
+const shopping = () => state.products.filter(m => !paused(m)).map(m => ({ m, end: runsOut(m) })).filter(x => x.end && daysLeft(x.end) <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
 const inDays = n => n <= 0 ? 'Se acaba hoy' : n === 1 ? 'Queda 1 día' : `Quedan ${n} días`;
 
 function renderCosts() {
-  const products = state.products.filter(m => !inactive(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
+  const products = state.products.filter(m => !paused(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
   const row = (title, text, extra = '', icon = '') => `<ion-item${extra}>${icon}<ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
   const daily = full.reduce((sum, m) => sum + perDay(m), 0), shop = shopping();
   // Costes del conjunto: total de los envases y, con las dosis por envase, al día y al mes (los días del mes actual);
@@ -409,16 +409,16 @@ function openShopping() {
   shoppingModal.present();
 }
 
-// Lista de productos: solo los activos; los inactivos van aparte, en la fila «Inactivos» (solo si hay alguno), que
+// Lista de productos: solo los activos; los pausados van aparte, en la fila «Pausados» (solo si hay alguno), que
 // abre su propia lista. Desde allí se editan y, con una pauta nueva, vuelven a los activos.
-const inactiveModal = $('#inactive');
+const pausedModal = $('#paused');
 function renderProducts() {
-  const live = state.products.filter(m => !inactive(m)), off = state.products.filter(inactive);
+  const live = state.products.filter(m => !paused(m)), off = state.products.filter(paused);
   $('#list-count').textContent = live.length;
   $('#list').innerHTML = live.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
-  $('#inactive-row').classList.toggle('ion-hide', !off.length);
-  $('#inactive-count').textContent = off.length;
-  $('#inactive-list').innerHTML = off.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos inactivos.');
+  $('#paused-row').classList.toggle('ion-hide', !off.length);
+  $('#paused-count').textContent = off.length;
+  $('#paused-list').innerHTML = off.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos pausados.');
 }
 
 // Momentos: casilla de visible a la izquierda; tocar la fila abre su editor.
@@ -836,16 +836,16 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // Lo que sabe el asistente: qué es la app, cómo son los datos, cálculos ya hechos por producto y todos los datos en JSON.
 function systemPrompt() {
   const now = new Date();
-  const summary = state.products.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), inactivo: inactive(m),
+  const summary = state.products.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), pausado: paused(m),
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, state.records.some(e => e.id === m.id && e.day === today() && e.timing === id) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.records.filter(e => e.id === m.id).length }));
   return `Eres el asistente de Dosify, una app para llevar productos de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos que ese día tienen algún producto pendiente o toma hecha.
-- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está inactivo: no sale en la toma y va en la lista «Inactivos» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
+- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó).
-Cálculos por producto (dosis de hoy, si está inactivo, qué tomas de hoy están tomadas o pendientes por momento, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
+Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
@@ -1162,7 +1162,7 @@ const SUGGEST_KEY = 'dosify-sugerencias';
 let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
 function suggestionPool() {
-  const products = state.products.filter(m => !inactive(m)), day = today(), h = new Date().getHours();
+  const products = state.products.filter(m => !paused(m)), day = today(), h = new Date().getHours();
   const timing = timingNow(), timingName = timing ? label(timing) : 'ahora';
   const taken = (m, id) => state.records.some(e => e.id === m.id && e.day === day && e.timing === id);
   const pendingNow = products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day) && !taken(m, timing));
@@ -1187,7 +1187,7 @@ function suggestionPool() {
     // Pautas
     ...products.filter(m => m.schedules.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus pautas?`),
     ...(ending.length ? [`¿Qué productos terminan esta semana y cuándo?`] : []),
-    ...(state.products.some(inactive) ? ['¿Qué productos tengo inactivos y por qué?'] : []),
+    ...(state.products.some(paused) ? ['¿Qué productos tengo pausados y por qué?'] : []),
     // Cambios con formulario
     ...(some ? [`Quiero cambiar los momentos de la pauta de ${some.name}.`, `Añade una pauta nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
     ...(products.length ? ['Hazme una tabla con mis productos: dosis de hoy, momentos, coste y fin del envase.', 'Revisa mis productos y dime si ves algo raro o incompleto.', 'Quiero añadir un producto nuevo.'] : ['Ayúdame a crear mi primer producto.', 'Crea un producto de ejemplo para ver cómo funciona.']),
@@ -1457,12 +1457,12 @@ $('#sort').onclick = () => {
   $('#sort ion-icon').name = $('#list').disabled ? 'swap-vertical-outline' : 'checkmark-outline';
 };
 $('#add').onclick = () => openEditor();
-$('#open-inactive').onclick = () => inactiveModal.present();
+$('#open-paused').onclick = () => pausedModal.present();
 $('#costs').addEventListener('click', e => { if (e.target.closest('#open-shopping')) openShopping(); });
 $('#shopping-close').onclick = () => shoppingModal.dismiss();
 $('#shopping-body').addEventListener('click', e => viewFrom(e, false));
-$('#inactive-close').onclick = () => inactiveModal.dismiss();
-$('#inactive-list').addEventListener('click', e => {
+$('#paused-close').onclick = () => pausedModal.dismiss();
+$('#paused-list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(productOf(id));
 });
@@ -1473,8 +1473,8 @@ $('#list').addEventListener('click', e => {
 });
 // Igual en Productos: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
 $('#list').addEventListener('ionReorderEnd', e => {
-  // Se ordenan los activos (los de la lista); los inactivos quedan detrás.
-  state.products = [...move(state.products.filter(m => !inactive(m)), e.detail), ...state.products.filter(inactive)];
+  // Se ordenan los activos (los de la lista); los pausados quedan detrás.
+  state.products = [...move(state.products.filter(m => !paused(m)), e.detail), ...state.products.filter(paused)];
   e.detail.complete();
   save();
   renderToma();
