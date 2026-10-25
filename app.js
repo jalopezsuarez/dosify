@@ -1,7 +1,7 @@
 const KEY = 'dosify';
 // Modelo:
 // · timings: momentos de toma, en el orden guardado (no se reordenan): { id (aleatorio), name, start, end (horas),
-//   visible, order: [ids de producto en el orden de tomas] }. Si no hay ninguno válido, los de DEFAULT_TIMINGS (para
+//   visible }. Si no hay ninguno válido, los de DEFAULT_TIMINGS (para
 //   tener más por defecto basta añadir otro allí) con ids nuevos.
 // · products: productos, en el orden de productos: { id, name, notes (indicaciones), refs (referencias), memo (notas),
 //   cost (€ por envase) y units (dosis por envase), enteros o vacíos, y schedules: [pautas { dose (empieza por la
@@ -16,7 +16,7 @@ const DEFAULT_TIMINGS = [
 ];
 // Todos los ids (momentos, productos) son aleatorios.
 const newId = () => crypto.randomUUID().slice(0, 8);
-const defaultTimings = () => DEFAULT_TIMINGS.map(d => ({ id: newId(), ...d, visible: true, order: [] }));
+const defaultTimings = () => DEFAULT_TIMINGS.map(d => ({ id: newId(), ...d, visible: true }));
 const timingIds = () => state.timings.map(ti => ti.id);
 const TEXT = ['name', 'notes', 'refs', 'memo'];
 const SEP = ';';
@@ -55,7 +55,7 @@ function clean(raw) {
   // Momentos: los guardados con id, en su orden (nombre, horas y visibilidad con valor por defecto si faltan); si no
   // queda ninguno, los de por defecto con ids nuevos.
   const saved = arr(raw?.timings).filter(ti => text(ti.id)).map(ti => ({ id: ti.id, name: text(ti.name), start: hour(ti.start) ?? '', end: hour(ti.end) ?? '',
-    visible: typeof ti.visible === 'boolean' ? ti.visible : true, order: list(ti.order) }));
+    visible: typeof ti.visible === 'boolean' ? ti.visible : true }));
   const timings = saved.length ? saved : defaultTimings();
   const ids = timings.map(ti => ti.id);
   // Productos: sin nombre se descartan; sin id, uno nuevo; sus pautas, solo las válidas con momentos que existen.
@@ -63,7 +63,6 @@ function clean(raw) {
     id: text(m.id) || newId(), name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
     cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', schedules: cleanSchedules(m.schedules, ids),
   }));
-  for (const ti of timings) ti.order = ti.order.filter(id => products.some(m => m.id === id));
   // Tomas: con día, momento existente y fecha válidos; las demás se descartan.
   const records = arr(raw?.records).filter(e => date(e.day) && ids.includes(e.timing) && !isNaN(new Date(e.at)))
     .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, timing: e.timing, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
@@ -94,9 +93,9 @@ const selectedTiming = () => $('#timing').value;
 
 const addDays = (key, n) => { const d = fromKey(key); d.setDate(d.getDate() + n); return dayKey(d); };
 const selectedDay = () => $('#day').value || today();
-// Orden de tomas de un momento: su lista «order»; los productos que no están en ella van detrás, en el orden de productos.
-const pos = (m, timing) => { const i = timingOf(timing).order.indexOf(m.id); return i < 0 ? Infinity : i; };
-const byTiming = (products, timing) => [...products].sort((a, b) => pos(a, timing) - pos(b, timing));
+// Posición en el orden de productos; las tomas de productos borrados van al final.
+const productIndex = id => { const i = state.products.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
+const byProducts = (a, b) => (productIndex(a.id) - productIndex(b.id)) || 0;
 // Pauta de un día: la última que empezó ese día o antes (una fecha de inicio posterior corta a la anterior),
 // si su duración llega a ese día. Un producto solo sale en la toma los días que cubre alguna pauta, en sus momentos
 // y con su dosis; sin pautas, no sale.
@@ -107,7 +106,7 @@ const doseOn = (m, day) => scheduleOn(m, day)?.dose ?? '';
 // Momentos que valen un día: los de la pauta de ese día (o, si ninguna vale, los de la última); sin
 // pautas, ninguno.
 const timingsOn = (m, day) => (scheduleOn(m, day) ?? m.schedules.at(-1))?.timings ?? [];
-const doses = (timing, day = selectedDay()) => byTiming(state.products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), timing);
+const doses = (timing, day = selectedDay()) => state.products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) }));
 // Cada toma guarda nombre, dosis e indicaciones del producto al tomarla; así el registro muestra lo que se tomó aunque
 // el producto cambie o se borre.
 const SNAP = ['name', 'dose', 'notes'];
@@ -189,35 +188,31 @@ const viewButton = id => `
       <ion-button slot="end" fill="clear" data-view="${id}" aria-label="Ver producto">
         <ion-icon slot="icon-only" name="information-circle" color="${productOf(id) ? supplyColor(id) : 'medium'}" size="large"></ion-icon>
       </ion-button>`;
-// Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
-const doseItem = (m, timing, record, sorting) => `
+// Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis.
+const doseItem = (m, timing, record) => `
     <ion-item data-id="${m.id}">
-      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-timing="${timing}" ${record ? 'checked' : ''} ${sorting ? 'disabled' : ''}></ion-checkbox>
+      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-timing="${timing}" ${record ? 'checked' : ''}></ion-checkbox>
       <ion-label class="ion-text-wrap">
         <h2 class="medium">${esc(m.name)}</h2>
         ${doseLine([record && time(record.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
       </ion-label>
-      ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : viewButton(m.id)}
+      ${viewButton(m.id)}
     </ion-item>`;
 // Cada toma va en su propia lista inset: filas independientes.
 const doseRow = (m, timing, record) => `<ion-list inset="true">${doseItem(m, timing, record)}</ion-list>`;
 
-// Botón de la cabecera de una sección (Pendiente, Tomas).
+// Botón de la cabecera de la sección «Tomas».
 const headerButton = (id, icon, label) => `<ion-button id="${id}" fill="clear" aria-label="${label}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
 
-// «Pendiente»: su botón activa el modo ordenar; el orden que se fije vale para ese momento en cualquier día.
-let sortingPending = false;
-
 // «Tomas»: su botón abre un action sheet para elegir el orden; el icono muestra el elegido.
-// No se guarda: al abrir la app siempre empieza en el orden de tomas.
+// No se guarda: al abrir la app siempre empieza en el orden de productos.
 const SORTS = {
-  records: { icon: 'reorder-three-outline', label: 'Orden de tomas' },
+  products: { icon: 'list-outline', label: 'Orden de productos' },
   recent: { icon: 'arrow-up-outline', label: 'Más reciente arriba' },
   oldest: { icon: 'arrow-down-outline', label: 'Más reciente abajo' },
-  products: { icon: 'list-outline', label: 'Orden de productos' },
 };
-let sortMode = 'records';
+let sortMode = 'products';
 
 // Action sheet compartido: opciones + «Cancelar»; onCancel se llama si se cierra sin elegir.
 function sheet(header, buttons, onCancel) {
@@ -230,26 +225,11 @@ function sheet(header, buttons, onCancel) {
 
 const chooseSort = () => sheet('Ordenar tomas', Object.entries(SORTS).map(([key, o]) => (
   { text: o.label, role: key === sortMode ? 'selected' : undefined, handler: () => { sortMode = key; renderHome(); } })));
-// Posición en el orden de productos; las tomas de productos borrados van al final.
-const productIndex = id => { const i = state.products.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
-const byProducts = (a, b) => (productIndex(a.id) - productIndex(b.id)) || 0;
-const sortTaken = (rows, timing) => [...rows].sort(
-  sortMode === 'records' ? (a, b) => (pos(a, timing) - pos(b, timing)) || byProducts(a, b)
-  : sortMode === 'products' ? byProducts
+const sortTaken = rows => [...rows].sort(sortMode === 'products' ? byProducts
   : (a, b) => a.record.at.localeCompare(b.record.at) * (sortMode === 'oldest' ? 1 : -1));
 
 // Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
 const move = (list, { from, to = from }) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l; };
-
-// Ordenar «Pendiente» mueve esos productos entre los huecos que ocupan en el momento (las ya tomadas no se mueven)
-// y guarda el orden completo del momento.
-function reorderPending(timing, moved) {
-  const all = byTiming(state.products.filter(m => timingsOn(m, selectedDay()).includes(timing)), timing);
-  const ids = new Set(moved.map(m => m.id));
-  let i = 0;
-  timingOf(timing).order = all.map(m => ids.has(m.id) ? moved[i++].id : m.id);
-  save();
-}
 
 // Conserva el scroll de un ion-content al repintarlo: lo guarda, pinta y lo restaura cuando Ionic ha dibujado las filas.
 async function keepScroll(content, paint) {
@@ -268,7 +248,7 @@ async function renderHome() {
   const timing = selectedTiming();
   if (!timing) { $('#home').innerHTML = emptyList(visibleTimings().length ? 'Nada que tomar este día.' : 'No hay momentos visibles. Actívalos en Productos › Momentos.'); return; }
   const { pending, taken: takenRows } = dayRows(timing, day);
-  const taken = sortTaken(takenRows, timing);
+  const taken = sortTaken(takenRows);
   const done = taken.length, total = pending.length + taken.length;
   const dateLabel = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -283,13 +263,8 @@ async function renderHome() {
         </ion-label>
       </ion-item>
     </ion-list>
-    <ion-list-header>
-      <ion-label>Pendiente</ion-label>
-      ${headerButton('pending-sort', sortingPending ? 'checkmark-outline' : 'swap-vertical-outline', sortingPending ? 'Terminar de ordenar' : 'Ordenar')}
-    </ion-list-header>
-    ${!pending.length ? emptyList('Nada pendiente.') : sortingPending
-      ? `<ion-list inset="true"><ion-reorder-group id="pending-list" disabled="false">${pending.map(m => doseItem(m, timing, null, true)).join('')}</ion-reorder-group></ion-list>`
-      : pending.map(m => doseRow(m, timing)).join('')}
+    <ion-list-header><ion-label>Pendiente</ion-label></ion-list-header>
+    ${pending.map(m => doseRow(m, timing)).join('') || emptyList('Nada pendiente.')}
     <ion-list-header>
       <ion-label>Tomas</ion-label>
       ${headerButton('taken-sort', SORTS[sortMode].icon, SORTS[sortMode].label)}
@@ -471,18 +446,18 @@ function download(name, data, type = 'text/csv') {
 }
 
 // Un solo CSV con columnas compartidas, con los nombres de los campos de los datos; cada tipo de fila usa las suyas:
-// · timing: id, name, start y end (horas), visible (true/false) y order (ids de producto separados por espacios), en su orden.
+// · timing: id, name, start y end (horas) y visible (true/false), en su orden.
 // · product: id, name, notes, refs, memo, cost (€ por envase) y units (dosis por envase). En el orden de productos, cada
 //   uno seguido de sus filas «schedule»: id del producto, dose, start (fecha de inicio), days (duración) y timings (ids
 //   separados por espacios).
 // · record: id del producto, timing (el de la toma), at («AAAA-MM-DD HH:MM», hora local) y el producto como se tomó: name, dose y notes.
 // Cada columna es un campo de los datos con el mismo nombre; «day» de la toma va dentro de «at».
-const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'order', 'at'];
+const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'at'];
 const csvRow = (type, o) => HEAD.map(h => h === 'type' ? type : o[h] ?? '');
 
 const exportCSV = () => csv([
   HEAD,
-  ...state.timings.map(ti => csvRow('timing', { id: ti.id, name: ti.name, start: ti.start, end: ti.end, visible: ti.visible, order: ti.order.join(' ') })),
+  ...state.timings.map(ti => csvRow('timing', { id: ti.id, name: ti.name, start: ti.start, end: ti.end, visible: ti.visible })),
   ...state.products.flatMap(m => [csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units }),
     ...m.schedules.map(p => csvRow('schedule', { id: m.id, dose: p.dose, start: p.start, days: p.days, timings: p.timings.join(' ') }))]),
   ...[...state.records].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
@@ -497,7 +472,7 @@ async function importCSV(file) {
   const words = v => v.split(/\s+/).filter(Boolean);
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
-    if (c.type === 'timing') raw.timings.push({ id: c.id, name: c.name, start: c.start, end: c.end, visible: c.visible === '' ? true : yes(c.visible), order: words(c.order) });
+    if (c.type === 'timing') raw.timings.push({ id: c.id, name: c.name, start: c.start, end: c.end, visible: c.visible === '' ? true : yes(c.visible) });
     if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, cost: c.cost, units: c.units, schedules: [] });
     if (c.type === 'schedule') raw.products.find(m => m.id === c.id)?.schedules.push({ dose: c.dose, start: c.start, days: int(c.days, 1), timings: words(c.timings) });
     if (c.type === 'record') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.records.push({ at: `${day}T${hhmm}`, day, id: c.id, timing: c.timing, name: c.name, dose: c.dose, notes: c.notes }); }
@@ -843,7 +818,7 @@ function systemPrompt() {
   return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
-- timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
+- timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó).
 Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día (la cantidad de la dosis de hoy por cada momento visible de su pauta), costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
@@ -1447,13 +1422,6 @@ $('#home').addEventListener('click', e => {
   // El texto va fuera de la casilla (para ocupar toda la fila); pulsarlo también la marca o desmarca.
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#taken-sort')) chooseSort();
-  if (e.target.closest('#pending-sort')) { sortingPending = !sortingPending; renderHome(); }
-});
-// Al soltar, complete() deja la fila en su sitio en pantalla: solo se guarda el orden, sin repintar ni mover el scroll.
-$('#home').addEventListener('ionReorderEnd', e => {
-  const timing = selectedTiming();
-  reorderPending(timing, move([...e.target.children].map(el => state.products.find(m => m.id === el.dataset.id)), e.detail));
-  e.detail.complete();
 });
 
 $('#manage').onclick = () => manager.present();
@@ -1478,6 +1446,7 @@ $('#list').addEventListener('click', e => {
   if (id) openEditor(productOf(id));
 });
 // Igual en Productos: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
+// Al soltar, complete() deja la fila en su sitio en pantalla: solo se guarda el orden, sin mover el scroll de la lista.
 $('#list').addEventListener('ionReorderEnd', e => {
   // Se ordenan los activos (los de la lista); los pausados quedan detrás.
   state.products = [...move(state.products.filter(m => !paused(m)), e.detail), ...state.products.filter(paused)];
@@ -1525,7 +1494,6 @@ editor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#save').onclick = saveEditor;
 $('#delete').onclick = () => ask('¿Eliminar este producto?', () => {
   state.products = state.products.filter(m => m.id !== editing);
-  for (const ti of state.timings) ti.order = ti.order.filter(id => id !== editing);
   save();
   render();
   editor.dismiss();

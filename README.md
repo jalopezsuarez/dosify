@@ -24,8 +24,8 @@ Se puede instalar como app: en iOS, Safari › Compartir › «Añadir a pantall
 - **Filas:** cada toma va en su propia tarjeta con la casilla a la izquierda, el nombre (peso medio), la dosis, las indicaciones en gris (recortadas a unas dos líneas) y el icono (i) a la derecha, que abre la **ficha** del producto. El (i) avisa del envase si el producto tiene pauta vigente y dosis por envase: se pone en rosa cuando al envase actual le quedan menos de 7 días; si no, verde. En las tomas ya hechas, la hora va delante de la dosis («09:00 · 1 comprimido»).
 - **Ficha (i):** solo lectura, espejo del editor, con las mismas secciones y los mismos campos (Producto, Pautas con los momentos de cada una, Otros datos con referencias y notas (con los enlaces http, https o www. pulsables, abren otra pestaña), coste y dosis por envase, y Estadísticas con «Registro»); desde una toma ya hecha, además la sección Toma (día, hora, momento y dosis tal como se tomó). Arriba a la derecha, «Editar» cierra la ficha y abre el editor del producto. En Pautas, cada pauta muestra también sus momentos. Si el producto se borró, el (i) va en gris y la ficha tiene la misma estructura, con lo que guarda la toma (nombre, indicaciones y, en Toma, día, hora, momento y dosis), «—» en el resto y una línea final que lo indica, sin «Editar»; su registro también se abre (sin pautas ni coste).
 - **Marcar y desmarcar:** pulsar la casilla o el texto abre un action sheet: desde Pendiente, «Marcar como tomado»; desde Tomas, «Marcar como pendiente». «Cancelar» (o tocar fuera) deja la toma como estaba.
-- **Pendiente:** las tomas sin marcar, en el *orden de tomas* del momento. El botón ↕ de su cabecera activa el modo ordenar (asas de arrastre; ✓ para terminar). El orden fijado se guarda en el momento y vale para él en cualquier día; al ordenar, las tomas ya hechas no cambian de sitio.
-- **Tomas:** las marcadas. El botón de su cabecera abre un action sheet para elegir el orden: *Orden de tomas* (por defecto, siempre al abrir la app), *Más reciente arriba*, *Más reciente abajo* u *Orden de productos*. El icono de la cabecera indica el orden elegido.
+- **Pendiente:** las tomas sin marcar, en el orden de productos.
+- **Tomas:** las marcadas. El botón de su cabecera abre un action sheet para elegir el orden: *Orden de productos* (por defecto, siempre al abrir la app), *Más reciente arriba* o *Más reciente abajo*. El icono de la cabecera indica el orden elegido.
 
 - **Asistente** (botón arriba a la izquierda): una conversación con un modelo de IA compatible con OpenAI (ver «Asistente» más abajo).
 
@@ -36,7 +36,7 @@ Se puede instalar como app: en iOS, Safari › Compartir › «Añadir a pantall
   - **€/día:** coste del envase ÷ dosis por envase × dosis al día; las dosis al día son la cantidad de cada toma (el número con que empieza la dosis) por cada momento visible de su pauta vigente.
   - **€/mes:** el coste al día por los días del mes actual (28 a 31).
   - **Fin del envase:** el último día del envase actual. Se suman todas las dosis registradas del producto y, cada vez que completan un envase, se empieza otro automáticamente: lo que queda del actual es el resto (dosis por envase − total registrado módulo dosis por envase). A eso se le restan las dosis que faltan hoy y lo que queda se reparte entre las dosis al día (las de la pauta vigente). Si no llega para hoy, se acaba hoy.
-- Tocar una fila la edita; «Añadir» crea una nueva. El botón ↕ de la cabecera muestra las asas para ordenar los productos (✓ para terminar). Este *orden de productos* es independiente del orden de tomas de cada momento.
+- Tocar una fila la edita; «Añadir» crea una nueva. El botón ↕ de la cabecera muestra las asas para ordenar los productos (✓ para terminar). Este *orden de productos* es el de las tomas en cada momento.
 - **Editor**, en secciones: Producto (nombre e indicaciones), Pautas (ver abajo; la dosis y los momentos van en cada pauta), Otros datos (referencias y notas y, aparte, coste del envase en euros y dosis por envase, ambos enteros y opcionales), Estadísticas (ver abajo) y, al final, Zona de peligro con «Eliminar producto» (solo en productos ya guardados). Sin pautas, un producto no sale en la toma (no tiene momentos ni dosis) y va en Pausados. El producto siempre se cambia en su sitio (no se duplica). Si cambian el nombre o las indicaciones y el producto tiene tomas de días anteriores, un action sheet pregunta si se aplica **a partir de hoy** (las tomas anteriores siguen mostrando cómo se tomaron) o **a todo el registro** (también se cambian las tomas anteriores). Las tomas de hoy siempre pasan a mostrar el producto nuevo.
 - **Pautas:** en el editor del producto se crean, modifican y borran pautas; el editor de cada una tiene dos secciones: Pauta, con dosis (empieza por un número, la cantidad de cada toma, como «1 comprimido» o «0,5 ml»), fecha de inicio (con el selector de fecha del sistema) y duración en días, los tres obligatorios, y Momentos, con una casilla por momento visible con sus horas de subtítulo («6–12 h» o «Sin horas»; los ocultos conservan su valor), obligatorio marcar al menos uno (si no, «Marca al menos un momento»), porque una pauta puede tomarse en unos momentos y la siguiente en otros; al añadir una, propone la dosis y los momentos de la última y hoy. Van ordenadas por fecha de inicio (y, a igual fecha, por duración) y cada una muestra, como las filas de la toma, la dosis de título, debajo las fechas en que vale y su duración («15/10/2026 – 12/01/2027 · 90 días») y, solo si tiene momentos, una tercera línea en gris con ellos («Desayuno, Cena»). Cada día vale la última que haya empezado: si una empieza antes de que termine la anterior, manda la fecha de inicio de la nueva. Un producto con pautas solo sale en la toma los días que cubre la que vale (pasada su duración, no sale), en los momentos de esa pauta y con su dosis, que es también la que se guarda en la toma y la que usan los costes y el fin del envase; sin pautas, no sale. Los cambios se guardan al guardar el producto («Cancelar» los descarta).
 - **Estadísticas** (al final del editor, en productos ya guardados, y de la ficha (i)): «Registro», con el número de tomas, abre el histórico completo del producto. Arriba, un resumen: desde qué día hay tomas, cuántas, las dosis tomadas (la suma de las cantidades) y, si el producto tiene coste y dosis por envase, el coste estimado (dosis tomadas × coste ÷ dosis por envase). Debajo, las tomas (día y dosis, «21/10 · 1 comprimido», y debajo hora y momento, «7:03 · Desayuno»), de la más reciente a la más antigua, agrupadas por la pauta que valía cada día, con su fecha de inicio, su dosis y cuántas tomas tiene («12/10 · 1 comprimido (7)»); en los títulos y en las tomas, el año solo sale si no es el actual («12/10/2025»); al cambiar de pauta empieza otra sección, y las tomas de días sin pauta van en «Sin pauta».
@@ -76,7 +76,7 @@ Los datos salen del dispositivo hacia el servicio configurado; la app no tiene s
 
 Tres listas en el `localStorage`:
 
-- **Momentos**, en su orden (no se reordenan): `id` (aleatorio, como todos), `name`, `start` y `end` (horas), `visible` y `order` (los `id` de producto en el orden de tomas de ese momento). Si no hay ninguno válido, se crean los de por defecto (Desayuno 6–12, Almuerzo 12–18, Cena 18–24 y Demanda sin horas) con ids nuevos; salen de una lista en el código, así que para tener más por defecto basta con añadirlos allí; todo lo demás (pestañas, chips, editor, orden, CSV, asistente) los recorre.
+- **Momentos**, en su orden (no se reordenan): `id` (aleatorio, como todos), `name`, `start` y `end` (horas) y `visible`. Si no hay ninguno válido, se crean los de por defecto (Desayuno 6–12, Almuerzo 12–18, Cena 18–24 y Demanda sin horas) con ids nuevos; salen de una lista en el código, así que para tener más por defecto basta con añadirlos allí; todo lo demás (pestañas, chips, editor, orden, CSV, asistente) los recorre.
 - **Productos**, en el orden de productos: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase), enteros o vacíos, y `schedules`, sus pautas: `{ dose, start, days, timings }` (la dosis empieza por la cantidad de cada toma; `timings`, los `id` de los momentos en que se toma con esa pauta, al menos uno), ordenadas por fecha de inicio. El producto no tiene momentos propios: los que valen un día son los de la pauta de ese día (o, si ninguna vale, los de la última); sin pautas, ninguno.
 - **Tomas**: `at` (cuándo se marcó), `day` (el día de la toma), `id` (del producto), `timing` (`id` del momento) y `name`, `dose` y `notes`: el producto tal como se tomó. Así el registro (la toma, el PDF, el CSV) muestra lo que se tomó aunque el producto cambie, cambie de momento o se borre.
 
@@ -87,30 +87,29 @@ No hay compatibilidad con formatos anteriores. Al abrir la app y al cargar la ba
 ## Orden
 
 - **Orden de momentos:** el orden en que están guardados (el de los de por defecto); no se puede cambiar en la app.
-- **Orden de productos:** el orden del listado de productos.
-- **Orden de tomas:** uno por momento, su lista `order`. Los productos que no están en ella (por ejemplo, recién creados) van al final, en el orden de productos.
+- **Orden de productos:** el orden del listado de productos; es también el de las tomas de cada momento (en «Tomas» se puede ver además por hora).
 
 ## Formato CSV
 
-Un solo fichero con todo: momentos, productos con sus pautas y tomas. Separador `;`, una cabecera y 17 columnas compartidas; cada columna es un campo de los datos, con su mismo nombre y significado (solo `at` junta `day` y la hora), y cada tipo de fila usa las suyas y deja las demás vacías.
+Un solo fichero con todo: momentos, productos con sus pautas y tomas. Separador `;`, una cabecera y 16 columnas compartidas; cada columna es un campo de los datos, con su mismo nombre y significado (solo `at` junta `day` y la hora), y cada tipo de fila usa las suyas y deja las demás vacías.
 
 ```
-type;id;name;notes;refs;memo;cost;units;dose;start;end;days;timings;timing;visible;order;at
-timing;a1f3c9e2;Desayuno;;;;;;;6;12;;;;true;7b2e9d41 c4d8a0f6;
-timing;5e7d2b8c;Almuerzo;;;;;;;12;18;;;;true;;
-timing;9c0a4f17;Cena;;;;;;;18;24;;;;true;;
-timing;d2e6b3a9;Demanda;;;;;;;;;;;;true;;
-product;c4d8a0f6;Paracetamol;Si dolor;;;3;20;;;;;;;;;
-schedule;c4d8a0f6;;;;;;;1 comprimido de 500 mg;2026-10-15;;30;a1f3c9e2 5e7d2b8c 9c0a4f17;;;;
-product;7b2e9d41;Omeprazol;En ayunas;Dr. Ruiz;Comprar en farmacia;;;;;;;;;;;
-schedule;7b2e9d41;;;;;;;40 mg;2026-10-10;;7;a1f3c9e2;;;;
-schedule;7b2e9d41;;;;;;;20 mg;2026-10-17;;30;a1f3c9e2;;;;
-record;7b2e9d41;Omeprazol;En ayunas;;;;;40 mg;;;;;a1f3c9e2;;;2026-10-16 08:05
-record;7b2e9d41;Omeprazol;En ayunas;;;;;20 mg;;;;;a1f3c9e2;;;2026-10-17 08:03
-record;c4d8a0f6;Paracetamol;Si dolor;;;;;1 comprimido de 500 mg;;;;;a1f3c9e2;;;2026-10-17 08:12
+type;id;name;notes;refs;memo;cost;units;dose;start;end;days;timings;timing;visible;at
+timing;a1f3c9e2;Desayuno;;;;;;;6;12;;;;true;
+timing;5e7d2b8c;Almuerzo;;;;;;;12;18;;;;true;
+timing;9c0a4f17;Cena;;;;;;;18;24;;;;true;
+timing;d2e6b3a9;Demanda;;;;;;;;;;;;true;
+product;c4d8a0f6;Paracetamol;Si dolor;;;3;20;;;;;;;;
+schedule;c4d8a0f6;;;;;;;1 comprimido de 500 mg;2026-10-15;;30;a1f3c9e2 5e7d2b8c 9c0a4f17;;;
+product;7b2e9d41;Omeprazol;En ayunas;Dr. Ruiz;Comprar en farmacia;;;;;;;;;;
+schedule;7b2e9d41;;;;;;;40 mg;2026-10-10;;7;a1f3c9e2;;;
+schedule;7b2e9d41;;;;;;;20 mg;2026-10-17;;30;a1f3c9e2;;;
+record;7b2e9d41;Omeprazol;En ayunas;;;;;40 mg;;;;;a1f3c9e2;;2026-10-16 08:05
+record;7b2e9d41;Omeprazol;En ayunas;;;;;20 mg;;;;;a1f3c9e2;;2026-10-17 08:03
+record;c4d8a0f6;Paracetamol;Si dolor;;;;;1 comprimido de 500 mg;;;;;a1f3c9e2;;2026-10-17 08:12
 ```
 
-- `timing`: `id`, `name` (puede ir vacío), `start` y `end` (horas enteras de 0 a 24, opcionales), `visible` (`true`/`false`) y `order` (los `id` de producto en el orden de tomas, separados por espacios). Van en su orden.
+- `timing`: `id`, `name` (puede ir vacío), `start` y `end` (horas enteras de 0 a 24, opcionales), `visible` (`true`/`false`). Van en su orden.
 - `product`: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase). El orden de estas filas es el orden de productos.
 - `schedule`: tras su producto, `id` del producto, `dose`, `start` (fecha de inicio, `AAAA-MM-DD`), `days` (duración) y `timings` (los `id` de los momentos en que se toma con esa pauta, separados por espacios); las cuatro son obligatorias (al menos un momento), y si falta alguna o no vale, la pauta se descarta.
 - `record`: `id` del producto, `timing` (el de la toma), `at` (`AAAA-MM-DD HH:MM`, hora local; de ahí sale `day`) y el producto tal como se tomó: `name`, `dose` y `notes`. En el ejemplo, el Omeprazol tiene dos pautas: 40 mg desde el 10 y 20 mg desde el 17; cada toma conserva la dosis con que se tomó.
