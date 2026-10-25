@@ -866,7 +866,7 @@ function saveTimingEditor() {
   timingEditor.dismiss();
 }
 
-// ---------- Assistant ----------
+// ---------- Assistant: settings and chat state ----------
 
 // Chat with an OpenAI-compatible model (POST {url}/chat/completions). The settings (base URL, API key and
 // model) are stored apart from the data, only in this browser, and never go in the CSV. On each request the assistant
@@ -875,6 +875,7 @@ const AI_KEY = 'dosify-assistant';
 // No defaults: until all three fields are filled in, the assistant cannot be used.
 const AI_FIELDS = ['url', 'key', 'model'];
 const ai = (() => { const v = load(AI_KEY) ?? {}; return Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])); })();
+const aiReady = () => !!(ai.url && ai.key && ai.model); // no defaults: all three are needed
 const aiField = name => $(`#assistant-settings [name="${name}"]`);
 // Saved while typing (not only on blur, which on iOS may not fire when closing Products) and the fields are
 // filled with the stored values each time Products opens.
@@ -883,12 +884,15 @@ for (const k of AI_FIELDS) aiField(k).addEventListener('ionInput', () => { ai[k]
 showAi();
 manager.addEventListener('ionModalWillPresent', showAi);
 
-const chatModal = $('#chat'), chatBody = $('#chat-body'), chatInput = $('#chat-input');
+const chatModal = $('#chat'), chatBody = $('#chat-body'), chatInput = $('#chat-input'), proposalBody = $('#proposal-body');
+const chatRoots = [chatBody, proposalBody]; // proposals live in the chat and in the edit view
 // The chat is stored (apart from the data and outside the CSV) until «Limpiar» is pressed.
 const CHAT_KEY = 'dosify-chat';
 let { chat = [], chatView = [] } = (() => { const v = load(CHAT_KEY); return Array.isArray(v?.chat) && Array.isArray(v?.chatView) ? v : {}; })();
 let chatBusy = false;
 const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, chatView }));
+
+// ---------- Assistant: system prompt ----------
 
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
 function systemPrompt() {
@@ -919,14 +923,19 @@ Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, r
 Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, o corregir tomas ya guardadas (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
 }
 
+// ---------- Assistant: tools ----------
+
 // Tools: what the assistant can do. Each call becomes a proposal: an editable card in the chat
 // (fields, timing chips, schedule rows) that the user saves or discards.
 const stringProp = description => ({ type: 'string', description });
+const intProp = description => ({ type: 'integer', description });
+const timingProp = description => ({ type: 'string', enum: timingIds(), description });
+const INPUT_TYPES = ['text', 'number', 'date', 'time'];
 const productProps = () => ({
   name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
-  cost: { type: 'integer', description: '€ por envase' }, units: { type: 'integer', description: 'Dosis por envase' },
+  cost: intProp('€ por envase'), units: intProp('Dosis por envase'),
   schedules: { type: 'array', description: 'Pautas (sustituyen a las que haya); sin ellas el producto no sale en la toma', items: { type: 'object', required: ['dose', 'start', 'days', 'timings'],
-    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, timings: { type: 'array', items: { type: 'string', enum: timingIds() }, description: 'Ids de los momentos en que se toma con esta pauta (al menos uno)' } } } },
+    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: intProp('Duración en días'), timings: { type: 'array', items: { type: 'string', enum: timingIds() }, description: 'Ids de los momentos en que se toma con esta pauta (al menos uno)' } } } },
 });
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const ACTIONS = ['create_product', 'edit_product', 'delete_product', 'add_record', 'remove_record', 'edit_records', 'edit_timing'];
@@ -942,7 +951,7 @@ const tools = () => [
         key: stringProp('Clave única del elemento: con ella recibes su valor y puedes usarlo en las acciones como {{clave}}'),
         label: stringProp('Texto principal (o etiqueta del campo)'), detail: stringProp('Texto secundario'), placeholder: stringProp('Texto de ayuda del campo'),
         checked: { type: 'boolean', description: 'check o toggle: marcado de inicio' }, value: { description: 'Valor inicial: texto en input, textarea, radio, select o chips; lista de valores en chips multiple' },
-        input: { type: 'string', enum: ['text', 'number', 'date', 'time'], description: 'input: tipo de campo' }, multiple: { type: 'boolean', description: 'chips: se pueden marcar varios' }, required: { type: 'boolean', description: 'input o textarea: obligatorio' },
+        input: { type: 'string', enum: INPUT_TYPES, description: 'input: tipo de campo' }, multiple: { type: 'boolean', description: 'chips: se pueden marcar varios' }, required: { type: 'boolean', description: 'input o textarea: obligatorio' },
         options: { type: 'array', description: 'radio, chips o select: opciones', items: { type: 'object', required: ['label'], properties: { value: stringProp('Valor (si no, el texto)'), label: stringProp('Texto'), detail: stringProp('Texto secundario (solo en radio)'), action: ACTION } } },
         action: ACTION,
       } } },
@@ -952,17 +961,21 @@ const tools = () => [
   tool('create_product', 'Úsala en cuanto pidan crear o añadir un producto (medicamento o suplemento), aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', productProps()),
   tool('edit_product', 'Úsala en cuanto pidan modificar, cambiar o editar algo de un producto (dosis, pauta, momentos, coste…), aunque no digan el valor nuevo: abre un formulario con el producto y tus cambios, si los hay', { id: stringProp('Id del producto'), ...productProps() }, ['id']),
   tool('delete_product', 'Úsala en cuanto pidan borrar o eliminar un producto (sus tomas se conservan)', { id: stringProp('Id del producto') }, ['id']),
-  tool('add_record', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), time: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
-  tool('remove_record', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), timing: { type: 'string', enum: timingIds(), description: 'Momento; si no, el primero del producto ese día' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
-  tool('edit_records', 'Úsala en cuanto pidan corregir, cambiar o reescribir tomas ya guardadas (la dosis, las indicaciones o el nombre con que quedaron), una o muchas a la vez, aunque no digan el valor nuevo: abre un formulario con el producto, los días, el momento y los valores nuevos', { id: stringProp('Id del producto'), from: stringProp('Primer día AAAA-MM-DD; si no, el de su primera toma'), to: stringProp('Último día AAAA-MM-DD; si no, el de su última toma'), timing: { type: 'string', enum: timingIds(), description: 'Solo las tomas de ese momento; si no, de todos' }, dose: stringProp('Dosis nueva (empieza por un número); vacía, no cambia'), notes: stringProp('Indicaciones nuevas; vacías, no cambian'), name: stringProp('Nombre nuevo; vacío, no cambia') }, ['id']),
-  tool('edit_timing', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: timingIds() }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
+  tool('add_record', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), timing: timingProp('Momento; si no, el primero del producto ese día'), day: stringProp('Día AAAA-MM-DD; si no, hoy'), time: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
+  tool('remove_record', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), timing: timingProp('Momento; si no, el primero del producto ese día'), day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
+  tool('edit_records', 'Úsala en cuanto pidan corregir, cambiar o reescribir tomas ya guardadas (la dosis, las indicaciones o el nombre con que quedaron), una o muchas a la vez, aunque no digan el valor nuevo: abre un formulario con el producto, los días, el momento y los valores nuevos', { id: stringProp('Id del producto'), from: stringProp('Primer día AAAA-MM-DD; si no, el de su primera toma'), to: stringProp('Último día AAAA-MM-DD; si no, el de su última toma'), timing: timingProp('Solo las tomas de ese momento; si no, de todos'), dose: stringProp('Dosis nueva (empieza por un número); vacía, no cambia'), notes: stringProp('Indicaciones nuevas; vacías, no cambian'), name: stringProp('Nombre nuevo; vacío, no cambia') }, ['id']),
+  tool('edit_timing', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: timingIds() }, name: stringProp('Nombre'), start: intProp('Hora de inicio 0-24'), end: intProp('Hora de fin 0-24'), visible: { type: 'boolean' } }, ['id']),
 ];
+
+// ---------- Assistant: proposal forms ----------
 
 // Proposal forms. For each tool: draft (the editable data built from what the assistant proposes, or null
 // if invalid), title, brief (summary in the proposal list), fields (the fields' HTML; ui uses blocks,
 // one list per section), validate (bad fields), apply (saves and returns the summary) and, when needed,
 // button or danger (text and color of the save button) and live (card text recomputed while typing in a
 // field, in the [data-live] element). Draft values are text, as in the fields.
+const chipToggle = (kind, value, text, on, extra = '') => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${extra} ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
+const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
 const productFields = d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
@@ -973,17 +986,15 @@ const productFields = d => `
   ${d.schedules.map((p, i) => `
   <ion-item><ion-input data-schedule-field="dose" data-row="${i}" label="Pauta ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-schedule" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
   <ion-item><ion-input data-schedule-field="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-schedule-field="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
-  <ion-item lines="none"><ion-label><p>Momentos de la pauta ${i + 1}</p><p>${visibleTimings().map(ti => `<ion-chip data-chip="schedule-timing" data-row="${i}" data-value="${esc(ti.id)}" ${p.timings.includes(ti.id) ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(label(ti.id))}</ion-label></ion-chip>`).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un momento</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
+  <ion-item lines="none"><ion-label><p>Momentos de la pauta ${i + 1}</p><p>${visibleTimings().map(ti => chipToggle('schedule-timing', ti.id, label(ti.id), p.timings.includes(ti.id), `data-row="${i}"`)).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un momento</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
   <ion-item lines="none"><ion-label><p>${chipAction('add-schedule', 'Añadir pauta', 'add-outline')}</p></ion-label></ion-item>`;
-const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
-const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
 const productDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
   cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
   schedules: (Array.isArray(a.schedules) ? a.schedules : base.schedules).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), timings: timingIds().filter(id => asList(p.timings).includes(id)) })) });
 // A schedule without timings is invalid (marked on its row: «Marca al menos un momento»).
 const productValidate = d => [
-  ...(d.name.trim() ? [] : ['name']), ...(int(d.cost) === null ? ['cost'] : []), ...(int(d.units, 1) === null ? ['units'] : []),
-  ...d.schedules.flatMap((p, i) => [['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)], ['timings', p.timings.length]].filter(([, ok]) => !ok).map(([f]) => `${f}:${i}`)),
+  ...failing([['name', d.name.trim()], ['cost', int(d.cost) !== null], ['units', int(d.units, 1) !== null]]),
+  ...d.schedules.flatMap((p, i) => failing([['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)], ['timings', p.timings.length]]).map(f => `${f}:${i}`)),
 ];
 const productValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), cost: int(d.cost), units: int(d.units, 1),
   schedules: d.schedules.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), timings: p.timings })) });
@@ -992,8 +1003,17 @@ const timingChips = d => [...new Set([...visibleTimings().map(ti => ti.id), d.ti
 const recordFields = (d, withTime) => `
   <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${timingChips(d)}</p></ion-label></ion-item>
   <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="time" type="time" label="Hora" label-placement="stacked" value="${esc(d.time)}"></ion-input>` : ''}</ion-item>`;
-const recordDraft = a => { const m = productOf(a.id); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, date(str(a.day)) || today())[0] ?? timingIds()[0], day: date(str(a.day)) || today(), time: /^\d{1,2}:\d{2}$/.test(str(a.time)) ? str(a.time).padStart(5, '0') : '' }; };
-const recordValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.time === '' || /^\d{1,2}:\d{2}$/.test(d.time) ? [] : ['time'])];
+const HHMM = /^\d{1,2}:\d{2}$/;
+const recordDraft = a => { const m = productOf(a.id), day = date(str(a.day)) || today(), t = str(a.time); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, day)[0] ?? timingIds()[0], day, time: HHMM.test(t) ? t.padStart(5, '0') : '' }; };
+const recordValidate = d => failing([['day', date(d.day)], ['time', d.time === '' || HHMM.test(d.time)]]);
+// A proposal's final data, described as text for the assistant.
+const productDescribe = d => {
+  const v = productValues(d);
+  return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
+    v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
+    v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${count(p.days, 'día', 'días')} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
+};
+const recordDescribe = d => `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
 const productBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.schedules[0]?.dose || 'sin dosis'} · ${(d.schedules[0]?.timings ?? []).map(label).join(', ') || 'sin momentos'}`;
 const recordBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}${d.time ? ` ${d.time}` : ''}`;
 // Fixing stored records: those of the product between two days (by default, from its first to its last record) and,
@@ -1011,10 +1031,12 @@ const recordsFields = d => `
   <ion-item><ion-input data-field="notes" label="Indicaciones nuevas" label-placement="stacked" placeholder="Sin cambio" value="${esc(d.notes)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="name" label="Nombre nuevo" label-placement="stacked" placeholder="Sin cambio" value="${esc(d.name)}"></ion-input></ion-item>`;
 const recordsLive = d => `${recordsLabel(recordsOf(d).length)} entre esos días`;
-const recordsValidate = d => [...(date(d.from) ? [] : ['from']), ...(date(d.to) && d.to >= d.from ? [] : ['to']), ...(d.dose.trim() === '' || amount(d.dose) ? [] : ['dose'])];
+const recordsValidate = d => failing([['from', date(d.from)], ['to', date(d.to) && d.to >= d.from], ['dose', d.dose.trim() === '' || amount(d.dose)]]);
 const recordsChanges = d => Object.fromEntries(['name', 'dose', 'notes'].map(k => [k, d[k].trim()]).filter(([, v]) => v));
 const recordsBrief = d => `${d.product} · ${recordsLabel(recordsOf(d).length)} · ${shortDate(d.from)} – ${shortDate(d.to)}${d.timing ? ` · ${label(d.timing)}` : ''}`;
 const recordsText = d => { const c = recordsChanges(d), names = { name: 'nombre', dose: 'dosis', notes: 'indicaciones' }; return Object.entries(c).map(([k, v]) => `${names[k]} «${v}»`).join(', ') || 'sin cambios'; };
+// ---------- Assistant: dynamic UI (ui tool) ----------
+
 // Dynamic UI: sections (one list each) of elements built with Ionic components. Each element has a key;
 // its value (checked, chosen or typed) is stored in the draft, goes back to the assistant on apply and can be used
 // in action arguments as {{key}}. Actions (of checked or chosen elements, of a pressed button and the global
@@ -1027,7 +1049,7 @@ function uiDraft(a) {
   const sections = (Array.isArray(a.sections) ? a.sections : []).map(sec => ({ title: str(sec?.title).trim(), elements: (Array.isArray(sec?.elements) ? sec.elements : [])
     .filter(el => el && typeof el === 'object' && UI_TYPES.includes(el.type)).map(el => {
       const e = { type: el.type, key: str(el.key).trim() || `e${++n}`, label: str(el.label ?? el.text).trim(), detail: str(el.detail).trim(), placeholder: str(el.placeholder).trim(),
-        input: ['text', 'number', 'date', 'time'].includes(el.input) ? el.input : 'text', multiple: el.multiple === true, required: el.required === true, options: normOptions(el.options), action: normAction(el.action) };
+        input: INPUT_TYPES.includes(el.input) ? el.input : 'text', multiple: el.multiple === true, required: el.required === true, options: normOptions(el.options), action: normAction(el.action) };
       const has = v => e.options.some(o => o.value === v);
       if (e.type === 'check' || e.type === 'toggle') values[e.key] = el.checked === true || el.value === true;
       else if (e.type === 'radio') values[e.key] = has(str(el.value)) ? str(el.value) : e.options[0]?.value ?? '';
@@ -1041,21 +1063,22 @@ function uiDraft(a) {
 }
 const uiElements = d => d.sections.flatMap(sec => sec.elements);
 const uiSub = x => x.detail ? `<br><ion-text color="medium">${esc(x.detail)}</ion-text>` : '';
-const uiElement = (e, v) => ({
-  text: () => `<ion-item><ion-label class="ion-text-wrap"><h2>${esc(e.label)}</h2>${e.detail ? `<p>${esc(e.detail)}</p>` : ''}</ion-label></ion-item>`,
-  check: () => `<ion-item><ion-checkbox class="ion-text-wrap" data-ui="${esc(e.key)}" label-placement="end" justify="start" ${v ? 'checked' : ''}>${esc(e.label)}${uiSub(e)}</ion-checkbox></ion-item>`,
-  toggle: () => `<ion-item><ion-toggle class="ion-text-wrap" data-ui="${esc(e.key)}" ${v ? 'checked' : ''}>${esc(e.label)}${uiSub(e)}</ion-toggle></ion-item>`,
-  radio: () => `${e.label ? `<ion-item lines="none"><ion-label><p>${esc(e.label)}</p></ion-label></ion-item>` : ''}<ion-radio-group data-ui="${esc(e.key)}" value="${esc(v)}">${e.options.map(o =>
+const UI_ELEMENTS = {
+  text: (e, v) => `<ion-item><ion-label class="ion-text-wrap"><h2>${esc(e.label)}</h2>${e.detail ? `<p>${esc(e.detail)}</p>` : ''}</ion-label></ion-item>`,
+  check: (e, v) => `<ion-item><ion-checkbox class="ion-text-wrap" data-ui="${esc(e.key)}" label-placement="end" justify="start" ${v ? 'checked' : ''}>${esc(e.label)}${uiSub(e)}</ion-checkbox></ion-item>`,
+  toggle: (e, v) => `<ion-item><ion-toggle class="ion-text-wrap" data-ui="${esc(e.key)}" ${v ? 'checked' : ''}>${esc(e.label)}${uiSub(e)}</ion-toggle></ion-item>`,
+  radio: (e, v) => `${e.label ? `<ion-item lines="none"><ion-label><p>${esc(e.label)}</p></ion-label></ion-item>` : ''}<ion-radio-group data-ui="${esc(e.key)}" value="${esc(v)}">${e.options.map(o =>
     `<ion-item><ion-radio class="ion-text-wrap" value="${esc(o.value)}" label-placement="end" justify="start">${esc(o.label)}${uiSub(o)}</ion-radio></ion-item>`).join('')}</ion-radio-group>`,
-  chips: () => `<ion-item lines="none"><ion-label>${e.label ? `<p>${esc(e.label)}</p>` : ''}<p>${e.options.map(o => {
+  chips: (e, v) => `<ion-item lines="none"><ion-label>${e.label ? `<p>${esc(e.label)}</p>` : ''}<p>${e.options.map(o => {
     const on = e.multiple ? v.includes(o.value) : v === o.value;
-    return `<ion-chip data-chip="ui" data-ui="${esc(e.key)}" data-value="${esc(o.value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(o.label)}</ion-label></ion-chip>`; }).join('')}</p></ion-label></ion-item>`,
-  select: () => `<ion-item><ion-select data-ui="${esc(e.key)}" label="${esc(e.label)}" label-placement="stacked" interface="action-sheet" cancel-text="Cancelar" placeholder="${esc(e.placeholder || 'Elige')}" value="${esc(v)}">${e.options.map(o =>
+    return chipToggle('ui', o.value, o.label, on, `data-ui="${esc(e.key)}"`); }).join('')}</p></ion-label></ion-item>`,
+  select: (e, v) => `<ion-item><ion-select data-ui="${esc(e.key)}" label="${esc(e.label)}" label-placement="stacked" interface="action-sheet" cancel-text="Cancelar" placeholder="${esc(e.placeholder || 'Elige')}" value="${esc(v)}">${e.options.map(o =>
     `<ion-select-option value="${esc(o.value)}">${esc(o.label)}</ion-select-option>`).join('')}</ion-select></ion-item>`,
-  input: () => `<ion-item><ion-input data-ui="${esc(e.key)}" type="${e.input}" ${e.input === 'number' ? 'inputmode="numeric"' : ''} label="${esc(e.label)}" label-placement="stacked" placeholder="${esc(e.placeholder)}" value="${esc(v)}"></ion-input></ion-item>`,
-  textarea: () => `<ion-item><ion-textarea data-ui="${esc(e.key)}" label="${esc(e.label)}" label-placement="stacked" auto-grow="true" placeholder="${esc(e.placeholder)}" value="${esc(v)}"></ion-textarea></ion-item>`,
-  button: () => `<ion-item button="true" detail="false" data-ui-button="${esc(e.key)}"><ion-label color="primary" class="ion-text-wrap">${esc(e.label)}${e.detail ? `<p>${esc(e.detail)}</p>` : ''}</ion-label></ion-item>`,
-}[e.type]());
+  input: (e, v) => `<ion-item><ion-input data-ui="${esc(e.key)}" type="${e.input}" ${e.input === 'number' ? 'inputmode="numeric"' : ''} label="${esc(e.label)}" label-placement="stacked" placeholder="${esc(e.placeholder)}" value="${esc(v)}"></ion-input></ion-item>`,
+  textarea: (e, v) => `<ion-item><ion-textarea data-ui="${esc(e.key)}" label="${esc(e.label)}" label-placement="stacked" auto-grow="true" placeholder="${esc(e.placeholder)}" value="${esc(v)}"></ion-textarea></ion-item>`,
+  button: (e, v) => `<ion-item button="true" detail="false" data-ui-button="${esc(e.key)}"><ion-label color="primary" class="ion-text-wrap">${esc(e.label)}${e.detail ? `<p>${esc(e.detail)}</p>` : ''}</ion-label></ion-item>`,
+};
+const uiElement = (e, v) => UI_ELEMENTS[e.type](e, v);
 const uiBlocks = d => d.sections.map(sec => `${sec.title ? `<ion-list-header><ion-label>${esc(sec.title)}</ion-label></ion-list-header>` : ''}<ion-list inset="true">${sec.elements.map(e => uiElement(e, d.values[e.key])).join('')}</ion-list>`).join('');
 // An element's value, as text, for the assistant.
 const uiValue = (e, d) => {
@@ -1076,7 +1099,8 @@ const runAction = (name, a) => {
 };
 const FORMS = {
   ui: {
-    draft: uiDraft, title: d => d.title, button: d => d.confirm, blocks: uiBlocks,
+    draft: uiDraft, key: a => str(a.title).trim().toLowerCase(), missing: () => 'la interfaz no tiene ninguna sección con elementos válidos.', title: d => d.title, button: d => d.confirm, blocks: uiBlocks,
+    describe: d => uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos',
     brief: d => count(uiElements(d).filter(e => e.type !== 'text').length, 'elemento', 'elementos'),
     validate: d => uiElements(d).filter(e => (e.type === 'input' || e.type === 'textarea') && e.required && !str(d.values[e.key]).trim()).map(e => `@${e.key}`),
     apply: d => {
@@ -1092,13 +1116,13 @@ const FORMS = {
     },
   },
   create_product: {
-    draft: a => productDraft(EMPTY_PRODUCT, a),
-    title: () => 'Nuevo producto', brief: productBrief, fields: productFields, validate: productValidate,
+    draft: a => productDraft(EMPTY_PRODUCT, a), key: a => str(a.name).trim().toLowerCase(),
+    title: () => 'Nuevo producto', brief: productBrief, fields: productFields, validate: productValidate, describe: productDescribe,
     apply: d => { const v = productValues(d); state.products.push(newProduct(v)); return `Producto «${v.name}» creado`; },
   },
   edit_product: {
     draft: a => { const m = productOf(a.id); return m && { id: m.id, ...productDraft(m, a) }; },
-    title: d => `Cambiar el producto «${productOf(d.id)?.name ?? d.name}»`, brief: productBrief, fields: productFields, validate: productValidate,
+    title: d => `Cambiar el producto «${productOf(d.id)?.name ?? d.name}»`, brief: productBrief, fields: productFields, validate: productValidate, describe: productDescribe,
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
       updateProduct(m, productValues(d));
@@ -1107,13 +1131,13 @@ const FORMS = {
   },
   delete_product: {
     draft: a => { const m = productOf(a.id); return m && { id: m.id, name: m.name }; },
-    title: () => 'Borrar producto', danger: 'Borrar', brief: d => `${d.name} · se conservan sus tomas`,
+    title: () => 'Borrar producto', danger: 'Borrar', brief: d => `${d.name} · se conservan sus tomas`, describe: d => d.name,
     fields: d => `<ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>Sus tomas registradas se conservan.</p></ion-label></ion-item>`,
     validate: () => [],
     apply: d => { deleteProduct(d.id); return `Producto «${d.name}» borrado`; },
   },
   add_record: {
-    draft: recordDraft, title: () => 'Marcar toma', brief: recordBrief, fields: d => recordFields(d, true), validate: recordValidate,
+    draft: recordDraft, title: () => 'Marcar toma', brief: recordBrief, fields: d => recordFields(d, true), validate: recordValidate, describe: recordDescribe,
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
       if (!recordOf(d.id, d.timing, d.day)) addRecord(m, d.timing, d.day, d.time ? new Date(`${d.day}T${d.time.padStart(5, '0')}`) : new Date());
@@ -1121,14 +1145,16 @@ const FORMS = {
     },
   },
   remove_record: {
-    draft: recordDraft, title: () => 'Dejar pendiente', brief: recordBrief, fields: d => recordFields(d, false), validate: recordValidate,
+    draft: recordDraft, title: () => 'Dejar pendiente', brief: recordBrief, fields: d => recordFields(d, false), validate: recordValidate, describe: recordDescribe,
     apply: d => { removeRecord(d.id, d.timing, d.day); return `«${d.name}» pendiente en ${label(d.timing)} el ${shortDate(d.day)}`; },
   },
   edit_records: {
-    draft: recordsDraft, title: () => 'Corregir tomas', brief: recordsBrief, fields: recordsFields, live: recordsLive, validate: recordsValidate,
+    draft: recordsDraft, missing: () => `no hay ningún producto ni toma con ese id. ${existing()}`, title: () => 'Corregir tomas', brief: recordsBrief, fields: recordsFields, live: recordsLive, validate: recordsValidate,
+    describe: d => `${recordsLabel(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`,
     apply: d => { const rows = recordsOf(d), changes = recordsChanges(d); for (const e of rows) Object.assign(e, changes); return `${recordsLabel(rows.length)} de «${d.product}» ${rows.length === 1 ? 'cambiada' : 'cambiadas'}: ${recordsText(d)}`; },
   },
   edit_timing: {
+    missing: () => `no existe ese momento. ${existingTimings()}`,
     draft: a => { const ti = timingOf(a.id); return ti && { id: ti.id, name: str(a.name ?? ti.name), start: str(a.start ?? ti.start), end: str(a.end ?? ti.end), visible: typeof a.visible === 'boolean' ? a.visible : ti.visible }; },
     title: d => `Cambiar el momento «${label(d.id)}»`,
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
@@ -1136,10 +1162,13 @@ const FORMS = {
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" placeholder="Sin hora" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" placeholder="Sin hora" value="${esc(d.end)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>${chipToggle('visible', 'visible', 'Visible en la toma', d.visible)}</p></ion-label></ion-item>`,
-    validate: d => [...(hour(d.start) === null ? ['start'] : []), ...(hour(d.end) === null ? ['end'] : [])],
+    validate: d => failing([['start', hour(d.start) !== null], ['end', hour(d.end) !== null]]),
+    describe: d => `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`,
     apply: d => { Object.assign(timingOf(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Momento «${label(d.id)}» cambiado`; },
   },
 };
+
+// ---------- Assistant: deciding proposals ----------
 
 // Pending proposals of this turn: the assistant loop waits for the user to save or discard them.
 const resolvers = new Map();
@@ -1147,20 +1176,6 @@ let chatEpoch = 0, awaiting = false;
 const pendingProposals = () => chatView.filter(v => v.who === 'proposal' && v.status === 'pending');
 // The assistant is answered in text, never JSON, so it does not echo it to the user.
 const pushToolResult = (callId, content) => { if (!chat.some(m => m.role === 'tool' && m.tool_call_id === callId)) chat.push({ role: 'tool', tool_call_id: callId, content }); };
-// A proposal's final data, described as text for the assistant.
-function describe(name, d) {
-  if (name === 'create_product' || name === 'edit_product') {
-    const v = productValues(d);
-    return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
-      v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
-      v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${count(p.days, 'día', 'días')} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
-  }
-  if (name === 'add_record' || name === 'remove_record') return `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
-  if (name === 'edit_records') return `${recordsLabel(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`;
-  if (name === 'edit_timing') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
-  if (name === 'ui') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
-  return d.name;
-}
 function decide(v, saved) {
   if (v.status !== 'pending') return; // already decided (e.g. double tap on «Guardar»): never applied twice
   const form = FORMS[v.tool];
@@ -1168,7 +1183,7 @@ function decide(v, saved) {
     const summary = form.apply(v.draft);
     Object.assign(state, clean(state)); commit(); // normalise after an assistant write (timing orders, sorted schedules and records)
     v.status = 'saved'; v.text = summary ?? 'No se ha podido aplicar';
-    pushToolResult(v.id, summary ? `Has guardado la propuesta. ${summary}. Datos finales (con los cambios que hayas hecho): ${describe(v.tool, v.draft)}.` : 'No se ha podido aplicar: ya no existe.');
+    pushToolResult(v.id, summary ? `Has guardado la propuesta. ${summary}. Datos finales (con los cambios que hayas hecho): ${form.describe(v.draft)}.` : 'No se ha podido aplicar: ya no existe.');
   } else {
     v.status = 'discarded'; v.text = `${form.title(v.draft)}: propuesta descartada`;
     pushToolResult(v.id, 'Has descartado la propuesta; no se ha cambiado nada.');
@@ -1180,15 +1195,15 @@ function decide(v, saved) {
 // its own border even when the message is hidden, and the field shows two lines.
 const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24', from: 'Pon el día', to: 'Día igual o posterior a «Desde»', dose: 'Empieza por un número, o vacía' };
 const SCHEDULE_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero' };
+// The input of a failing check in a card: «@key» of a ui element, «field» or «field:row» of a schedule.
+const badField = (card, f) => { const [field, row] = f.split(':'); return !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-schedule-field="${field}"][data-row="${row}"]`); };
 function trySave(v, card) {
   if (v.status !== 'pending') return false;
   const bad = FORMS[v.tool].validate(v.draft);
   for (const f of bad) if (f.startsWith('timings:')) v.draft.schedules[Number(f.split(':')[1])].bad = true;
   if (card && bad.some(f => f.startsWith('timings:'))) { const parent = card.parentElement, key = card.dataset.proposal; refreshCard(card, v); card = parent.querySelector(`[data-proposal="${key}"]`); }
-  for (const f of bad) {
-    const [field, row] = f.split(':');
-    if (field === 'timings') continue;
-    const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-schedule-field="${field}"][data-row="${row}"]`);
+  for (const f of bad.filter(f => !f.startsWith('timings:'))) {
+    const [field, row] = f.split(':'), el = badField(card, f);
     if (!el) continue;
     el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : SCHEDULE_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
@@ -1197,6 +1212,8 @@ function trySave(v, card) {
   decide(v, true);
   return true;
 }
+
+// ---------- Assistant: Markdown and charts ----------
 
 // Markdown (marked) and charts (Chart.js) in replies: loaded from the CDN the first time the assistant opens.
 // The Markdown lets no HTML nor non-http(s) links through; a ```chart block with JSON
@@ -1243,6 +1260,8 @@ function drawCharts() {
   }
 }
 
+// ---------- Assistant: suggestions ----------
+
 // Suggestions: proposed by the model itself with a separate request (no tools) that gets all the data, the time
 // of day, the chat and what it can do. Stored in this browser and requested the first time (if none is stored;
 // also on app load, in the background), after each reply (cleared on send; half of the new ones follow the thread
@@ -1287,13 +1306,15 @@ function suggestionPool() {
 const localSuggestions = (count, exclude = []) => { const asked = new Set([...chat.filter(m => m.role === 'user').map(m => m.content), ...exclude]); return [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count); };
 // Stored ones are shown as is; if none, they are requested (and only the loading row shows meanwhile).
 function suggestions(count) {
-  if (!suggested.length && !suggestLoading) requestSuggestions(count, []);
+  if (!suggested.length && !suggestLoading) requestSuggestions(count);
   return suggested.length ? suggested : null;
 }
 // One request at a time: a reply to a superseded request is ignored; if the service takes over 25 s
 // or fails, the local pool is used.
 let suggestRequest = 0;
-function requestSuggestions(count, exclude) {
+const suggestCount = () => chatView.length ? 3 : 4;
+const resetSuggestions = () => { suggested = []; suggestRequest++; suggestLoading = null; };
+function requestSuggestions(count, exclude = []) {
   const id = ++suggestRequest;
   suggestLoading = askSuggestions(count, exclude).catch(() => localSuggestions(count, exclude)).then(list => {
     if (id !== suggestRequest) return;
@@ -1309,12 +1330,8 @@ async function askSuggestions(count, exclude) {
   const asked = chat.filter(m => m.role === 'user').map(m => m.content);
   const linked = recent.some(m => m.role === 'assistant') ? ` La mitad de ellas (${Math.ceil(count / 2)}) deben seguir el hilo de tu última respuesta y de la conversación: profundizar, detallar o actuar sobre lo que acabas de decir (por ejemplo, si has mostrado una tabla, pedir una gráfica, un detalle o un cambio sobre esos mismos datos); la otra mitad, libres: otras cosas útiles ahora mismo con sus datos.` : '';
   const question = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de productos, momentos, envases, costes, historial) y útiles según la hora del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
-  const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal: AbortSignal.timeout(25000),
-    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: question }] }),
-  });
-  if (!res.ok) throw new Error(`${res.status}`);
-  const text = String((await res.json()).choices?.[0]?.message?.content ?? ''), json = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1);
+  const message = await complete({ messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: question }] }, AbortSignal.timeout(25000));
+  const text = str(message?.content), json = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1);
   const list = [...new Set(JSON.parse(json).filter(q => typeof q === 'string').map(q => q.trim()).filter(q => q && q.length <= 140))].slice(0, count);
   if (!list.length) throw new Error('vacío');
   return list;
@@ -1325,7 +1342,14 @@ const suggestionList = qs => `
   <ion-list inset="true">${(qs ?? []).map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')
     }${suggestLoading || !qs ? '<ion-item lines="none"><ion-spinner slot="start" name="dots" color="medium"></ion-spinner><ion-label color="medium">Proponiendo sugerencias…</ion-label></ion-item>' : ''}</ion-list>`;
 
-const actionLine = (ok, text) => `<ion-list inset="true"><ion-item lines="none"><ion-icon slot="start" name="${ok ? 'checkmark-circle' : 'close-circle'}" color="${ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(text)}</ion-label></ion-item></ion-list>`;
+// ---------- Assistant: chat rendering ----------
+
+// Status line of a proposal or action (saved / discarded), as a row or as its own list.
+const statusItem = (ok, text, attrs = '') => `<ion-item ${attrs}><ion-icon slot="start" name="${ok ? 'checkmark-circle' : 'close-circle'}" color="${ok ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(text)}</ion-label></ion-item>`;
+const actionLine = (ok, text) => `<ion-list inset="true">${statusItem(ok, text, 'lines="none"')}</ion-list>`;
+// Body and save button of a proposal form, shared by the card and the edit view.
+const formBody = (form, d) => form.blocks ? form.blocks(d) : `<ion-list inset="true">${form.fields(d)}</ion-list>`;
+const saveText = (form, d) => form.danger ?? form.button?.(d) ?? 'Guardar';
 // Proposal card: title, editable fields and «Descartar» / «Guardar» (or «Borrar»); once saved or discarded,
 // it stays as a single line.
 const proposalCard = (v, i) => {
@@ -1333,25 +1357,26 @@ const proposalCard = (v, i) => {
   if (v.status !== 'pending') return actionLine(v.status === 'saved', v.text);
   return `<div data-proposal="${i}">
     <ion-list-header><ion-label>${esc(form.title(v.draft))}</ion-label></ion-list-header>
-    ${form.blocks ? form.blocks(v.draft) : `<ion-list inset="true">${form.fields(v.draft)}</ion-list>`}
+    ${formBody(form, v.draft)}
     <div class="proposal-actions">
       <ion-button fill="outline" color="medium" data-act="discard">Descartar</ion-button>
-      <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${form.danger ?? form.button?.(v.draft) ?? 'Guardar'}</ion-button>
+      <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${saveText(form, v.draft)}</ion-button>
     </div>
   </div>`;
 };
-const block = (v, i) => ({
-  user: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>${messageBar(i, true)}</ion-list>`,
-  assistant: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>${messageBar(i, false)}</ion-list>`,
-  action: () => actionLine(v.ok, v.text),
-  error: () => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
-  proposal: () => proposalCard(v, i),
-}[v.who]());
+const BLOCKS = {
+  user: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>${messageBar(i, true)}</ion-list>`,
+  assistant: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>${messageBar(i, false)}</ion-list>`,
+  action: (v, i) => actionLine(v.ok, v.text),
+  error: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
+  proposal: (v, i) => proposalCard(v, i),
+};
+const block = (v, i) => BLOCKS[v.who](v, i);
 // Several consecutive proposals (e.g. several products) are shown as a list: one row per proposal, which opens
 // in an edit view; saved or discarded ones stay as lines.
 const proposalRow = (v, i) => {
   const form = FORMS[v.tool];
-  if (v.status !== 'pending') return `<ion-item><ion-icon slot="start" name="${v.status === 'saved' ? 'checkmark-circle' : 'close-circle'}" color="${v.status === 'saved' ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(v.text)}</ion-label></ion-item>`;
+  if (v.status !== 'pending') return statusItem(v.status === 'saved', v.text);
   return `<ion-item button="true" data-open="${i}"><ion-icon slot="start" name="${v.bad ? 'alert-circle-outline' : 'create-outline'}" color="${v.bad ? 'danger' : 'primary'}"></ion-icon><ion-label class="ion-text-wrap"><h2 class="medium">${esc(form.title(v.draft))}</h2><p>${esc(form.brief(v.draft))}</p>${v.bad ? '<p><ion-text color="danger">Falta algún dato: ábrela para completarlo</ion-text></p>' : ''}</ion-label></ion-item>`;
 };
 const proposalList = idx => `
@@ -1377,15 +1402,18 @@ function chatBlocks() {
 const proposalEditor = $('#proposal-editor');
 let proposalEdit = null; // { i, v } with v a copy of the proposal
 const editBlock = (v, i) => `<div data-proposal="${i}" data-edit="">
-  ${FORMS[v.tool].blocks ? FORMS[v.tool].blocks(v.draft) : `<ion-list inset="true">${FORMS[v.tool].fields(v.draft)}</ion-list>`}
+  ${formBody(FORMS[v.tool], v.draft)}
   <ion-list inset="true"><ion-item button="true" detail="false" id="proposal-discard"><ion-label color="danger" class="ion-text-center">Descartar propuesta</ion-label></ion-item></ion-list>
 </div>`;
+// The proposal (card or edit view) an element belongs to, and its re-render in place.
+const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: 'edit' in card.dataset ? proposalEdit.v : chatView[Number(card.dataset.proposal)] }; };
+const refreshCard = (card, v) => { card.outerHTML = ('edit' in card.dataset ? editBlock : proposalCard)(v, Number(card.dataset.proposal)); };
 function openProposalEditor(i) {
   const v = chatView[i], form = FORMS[v.tool];
   proposalEdit = { i, v: { ...v, draft: structuredClone(v.draft) } };
   $('#proposal-title').textContent = form.title(v.draft);
-  Object.assign($('#proposal-save'), { textContent: form.danger ?? form.button?.(v.draft) ?? 'Guardar', color: form.danger ? 'danger' : '' });
-  $('#proposal-body').innerHTML = editBlock(proposalEdit.v, i);
+  Object.assign($('#proposal-save'), { textContent: saveText(form, v.draft), color: form.danger ? 'danger' : '' });
+  proposalBody.innerHTML = editBlock(proposalEdit.v, i);
   proposalEditor.present();
 }
 
@@ -1399,19 +1427,22 @@ function renderChat() {
     : emptyList(ready ? 'Pregunta sobre tus productos, tomas, consumos o costes. También puedo crear o cambiar datos: te lo propongo en un formulario que revisas y guardas.' : 'Configura el asistente en Productos › Asistente (URL base, API key y modelo).'))
     + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
       : awaiting ? emptyList('Guarda o descarta las propuestas para continuar; si envías otro mensaje, se descartan.')
-      : ready ? suggestionList(suggestions(chatView.length ? 3 : 4)) : '');
+      : ready ? suggestionList(suggestions(suggestCount())) : '');
   $('#chat-send').disabled = chatBusy || !ready;
   drawCharts();
   chatBody.scrollToBottom(200);
 }
 
-async function askModel() {
-  const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` },
-    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...chat], tools: tools() }),
-  });
+// ---------- Assistant: requests and the tool loop ----------
+
+// One request to the service; the reply's message, or an error with the status and the start of its text.
+async function complete(body, signal) {
+  const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal, body: JSON.stringify({ model: ai.model, ...body }) });
   if (!res.ok) throw new Error(`El servicio respondió ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const message = (await res.json()).choices?.[0]?.message;
+  return (await res.json()).choices?.[0]?.message;
+}
+async function askModel() {
+  const message = await complete({ messages: [{ role: 'system', content: systemPrompt() }, ...chat], tools: tools() });
   if (!message) throw new Error('El servicio no devolvió ninguna respuesta.');
   return message;
 }
@@ -1433,6 +1464,8 @@ function repairChat() {
 // What exists right now, so the assistant corrects itself when it refers to something missing.
 const existingTimings = () => `Los momentos que hay ahora son: ${state.timings.map(ti => `«${label(ti.id)}» (id ${ti.id})`).join(', ')}.`;
 const existing = () => state.products.length ? `Los productos que hay ahora son: ${state.products.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ningún producto: si hace falta, créalo.';
+// ---------- Assistant: message bar and «Texto» ----------
+
 // Last row of each message: icons to copy it, view it on a screen where text can be selected (on mobile
 // Ionic prevents it in the app) and, if it is yours, edit it (moves to the input box). Yours on the right,
 // the assistant's on the left.
@@ -1449,10 +1482,6 @@ const MESSAGE_ACTIONS = {
   },
   edit: v => { chatInput.value = v.text; chatInput.setFocus(); },
 };
-$('#text-close').onclick = () => textModal.dismiss();
-
-// The assistant can only be used with base URL, API key and model.
-const aiReady = () => !!(ai.url && ai.key && ai.model);
 
 // Sends the question and serves the tools the assistant asks for until it replies with text.
 async function sendChat() {
@@ -1468,7 +1497,7 @@ async function sendChat() {
   chat.push({ role: 'user', content: question });
   chatView.push({ who: 'user', text: question });
   // Suggestions are cleared; new ones are requested when the reply ends, so half of them follow its thread.
-  suggested = []; suggestRequest++; suggestLoading = null;
+  resetSuggestions();
   const epoch = chatEpoch;
   chatBusy = true; renderChat();
   try {
@@ -1482,11 +1511,11 @@ async function sendChat() {
       const waits = [], seen = new Set();
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-        const key = `${call.function.name} ${call.function.name === 'create_product' ? str(args.name).trim().toLowerCase() : call.function.name === 'ui' ? str(args.title).trim().toLowerCase() : [args.id, args.timing, args.day, args.from, args.to].map(str).join('|')}`;
+        const form = FORMS[call.function.name], key = `${call.function.name} ${form?.key?.(args) ?? [args.id, args.timing, args.day, args.from, args.to].map(str).join('|')}`;
         if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya has propuesto ese mismo cambio en este turno, no se propone otra vez.'); continue; }
         seen.add(key);
-        const form = FORMS[call.function.name], draft = form?.draft(args);
-        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${!form ? 'herramienta desconocida.' : call.function.name === 'ui' ? 'la interfaz no tiene ninguna sección con elementos válidos.' : call.function.name === 'edit_timing' ? `no existe ese momento. ${existingTimings()}` : call.function.name === 'edit_records' ? `no hay ningún producto ni toma con ese id. ${existing()}` : `no existe ningún producto con ese id. ${existing()}`}`); continue; }
+        const draft = form?.draft(args);
+        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${!form ? 'herramienta desconocida.' : form.missing?.() ?? `no existe ningún producto con ese id. ${existing()}`}`); continue; }
         chatView.push({ who: 'proposal', id: call.id, tool: call.function.name, draft, status: 'pending' });
         waits.push(new Promise(resolve => resolvers.set(call.id, resolve)));
       }
@@ -1499,11 +1528,14 @@ async function sendChat() {
   } catch (err) {
     chatView.push({ who: 'error', text: err.message });
   }
-  if (epoch === chatEpoch) requestSuggestions(3, []);
+  if (epoch === chatEpoch) requestSuggestions(3);
   chatBusy = false; renderChat();
 }
 
 // ---------- Wiring ----------
+
+// Close buttons of every modal.
+for (const [btn, modal] of [['#text-close', textModal], ['#close', manager], ['#shopping-close', shoppingModal], ['#paused-close', pausedModal], ['#history-close', historyModal], ['#view-close', viewModal], ['#schedule-cancel', scheduleEditor], ['#timing-cancel', timingEditor], ['#cancel', editor], ['#chat-close', chatModal], ['#proposal-cancel', proposalEditor]]) $(btn).onclick = () => modal.dismiss();
 
 function render() {
   renderTimingTabs();
@@ -1543,7 +1575,6 @@ $('#home').addEventListener('ionReorderEnd', e => {
 });
 
 $('#manage').onclick = () => { snapshotUpdated(); renderProducts(); manager.present(); };
-$('#close').onclick = () => manager.dismiss();
 $('#sort').onclick = () => {
   $('#list').disabled = !$('#list').disabled;
   $('#sort ion-icon').name = $('#list').disabled ? 'swap-vertical-outline' : 'checkmark-outline';
@@ -1551,9 +1582,7 @@ $('#sort').onclick = () => {
 $('#add').onclick = () => openEditor();
 $('#open-paused').onclick = () => pausedModal.present();
 $('#costs').addEventListener('click', e => { if (e.target.closest('#open-shopping')) openShopping(); });
-$('#shopping-close').onclick = () => shoppingModal.dismiss();
 $('#shopping-body').addEventListener('click', e => viewFrom(e, false));
-$('#paused-close').onclick = () => pausedModal.dismiss();
 $('#paused-list').addEventListener('click', e => {
   const id = e.target.closest('ion-item')?.dataset.id;
   if (id) openEditor(productOf(id));
@@ -1584,18 +1613,14 @@ $('#timings').addEventListener('click', e => {
   if (id) openTimingEditor(id);
 });
 $('#open-history').onclick = () => openHistory(editing);
-$('#history-close').onclick = () => historyModal.dismiss();
-$('#view-close').onclick = () => viewModal.dismiss();
 $('#view-edit').onclick = () => { viewModal.dismiss(); openEditor(productOf(viewing)); };
 $('#view-body').addEventListener('click', e => { if (e.target.closest('#view-history')) openHistory(viewing); });
 $('#schedule-list').addEventListener('click', e => {
   const i = e.target.closest('[data-schedule]')?.dataset.schedule;
   if (i) openSchedule(i === 'new' ? null : Number(i));
 });
-$('#schedule-cancel').onclick = () => scheduleEditor.dismiss();
 $('#schedule-save').onclick = saveSchedule;
 $('#schedule-delete').onclick = () => { schedules.splice(editingSchedule, 1); renderSchedules(); scheduleEditor.dismiss(); };
-$('#timing-cancel').onclick = () => timingEditor.dismiss();
 timingEditor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#timing-save').onclick = saveTimingEditor;
 for (const f of ['start', 'end']) timingField(f).addEventListener('ionInput', () => timingField(f).classList.remove('ion-invalid'));
@@ -1606,26 +1631,22 @@ $('#export').onclick = () => download('dosify.csv', exportCSV());
 $('#export-pdf').onclick = () => exportPDF(pdfMonth.value);
 $('#clear-records').onclick = () => ask('¿Borrar todas las tomas registradas?', () => { state.records = []; commit(); });
 
-$('#cancel').onclick = () => editor.dismiss();
 editor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#save').onclick = saveEditor;
 $('#delete').onclick = () => ask('¿Eliminar este producto?', () => { deleteProduct(editing); commit(); editor.dismiss(); });
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
-$('#chat-close').onclick = () => chatModal.dismiss();
-$('#chat-new').onclick = () => { chatEpoch++; suggested = []; suggestRequest++; suggestLoading = null; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
+$('#chat-new').onclick = () => { chatEpoch++; resetSuggestions(); for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
 // Interaction with the chat: suggestions and «Más», message icons, proposal rows (open the edit view), proposal fields
 // (written to the draft), chips (timings, schedules, visible, ui elements) and buttons (ui buttons, save, discard, all).
-const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: 'edit' in card.dataset ? proposalEdit.v : chatView[Number(card.dataset.proposal)] }; };
-const refreshCard = (card, v) => { card.outerHTML = ('edit' in card.dataset ? editBlock : proposalCard)(v, Number(card.dataset.proposal)); };
 // UI elements: checkboxes, toggles, radios and selects write their value to the draft.
-for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionChange', e => {
+for (const root of chatRoots) root.addEventListener('ionChange', e => {
   const p = proposalOf(e.target), key = e.target.dataset.ui; if (!p || p.v.tool !== 'ui' || key === undefined) return;
   p.v.draft.values[key] = 'checked' in e.detail ? e.detail.checked : String(e.detail.value ?? '');
   saveChat();
 });
-for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionInput', e => {
+for (const root of chatRoots) root.addEventListener('ionInput', e => {
   const p = proposalOf(e.target); if (!p) return;
   const { field, scheduleField, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
   if (ui !== undefined) p.v.draft.values[ui] = value;
@@ -1634,8 +1655,8 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('ionIn
   e.target.classList.remove('ion-invalid'); e.target.errorText = undefined;
   saveChat();
 });
-for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click', e => {
-  if (e.target.closest('#suggest-more')) { if (!suggestLoading) { const prev = suggested; suggested = []; requestSuggestions(chatView.length ? 3 : 4, prev); } return renderChat(); }
+for (const root of chatRoots) root.addEventListener('click', e => {
+  if (e.target.closest('#suggest-more')) { if (!suggestLoading) { const prev = suggested; resetSuggestions(); requestSuggestions(suggestCount(), prev); } return renderChat(); }
   const msg = e.target.closest('[data-msg-act]');
   if (msg) return MESSAGE_ACTIONS[msg.dataset.msgAct](chatView[Number(msg.dataset.msg)]);
   const q = e.target.closest('[data-suggest]')?.dataset.suggest;
@@ -1661,14 +1682,13 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   if (kind === 'remove-schedule') { d.schedules.splice(Number(row), 1); refreshCard(p.card, p.v); }
   saveChat();
 });
-$('#proposal-cancel').onclick = () => proposalEditor.dismiss();
 $('#proposal-save').onclick = () => {
   const real = chatView[proposalEdit.i], card = $('#proposal-body [data-proposal]');
   if (!trySave(proposalEdit.v, card)) { proposalEdit.v.draft.pressed = null; return; }
   real.draft = proposalEdit.v.draft; real.status = proposalEdit.v.status; real.text = proposalEdit.v.text; delete real.bad;
   proposalEditor.dismiss(); renderChat();
 };
-$('#proposal-body').addEventListener('click', e => { if (e.target.closest('#proposal-discard')) { decide(chatView[proposalEdit.i], false); proposalEditor.dismiss(); renderChat(); } });
+proposalBody.addEventListener('click', e => { if (e.target.closest('#proposal-discard')) { decide(chatView[proposalEdit.i], false); proposalEditor.dismiss(); renderChat(); } });
 // Enter sends; Shift + Enter inserts a line break.
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 
@@ -1691,6 +1711,6 @@ renderTimingTabs();
 $('#timing').value = timingNow();
 render();
 // On load, if the assistant is configured and no suggestions are stored, they are requested in the background.
-if (aiReady()) setTimeout(() => { if (!suggestLoading && !suggested.length) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);
+if (aiReady()) setTimeout(() => { if (!suggestLoading && !suggested.length) requestSuggestions(suggestCount()); }, 1500);
 // On load, today (the last day) is always in view.
 $('#day').componentOnReady().then(() => requestAnimationFrame(() => { $('#day').scrollLeft = $('#day').scrollWidth; }));
