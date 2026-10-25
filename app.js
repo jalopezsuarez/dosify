@@ -430,8 +430,8 @@ const per = (n, unit) => `${euros(n, Number.isInteger(n) ? 0 : 2).replace(/\s*�
 const supplyColor = id => { const m = productOf(id); return m && figures(m).soon ? 'rose' : 'teal'; };
 // «12/04 · Dentro de 3 semanas», for Próximas compras and the product view; without units or schedule, nothing.
 const purchaseText = m => { const f = figures(m); return f.end ? `<ion-text ${f.soon ? 'color="rose"' : ''}>${shortDate(f.end)} · ${until(f.daysLeft)}</ion-text>` : ''; };
-const purchaseRow = m => `<ion-item>${readLabel('Fecha estimada de compra', m ? purchaseText(m) : '', true)}</ion-item>`;
-// Container end («5/01», the same day as «Fecha estimada de compra») on the right of the product row, level with the
+const purchaseRow = m => `<ion-item>${readLabel('Próxima compra (estimada)', m ? purchaseText(m) : '', true)}</ion-item>`;
+// Container end («5/01», the same day as «Próxima compra (estimada)») on the right of the product row, level with the
 // name: grey; rose and medium weight if it runs out soon.
 const endNote = id => {
   const m = productOf(id), f = m && figures(m);
