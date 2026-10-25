@@ -1,19 +1,19 @@
 const KEY = 'dosify';
 // Modelo:
-// · intervals: los de DEFAULT_INTERVALS (para tener más basta añadir otro allí), siempre en ese orden fijo:
+// · moments: los de DEFAULT_MOMENTS (para tener más basta añadir otro allí), siempre en ese orden fijo:
 //   { id, name, start, end (horas), visible, order: [ids de pauta en el orden de tomas] }
 // · meds: pautas, en el orden de pautas: { id, name, notes (indicaciones), refs (referencias), memo (notas),
 //   cost (€ por envase) y units (dosis por envase), enteros o vacíos, y plan: [programaciones { dose (empieza por la
-//   cantidad de cada toma), start, days, slots: [ids de los intervalos en que se toma; al menos uno] }]. Sin
+//   cantidad de cada toma), start, days, moments: [ids de los momentos en que se toma; al menos uno] }]. Sin
 //   programaciones, una pauta no sale en la toma.
-// · log: tomas: { at, day, id (de la pauta), slot (id de intervalo), name, dose, notes (la pauta tal como se tomó) }
-const DEFAULT_INTERVALS = [
-  { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
-  { id: 'i2', name: 'Almuerzo', start: 12, end: 18, visible: true, order: [] },
-  { id: 'i3', name: 'Cena', start: 18, end: 24, visible: true, order: [] },
-  { id: 'i4', name: 'Demanda', start: '', end: '', visible: true, order: [] },
+// · log: tomas: { at, day, id (de la pauta), moment (id de momento), name, dose, notes (la pauta tal como se tomó) }
+const DEFAULT_MOMENTS = [
+  { id: 'm1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
+  { id: 'm2', name: 'Almuerzo', start: 12, end: 18, visible: true, order: [] },
+  { id: 'm3', name: 'Cena', start: 18, end: 24, visible: true, order: [] },
+  { id: 'm4', name: 'Demanda', start: '', end: '', visible: true, order: [] },
 ];
-const IDS = DEFAULT_INTERVALS.map(iv => iv.id);
+const MOMENT_IDS = DEFAULT_MOMENTS.map(mo => mo.id);
 const newId = () => crypto.randomUUID().slice(0, 8);
 const TEXT = ['name', 'notes', 'refs', 'memo'];
 const SEP = ';';
@@ -44,56 +44,56 @@ const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' 
 // Cantidad de cada toma: el número con que empieza la dosis («1 comprimido», «0,5 ml»); 0 si no empieza por número.
 const amount = dose => Number(String(dose).match(/^\s*(\d+(?:[.,]\d+)?)/)?.[1].replace(',', '.')) || 0;
 // Programaciones válidas (dosis con número, fecha y duración), en orden de fecha de inicio y, a igual fecha, de duración.
-// Programaciones válidas (dosis con número, fecha, duración y al menos un intervalo), en orden de fecha de inicio y,
+// Programaciones válidas (dosis con número, fecha, duración y al menos un momento), en orden de fecha de inicio y,
 // a igual fecha, de duración; las incompletas se descartan.
-const cleanPlan = v => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, slots: IDS.filter(id => list(p.slots).includes(id)) } : null)
-  .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.slots.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
+const cleanPlan = v => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, moments: MOMENT_IDS.filter(id => list(p.moments).includes(id)) } : null)
+  .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.moments.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   const meds = arr(raw?.meds).filter(m => text(m.id) && text(m.name)).map(m => ({
     id: m.id, name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
     cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', plan: cleanPlan(m.plan),
   }));
-  // Los intervalos van siempre en el orden fijo de DEFAULT_INTERVALS; de lo guardado se toman nombre, horas, visibilidad y orden de tomas.
-  const saved = arr(raw?.intervals);
-  const intervals = DEFAULT_INTERVALS.map(d => {
-    const iv = saved.find(x => x.id === d.id) ?? d;
-    return { id: d.id, name: typeof iv.name === 'string' ? iv.name : d.name, start: hour(iv.start) ?? d.start,
-      end: hour(iv.end) ?? d.end, visible: typeof iv.visible === 'boolean' ? iv.visible : d.visible, order: list(iv.order).filter(id => meds.some(m => m.id === id)) };
+  // Los momentos van siempre en el orden fijo de DEFAULT_MOMENTS; de lo guardado se toman nombre, horas, visibilidad y orden de tomas.
+  const saved = arr(raw?.moments);
+  const moments = DEFAULT_MOMENTS.map(d => {
+    const mo = saved.find(x => x.id === d.id) ?? d;
+    return { id: d.id, name: typeof mo.name === 'string' ? mo.name : d.name, start: hour(mo.start) ?? d.start,
+      end: hour(mo.end) ?? d.end, visible: typeof mo.visible === 'boolean' ? mo.visible : d.visible, order: list(mo.order).filter(id => meds.some(m => m.id === id)) };
   });
-  const log = arr(raw?.log).filter(e => date(e.day) && IDS.includes(e.slot) && !isNaN(new Date(e.at)))
-    .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, slot: e.slot, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
+  const log = arr(raw?.log).filter(e => date(e.day) && MOMENT_IDS.includes(e.moment) && !isNaN(new Date(e.at)))
+    .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, moment: e.moment, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
     .sort((a, b) => b.at.localeCompare(a.at));
-  return { intervals, meds, log };
+  return { moments, meds, log };
 }
 const stored = (() => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } })();
 const state = clean(stored);
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 
-// ---------- Intervalos ----------
+// ---------- Momentos ----------
 
-const interval = id => state.intervals.find(iv => iv.id === id);
+const momentOf = id => state.moments.find(mo => mo.id === id);
 const med = id => state.meds.find(m => m.id === id);
-const visibleIntervals = () => state.intervals.filter(iv => iv.visible);
-const hours = iv => iv.start !== '' && iv.end !== '' ? `${iv.start}–${iv.end} h` : iv.start !== '' ? `desde las ${iv.start} h` : iv.end !== '' ? `hasta las ${iv.end} h` : '';
-const label = id => { const iv = interval(id); return iv.name || hours(iv) || 'Sin nombre'; };
-// ¿La hora h cae en el intervalo? Admite intervalos que pasan de medianoche (p. ej. 22–6).
-const within = (iv, h) => iv.start === '' || iv.end === '' ? false : iv.start <= iv.end ? h >= iv.start && h < iv.end : h >= iv.start || h < iv.end;
-// Intervalo que se abre al cargar: el visible que incluye la hora actual; si ninguno, el próximo en empezar; si no, el primero.
-// De una lista de intervalos, el de ahora: el que incluye la hora actual; si ninguno, el próximo en empezar; si no
+const visibleMoments = () => state.moments.filter(mo => mo.visible);
+const hours = mo => mo.start !== '' && mo.end !== '' ? `${mo.start}–${mo.end} h` : mo.start !== '' ? `desde las ${mo.start} h` : mo.end !== '' ? `hasta las ${mo.end} h` : '';
+const label = id => { const mo = momentOf(id); return mo.name || hours(mo) || 'Sin nombre'; };
+// ¿La hora h cae en el momento? Admite momentos que pasan de medianoche (p. ej. 22–6).
+const within = (mo, h) => mo.start === '' || mo.end === '' ? false : mo.start <= mo.end ? h >= mo.start && h < mo.end : h >= mo.start || h < mo.end;
+// Momento que se abre al cargar: el visible que incluye la hora actual; si ninguno, el próximo en empezar; si no, el primero.
+// De una lista de momentos, el de ahora: el que incluye la hora actual; si ninguno, el próximo en empezar; si no
 // tienen horas, el primero.
-function intervalNow(list = visibleIntervals()) {
+function momentNow(list = visibleMoments()) {
   const h = new Date().getHours();
-  const next = list.filter(iv => iv.start !== '').sort((a, b) => (a.start - h + 24) % 24 - (b.start - h + 24) % 24)[0];
-  return (list.find(iv => within(iv, h)) ?? next ?? list[0])?.id ?? '';
+  const next = list.filter(mo => mo.start !== '').sort((a, b) => (a.start - h + 24) % 24 - (b.start - h + 24) % 24)[0];
+  return (list.find(mo => within(mo, h)) ?? next ?? list[0])?.id ?? '';
 }
-const selectedSlot = () => $('#slot').value;
+const selectedMoment = () => $('#moment').value;
 
 const addDays = (key, n) => { const d = fromKey(key); d.setDate(d.getDate() + n); return dayKey(d); };
 const selectedDay = () => $('#day').value || today();
-// Orden de tomas de un intervalo: su lista «order»; las pautas que no están en ella van detrás, en el orden de pautas.
-const pos = (m, slot) => { const i = interval(slot).order.indexOf(m.id); return i < 0 ? Infinity : i; };
-const bySlot = (meds, slot) => [...meds].sort((a, b) => pos(a, slot) - pos(b, slot));
+// Orden de tomas de un momento: su lista «order»; las pautas que no están en ella van detrás, en el orden de pautas.
+const pos = (m, moment) => { const i = momentOf(moment).order.indexOf(m.id); return i < 0 ? Infinity : i; };
+const byMoment = (meds, moment) => [...meds].sort((a, b) => pos(a, moment) - pos(b, moment));
 // Programación de un día: la última que empezó ese día o antes (una fecha de inicio posterior corta a la anterior),
 // si su duración llega a ese día. Una pauta con programaciones solo sale en la toma los días que alguna cubre, y con
 // su dosis; sin programaciones, todos los días, sin dosis.
@@ -101,10 +101,10 @@ const planEnd = p => addDays(p.start, p.days - 1);
 const planOn = (m, day) => { const p = m.plan.filter(p => p.start <= day).at(-1); return p && day <= planEnd(p) ? p : null; };
 const onDay = (m, day) => !!planOn(m, day);
 const doseOn = (m, day) => planOn(m, day)?.dose ?? '';
-// Intervalos que valen un día: los de la programación de ese día (o, si ninguna vale, los de la última); sin
+// Momentos que valen un día: los de la programación de ese día (o, si ninguna vale, los de la última); sin
 // programaciones, ninguno.
-const slotsOn = (m, day) => (planOn(m, day) ?? m.plan.at(-1))?.slots ?? [];
-const doses = (slot, day = selectedDay()) => bySlot(state.meds.filter(m => slotsOn(m, day).includes(slot) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), slot);
+const momentsOn = (m, day) => (planOn(m, day) ?? m.plan.at(-1))?.moments ?? [];
+const doses = (moment, day = selectedDay()) => byMoment(state.meds.filter(m => momentsOn(m, day).includes(moment) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), moment);
 // Cada toma guarda nombre, dosis e indicaciones de la pauta al tomarla; así el registro muestra lo que se tomó aunque la
 // pauta cambie o se borre.
 const SNAP = ['name', 'dose', 'notes'];
@@ -112,24 +112,24 @@ const EDITED = ['name', 'notes']; // lo que el editor de pauta cambia de lo que 
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
 const snapOn = (m, day) => ({ ...snap(m), dose: doseOn(m, day) }); // la pauta tal como se toma ese día
 const takenAs = e => ({ id: e.id, ...snap(e) });
-// Filas de un día e intervalo: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
-// no están en el intervalo o se borraron).
-function dayRows(slot, day) {
-  const entries = state.log.filter(e => e.day === day && e.slot === slot);
-  const pending = doses(slot, day).filter(m => !entries.some(e => e.id === m.id));
+// Filas de un día e momento: pendientes (pautas vigentes sin toma) y tomadas (sus tomas, también las de pautas que ya
+// no están en el momento o se borraron).
+function dayRows(moment, day) {
+  const entries = state.log.filter(e => e.day === day && e.moment === moment);
+  const pending = doses(moment, day).filter(m => !entries.some(e => e.id === m.id));
   return { pending, taken: entries.map(e => ({ ...takenAs(e), entry: e })) };
 }
 
 // ---------- Toma ----------
 
 // Marcar una toma la añade al registro con la pauta tal como está ese día; desmarcarla la quita.
-function toggle(id, slot, checked) {
+function toggle(id, moment, checked) {
   const day = selectedDay();
   if (checked) {
-    state.log.unshift({ at: new Date().toISOString(), day, id, slot, ...snapOn(med(id), day) });
+    state.log.unshift({ at: new Date().toISOString(), day, id, moment, ...snapOn(med(id), day) });
     state.log.length = Math.min(state.log.length, LOG_MAX);
   } else {
-    state.log = state.log.filter(e => !(e.day === day && String(e.id) === id && e.slot === slot));
+    state.log = state.log.filter(e => !(e.day === day && String(e.id) === id && e.moment === moment));
   }
   save();
   render();
@@ -154,7 +154,7 @@ function renderDays() {
   const keys = [...new Set([...logged, ...recent, $('#day').value].filter(Boolean))].sort();
   $('#day').innerHTML = keys.map(key => {
     const d = fromKey(key);
-    const rows = visibleIntervals().map(iv => dayRows(iv.id, key));
+    const rows = visibleMoments().map(mo => dayRows(mo.id, key));
     const done = rows.reduce((n, r) => n + r.taken.length, 0), total = rows.reduce((n, r) => n + r.taken.length + r.pending.length, 0);
     return `
       <ion-segment-button value="${key}" layout="icon-bottom">
@@ -164,16 +164,16 @@ function renderDays() {
   }).join('');
 }
 
-// Pestañas de intervalos visibles, en su orden. Solo se repintan si cambian; si el elegido deja de verse, se abre el de ahora.
-let slotsHtml = '';
-// Pestañas de la toma: solo los intervalos visibles con algo ese día (alguna pauta pendiente o toma hecha). Si el
+// Pestañas de momentos visibles, en su orden. Solo se repintan si cambian; si el elegido deja de verse, se abre el de ahora.
+let momentTabsHtml = '';
+// Pestañas de la toma: solo los momentos visibles con algo ese día (alguna pauta pendiente o toma hecha). Si el
 // seleccionado deja de estar, pasa al de ahora entre los que quedan.
-const daySlots = day => visibleIntervals().filter(iv => { const r = dayRows(iv.id, day); return r.pending.length || r.taken.length; });
-function renderSlots() {
-  const slots = daySlots(selectedDay());
-  const html = slots.map(iv => `<ion-segment-button value="${iv.id}"><ion-label>${esc(label(iv.id))}</ion-label></ion-segment-button>`).join('');
-  if (html !== slotsHtml) $('#slot').innerHTML = slotsHtml = html;
-  if (!slots.some(iv => iv.id === $('#slot').value)) $('#slot').value = intervalNow(slots);
+const dayMoments = day => visibleMoments().filter(mo => { const r = dayRows(mo.id, day); return r.pending.length || r.taken.length; });
+function renderMomentTabs() {
+  const moments = dayMoments(selectedDay());
+  const html = moments.map(mo => `<ion-segment-button value="${mo.id}"><ion-label>${esc(label(mo.id))}</ion-label></ion-segment-button>`).join('');
+  if (html !== momentTabsHtml) $('#moment').innerHTML = momentTabsHtml = html;
+  if (!moments.some(mo => mo.id === $('#moment').value)) $('#moment').value = momentNow(moments);
 }
 
 // Texto de una pauta: nombre (medio), dosis (texto principal) e indicaciones (gris, recortadas a unas dos líneas).
@@ -188,9 +188,9 @@ const viewButton = id => `
         <ion-icon slot="icon-only" name="information-circle" color="${med(id) ? supplyColor(id) : 'medium'}" size="large"></ion-icon>
       </ion-button>`;
 // Fila de una toma. Si ya está tomada, muestra la hora junto a la dosis; al ordenar, el (i) deja sitio al asa.
-const doseItem = (m, slot, entry, sorting) => `
+const doseItem = (m, moment, entry, sorting) => `
     <ion-item data-id="${m.id}">
-      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-slot="${slot}" ${entry ? 'checked' : ''} ${sorting ? 'disabled' : ''}></ion-checkbox>
+      <ion-checkbox slot="start" aria-label="${esc(m.name)}" data-id="${m.id}" data-moment="${moment}" ${entry ? 'checked' : ''} ${sorting ? 'disabled' : ''}></ion-checkbox>
       <ion-label class="ion-text-wrap">
         <h2 class="medium">${esc(m.name)}</h2>
         ${doseLine([entry && time(entry.at), m.dose].filter(Boolean).join(' · '))}
@@ -199,12 +199,12 @@ const doseItem = (m, slot, entry, sorting) => `
       ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : viewButton(m.id)}
     </ion-item>`;
 // Cada toma va en su propia lista inset: filas independientes.
-const doseRow = (m, slot, entry) => `<ion-list inset="true">${doseItem(m, slot, entry)}</ion-list>`;
+const doseRow = (m, moment, entry) => `<ion-list inset="true">${doseItem(m, moment, entry)}</ion-list>`;
 
 // Botón de la cabecera de una sección (Pendiente, Tomas).
 const headerButton = (id, icon, label) => `<ion-button id="${id}" fill="clear" aria-label="${label}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
 
-// «Pendiente»: su botón activa el modo ordenar; el orden que se fije vale para ese intervalo en cualquier día.
+// «Pendiente»: su botón activa el modo ordenar; el orden que se fije vale para ese momento en cualquier día.
 let sortingPending = false;
 
 // «Tomas»: su botón abre un action sheet para elegir el orden; el icono muestra el elegido.
@@ -231,21 +231,21 @@ const chooseOrder = () => sheet('Ordenar tomas', Object.entries(ORDERS).map(([ke
 // Posición en el orden de pautas; las tomas de pautas borradas van al final.
 const medIndex = id => { const i = state.meds.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
 const byPautas = (a, b) => (medIndex(a.id) - medIndex(b.id)) || 0;
-const sortTaken = (rows, slot) => [...rows].sort(
-  order === 'tomas' ? (a, b) => (pos(a, slot) - pos(b, slot)) || byPautas(a, b)
+const sortTaken = (rows, moment) => [...rows].sort(
+  order === 'tomas' ? (a, b) => (pos(a, moment) - pos(b, moment)) || byPautas(a, b)
   : order === 'pautas' ? byPautas
   : (a, b) => a.entry.at.localeCompare(b.entry.at) * (order === 'oldest' ? 1 : -1));
 
 // Mueve un elemento de la posición «from» a «to» (detalle de ionReorderEnd; «to» falta si no se movió).
 const move = (list, { from, to = from }) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l; };
 
-// Ordenar «Pendiente» mueve esas pautas entre los huecos que ocupan en el intervalo (las ya tomadas no se mueven)
-// y guarda el orden completo del intervalo.
-function reorderPending(slot, moved) {
-  const all = bySlot(state.meds.filter(m => slotsOn(m, selectedDay()).includes(slot)), slot);
+// Ordenar «Pendiente» mueve esas pautas entre los huecos que ocupan en el momento (las ya tomadas no se mueven)
+// y guarda el orden completo del momento.
+function reorderPending(moment, moved) {
+  const all = byMoment(state.meds.filter(m => momentsOn(m, selectedDay()).includes(moment)), moment);
   const ids = new Set(moved.map(m => m.id));
   let i = 0;
-  interval(slot).order = all.map(m => ids.has(m.id) ? moved[i++].id : m.id);
+  momentOf(moment).order = all.map(m => ids.has(m.id) ? moved[i++].id : m.id);
   save();
 }
 
@@ -263,10 +263,10 @@ const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
 async function renderToma() {
   const day = selectedDay();
-  const slot = selectedSlot();
-  if (!slot) { $('#toma').innerHTML = emptyList(visibleIntervals().length ? 'Nada que tomar este día.' : 'No hay intervalos visibles. Actívalos en Pautas › Intervalos.'); return; }
-  const { pending, taken: takenRows } = dayRows(slot, day);
-  const taken = sortTaken(takenRows, slot);
+  const moment = selectedMoment();
+  if (!moment) { $('#toma').innerHTML = emptyList(visibleMoments().length ? 'Nada que tomar este día.' : 'No hay momentos visibles. Actívalos en Pautas › Momentos.'); return; }
+  const { pending, taken: takenRows } = dayRows(moment, day);
+  const taken = sortTaken(takenRows, moment);
   const done = taken.length, total = pending.length + taken.length;
   const date = fromKey(day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -286,13 +286,13 @@ async function renderToma() {
       ${headerButton('pending-sort', sortingPending ? 'checkmark-outline' : 'swap-vertical-outline', sortingPending ? 'Terminar de ordenar' : 'Ordenar')}
     </ion-list-header>
     ${!pending.length ? emptyList('Nada pendiente.') : sortingPending
-      ? `<ion-list inset="true"><ion-reorder-group id="pending-list" disabled="false">${pending.map(m => doseItem(m, slot, null, true)).join('')}</ion-reorder-group></ion-list>`
-      : pending.map(m => doseRow(m, slot)).join('')}
+      ? `<ion-list inset="true"><ion-reorder-group id="pending-list" disabled="false">${pending.map(m => doseItem(m, moment, null, true)).join('')}</ion-reorder-group></ion-list>`
+      : pending.map(m => doseRow(m, moment)).join('')}
     <ion-list-header>
       <ion-label>Tomas</ion-label>
       ${headerButton('toma-sort', ORDERS[order].icon, ORDERS[order].label)}
     </ion-list-header>
-    ${taken.map(m => doseRow(m, slot, m.entry)).join('') || emptyList('Sin tomas.')}`; });
+    ${taken.map(m => doseRow(m, moment, m.entry)).join('') || emptyList('Sin tomas.')}`; });
 }
 
 // ---------- Pautas ----------
@@ -301,11 +301,11 @@ const manager = $('#manager');
 // Una pauta está inactiva si no tiene programación vigente ni futura (también si no tiene ninguna): va en la lista
 // de inactivas, en gris, sin costes.
 const finished = m => !planOn(m, today()) && !m.plan.some(p => p.start > today());
-// Línea de la programación en la lista: la dosis y los intervalos visibles, separados por puntos («1 cápsula ·
+// Línea de la programación en la lista: la dosis y los momentos visibles, separados por puntos («1 cápsula ·
 // Desayuno · Almuerzo»), de la programación de hoy (o de la última); sin programaciones, «Sin programación».
-const planText = m => { const p = planOn(m, today()) ?? m.plan.at(-1); return p ? [p.dose, ...p.slots.filter(id => interval(id).visible).map(label)].map(esc).join(' · ') : 'Sin programación'; };
+const planText = m => { const p = planOn(m, today()) ?? m.plan.at(-1); return p ? [p.dose, ...p.moments.filter(id => momentOf(id).visible).map(label)].map(esc).join(' · ') : 'Sin programación'; };
 
-// Fila de una pauta: nombre (con el fin del envase a la derecha), la programación de hoy (dosis e intervalos), las
+// Fila de una pauta: nombre (con el fin del envase a la derecha), la programación de hoy (dosis e momentos), las
 // indicaciones en gris y los costes.
 const pautaRow = m => finished(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
@@ -328,8 +328,8 @@ const pautaRow = m => finished(m) ? `
   </ion-item>`;
 
 // Costes y envase. Las dosis al día son la cantidad de la dosis de hoy (la de su programación, si la hay) por cada
-// intervalo visible de la pauta.
-const perDayUnits = m => amount(doseOn(m, today())) * slotsOn(m, today()).filter(id => interval(id).visible).length;
+// momento visible de la pauta.
+const perDayUnits = m => amount(doseOn(m, today())) * momentsOn(m, today()).filter(id => momentOf(id).visible).length;
 const perDay = m => m.cost / m.units * perDayUnits(m);
 const monthDays = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
 const euros = (n, digits = 2) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -419,17 +419,17 @@ function renderPautas() {
   $('#finished-list').innerHTML = done.map(pautaRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay pautas inactivas.');
 }
 
-// Intervalos: casilla de visible a la izquierda, asa de ordenar a la derecha; tocar la fila abre su editor.
-const intervalRow = iv => `
-  <ion-item detail="false" data-interval="${iv.id}">
-    <ion-checkbox slot="start" aria-label="Visible" data-interval="${iv.id}" ${iv.visible ? 'checked' : ''}></ion-checkbox>
-    <ion-label ${iv.visible ? '' : 'color="medium"'}>
-      <h2 class="medium">${esc(label(iv.id))}</h2>
-      <p>${hours(iv) || 'Sin horas'}</p>
+// Momentos: casilla de visible a la izquierda, asa de ordenar a la derecha; tocar la fila abre su editor.
+const momentRow = mo => `
+  <ion-item detail="false" data-moment="${mo.id}">
+    <ion-checkbox slot="start" aria-label="Visible" data-moment="${mo.id}" ${mo.visible ? 'checked' : ''}></ion-checkbox>
+    <ion-label ${mo.visible ? '' : 'color="medium"'}>
+      <h2 class="medium">${esc(label(mo.id))}</h2>
+      <p>${hours(mo) || 'Sin horas'}</p>
     </ion-label>
   </ion-item>`;
 
-const renderIntervals = () => { $('#intervals').innerHTML = state.intervals.map(intervalRow).join(''); };
+const renderMomentRows = () => { $('#moments').innerHTML = state.moments.map(momentRow).join(''); };
 
 function ask(header, handler) {
   const alert = $('#confirm');
@@ -470,40 +470,40 @@ function download(name, data, type = 'text/csv') {
 }
 
 // Un solo CSV con columnas compartidas; cada tipo de fila usa las suyas:
-// · intervalo: id, nombre, desde y hasta (horas), visible y orden (ids de pauta separados por espacios). En su orden.
-// · pauta: id, nombre, intervalos (ids separados por espacios), indicaciones, referencias, notas, coste (€ por envase) y
+// · momento: id, nombre, desde y hasta (horas), visible y orden (ids de pauta separados por espacios). En su orden.
+// · pauta: id, nombre, momentos (ids separados por espacios), indicaciones, referencias, notas, coste (€ por envase) y
 //   envase (dosis por envase). En el orden de pautas, cada una seguida de sus filas «programacion»: id de la pauta,
 //   dosis, desde (fecha de inicio) y dias (duración).
-// · toma: id de la pauta, intervalos (el de la toma), fecha («AAAA-MM-DD HH:MM») y la pauta como se tomó: nombre,
+// · toma: id de la pauta, momentos (el de la toma), fecha («AAAA-MM-DD HH:MM») y la pauta como se tomó: nombre,
 //   dosis e indicaciones.
-const HEAD = ['tipo', 'id', 'nombre', 'intervalos', 'desde', 'hasta', 'fecha', 'dias', 'dosis', 'indicaciones', 'referencias', 'notas', 'coste', 'envase', 'visible', 'orden'];
+const HEAD = ['tipo', 'id', 'nombre', 'momentos', 'desde', 'hasta', 'fecha', 'dias', 'dosis', 'indicaciones', 'referencias', 'notas', 'coste', 'envase', 'visible', 'orden'];
 const csvRow = (tipo, o) => HEAD.map(h => h === 'tipo' ? tipo : o[h] ?? '');
 
 const exportCSV = () => csv([
   HEAD,
-  ...state.intervals.map(iv => csvRow('intervalo', { id: iv.id, nombre: iv.name, desde: iv.start, hasta: iv.end, visible: iv.visible, orden: iv.order.join(' ') })),
+  ...state.moments.map(mo => csvRow('momento', { id: mo.id, nombre: mo.name, desde: mo.start, hasta: mo.end, visible: mo.visible, orden: mo.order.join(' ') })),
   ...state.meds.flatMap(m => [csvRow('pauta', { id: m.id, nombre: m.name, indicaciones: m.notes, referencias: m.refs, notas: m.memo, coste: m.cost, envase: m.units }),
-    ...m.plan.map(p => csvRow('programacion', { id: m.id, intervalos: p.slots.join(' '), dosis: p.dose, desde: p.start, dias: p.days }))]),
+    ...m.plan.map(p => csvRow('programacion', { id: m.id, momentos: p.moments.join(' '), dosis: p.dose, desde: p.start, dias: p.days }))]),
   ...[...state.log].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, intervalos: e.slot, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
+    .map(e => csvRow('toma', { id: e.id ?? '', nombre: e.name, momentos: e.moment, fecha: `${e.day} ${time(e.at)}`, dosis: e.dose, indicaciones: e.notes })),
 ]);
 
 // Lee las filas a objetos y los limpia con clean(), como los datos guardados.
 async function importCSV(file) {
   const rows = parseCSV(await file.text());
   const head = rows.shift()?.map(h => h.toLowerCase()) ?? [];
-  const raw = { intervals: [], meds: [], log: [] };
+  const raw = { moments: [], meds: [], log: [] };
   const words = v => v.split(/\s+/).filter(Boolean);
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
-    if (c.tipo === 'intervalo') raw.intervals.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
+    if (c.tipo === 'momento') raw.moments.push({ id: c.id, name: c.nombre, start: c.desde, end: c.hasta, visible: c.visible === '' ? null : yes(c.visible), order: words(c.orden) });
     if (c.tipo === 'pauta') raw.meds.push({ id: c.id || newId(), name: c.nombre, notes: c.indicaciones, refs: c.referencias, memo: c.notas, cost: c.coste, units: c.envase, plan: [] });
-    if (c.tipo === 'programacion') raw.meds.find(m => m.id === c.id)?.plan.push({ dose: c.dosis, start: c.desde, days: int(c.dias, 1), slots: words(c.intervalos) });
-    if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, slot: c.intervalos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
+    if (c.tipo === 'programacion') raw.meds.find(m => m.id === c.id)?.plan.push({ dose: c.dosis, start: c.desde, days: int(c.dias, 1), moments: words(c.momentos) });
+    if (c.tipo === 'toma') { const [day, hhmm = '00:00'] = c.fecha.split(' '); raw.log.push({ at: `${day}T${hhmm}`, day, id: c.id, moment: c.momentos, name: c.nombre, dose: c.dosis, notes: c.indicaciones }); }
   }
-  if (!raw.intervals.length && !raw.meds.length && !raw.log.length) return;
+  if (!raw.moments.length && !raw.meds.length && !raw.log.length) return;
   const apply = () => { Object.assign(state, clean(raw)); save(); render(); };
-  state.meds.length || state.log.length ? ask('¿Reemplazar los intervalos, las pautas y las tomas actuales?', apply) : apply();
+  state.meds.length || state.log.length ? ask('¿Reemplazar los momentos, las pautas y las tomas actuales?', apply) : apply();
 }
 
 // ---------- PDF ----------
@@ -687,37 +687,37 @@ const shortDate = key => fromKey(key).toLocaleDateString('es');
 // Hasta qué día vale una programación: su último día o, si la siguiente empieza antes, la víspera de esta.
 const planUntil = (plans, p) => { const next = plans.find(q => q.start > p.start); return next && next.start <= planEnd(p) ? addDays(next.start, -1) : planEnd(p); };
 
-// Fechas, duración e intervalos de una programación («24/10/2026 – 22/11/2026 · 30 días · Desayuno, Cena»).
-const planLine = (plans, p) => `${shortDate(p.start)} – ${shortDate(planUntil(plans, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'} · ${p.slots.map(label).join(', ') || 'sin intervalos'}`;
-// Intervalos de una programación: una casilla por intervalo visible, con sus horas de subtítulo; los ocultos conservan su valor.
-const slotBoxes = slots => visibleIntervals().map(iv => `<ion-item><ion-checkbox name="ps-${iv.id}" ${slots.includes(iv.id) ? 'checked' : ''}><ion-label><h2>${esc(label(iv.id))}</h2><p>${hours(iv) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay intervalos visibles.');
-const readSlots = old => IDS.filter(id => interval(id).visible ? planField(`ps-${id}`).checked : old.includes(id));
+// Fechas, duración e momentos de una programación («24/10/2026 – 22/11/2026 · 30 días · Desayuno, Cena»).
+const planLine = (plans, p) => `${shortDate(p.start)} – ${shortDate(planUntil(plans, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'} · ${p.moments.map(label).join(', ') || 'sin momentos'}`;
+// Momentos de una programación: una casilla por momento visible, con sus horas de subtítulo; los ocultos conservan su valor.
+const momentBoxes = moments => visibleMoments().map(mo => `<ion-item><ion-checkbox name="ps-${mo.id}" ${moments.includes(mo.id) ? 'checked' : ''}><ion-label><h2>${esc(label(mo.id))}</h2><p>${hours(mo) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay momentos visibles.');
+const readMoments = old => MOMENT_IDS.filter(id => momentOf(id).visible ? planField(`ps-${id}`).checked : old.includes(id));
 function renderPlan() {
   plan = cleanPlan(plan);
   $('#plan-list').innerHTML = plan.map((p, i) => `<ion-item button="true" data-plan="${i}"><ion-label><h2>${esc(p.dose)}</h2><p>${esc(planLine(plan, p))}</p></ion-label></ion-item>`).join('')
     + `<ion-item button="true" detail="false" data-plan="new"><ion-icon slot="start" name="add-outline" color="primary"></ion-icon><ion-label color="primary">Añadir programación</ion-label></ion-item>`;
 }
 
-// Una programación nueva propone la dosis y los intervalos de la última y hoy.
+// Una programación nueva propone la dosis y los momentos de la última y hoy.
 function openPlan(i) {
   editingPlan = i;
-  const p = plan[i] ?? { dose: plan.at(-1)?.dose ?? '', start: today(), days: '', slots: plan.at(-1)?.slots ?? [] };
+  const p = plan[i] ?? { dose: plan.at(-1)?.dose ?? '', start: today(), days: '', moments: plan.at(-1)?.moments ?? [] };
   for (const f of ['dose', 'start', 'days']) { planField(f).value = p[f]; planField(f).classList.remove('ion-invalid', 'ion-touched'); }
-  $('#plan-slots').innerHTML = slotBoxes(p.slots);
-  $('#plan-slots-error').classList.add('ion-hide');
+  $('#plan-moments').innerHTML = momentBoxes(p.moments);
+  $('#plan-moments-error').classList.add('ion-hide');
   $('#plan-delete').classList.toggle('ion-hide', i === null);
   planEditor.present();
 }
 
-// Dosis que empiece por un número, fecha de inicio, duración de al menos 1 día y al menos un intervalo; si falta
+// Dosis que empiece por un número, fecha de inicio, duración de al menos 1 día y al menos un momento; si falta
 // algo, se marca en rojo.
 function savePlan() {
-  const p = { dose: String(planField('dose').value ?? '').trim(), start: date(planField('start').value ?? ''), days: int(planField('days').value, 1), slots: readSlots(plan[editingPlan]?.slots ?? []) };
+  const p = { dose: String(planField('dose').value ?? '').trim(), start: date(planField('start').value ?? ''), days: int(planField('days').value, 1), moments: readMoments(plan[editingPlan]?.moments ?? []) };
   const bad = [['dose', amount(p.dose)], ['start', p.start], ['days', p.days]].filter(([, ok]) => !ok).map(([f]) => f);
   for (const f of ['dose', 'start', 'days']) planField(f).classList.toggle('ion-invalid', bad.includes(f));
-  $('#plan-slots-error').classList.toggle('ion-hide', p.slots.length > 0);
+  $('#plan-moments-error').classList.toggle('ion-hide', p.moments.length > 0);
   if (bad.length) return bad.forEach(f => planField(f).classList.add('ion-touched')), planField(bad[0]).setFocus();
-  if (!p.slots.length) return;
+  if (!p.moments.length) return;
   if (editingPlan === null) plan.push(p); else plan[editingPlan] = p;
   renderPlan();
   planEditor.dismiss();
@@ -750,15 +750,15 @@ function openRecord(id) {
     <ion-list inset="true">${summary.map(([k, v]) => item(k, v)).join('')}</ion-list>
     ${[...groups.values()].map(g => `
       <ion-list-header><ion-label>${g.title} (${g.rows.length})</ion-label></ion-list-header>
-      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${dayMonthYear(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at).replace(/^0/, '')} · ${esc(label(e.slot))}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
+      <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${dayMonthYear(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at).replace(/^0/, '')} · ${esc(label(e.moment))}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
     || '<ion-list inset="true">' + empty('Sin tomas registradas.') + '</ion-list>'}`;
   recordModal.present();
 }
 
 // ---------- Ficha de la pauta ----------
 
-// Solo lectura, espejo del editor, exista la pauta o no: Producto, Programación (con los intervalos de cada una),
-// Otros datos y Registro; desde una toma ya hecha, además la sección Toma (día, hora, intervalo y dosis tal como se
+// Solo lectura, espejo del editor, exista la pauta o no: Producto, Programación (con los momentos de cada una),
+// Otros datos y Registro; desde una toma ya hecha, además la sección Toma (día, hora, momento y dosis tal como se
 // tomó). De una pauta borrada se muestra lo que guarda la toma (nombre, indicaciones y la toma) y «—» en el resto.
 // «Editar», solo si la pauta existe, cierra la ficha y abre el editor.
 const viewModal = $('#view');
@@ -775,37 +775,37 @@ function openView(id, entry) {
     + readSection('Programación', p.plan.map(x => `<ion-item><ion-label class="ion-text-wrap"><h2>${esc(x.dose)}</h2><p>${esc(planLine(p.plan, x))}</p></ion-label></ion-item>`).join('') || empty(m ? 'Sin programaciones.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
-    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Intervalo', label(entry.slot)) + readRow('Dosis', entry.dose)) : '')
+    + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Momento', label(entry.moment)) + readRow('Dosis', entry.dose)) : '')
     + readSection('Registro', `<ion-item button="true" id="view-record"><ion-label>Ver registro</ion-label><ion-note slot="end">${state.log.filter(e => e.id === id).length} tomas</ion-note></ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('La pauta se borró: se muestra lo que guarda la toma.')}</ion-list>`);
   viewModal.present();
 }
 
-// ---------- Editor de intervalo ----------
+// ---------- Editor de momento ----------
 
-const intervalEditor = $('#interval-editor');
-const ivField = name => $(`[name="${name}"]`, intervalEditor);
-let editingInterval = null;
+const momentEditor = $('#moment-editor');
+const momentField = name => $(`[name="${name}"]`, momentEditor);
+let editingMoment = null;
 
-function openIntervalEditor(id) {
-  editingInterval = id;
-  const iv = interval(id);
-  ivField('name').value = iv.name;
-  for (const f of ['start', 'end']) { ivField(f).value = iv[f]; ivField(f).classList.remove('ion-invalid', 'ion-touched'); }
+function openMomentEditor(id) {
+  editingMoment = id;
+  const mo = momentOf(id);
+  momentField('name').value = mo.name;
+  for (const f of ['start', 'end']) { momentField(f).value = mo[f]; momentField(f).classList.remove('ion-invalid', 'ion-touched'); }
   rememberScroll();
-  intervalEditor.present();
+  momentEditor.present();
 }
 
 // Las horas son opcionales; si se ponen, enteras de 0 a 24. Una hora no válida se marca en rojo (Ionic) y recibe el foco.
-function saveIntervalEditor() {
-  const [start, end] = ['start', 'end'].map(f => hour(ivField(f).value));
-  for (const [f, v] of [['start', start], ['end', end]]) ivField(f).classList.toggle('ion-invalid', v === null);
+function saveMomentEditor() {
+  const [start, end] = ['start', 'end'].map(f => hour(momentField(f).value));
+  for (const [f, v] of [['start', start], ['end', end]]) momentField(f).classList.toggle('ion-invalid', v === null);
   const bad = ['start', 'end'].find((f, i) => [start, end][i] === null);
-  if (bad) return ['start', 'end'].forEach(f => ivField(f).classList.add('ion-touched')), ivField(bad).setFocus();
-  Object.assign(interval(editingInterval), { name: String(ivField('name').value ?? '').trim(), start, end });
+  if (bad) return ['start', 'end'].forEach(f => momentField(f).classList.add('ion-touched')), momentField(bad).setFocus();
+  Object.assign(momentOf(editingMoment), { name: String(momentField('name').value ?? '').trim(), start, end });
   save();
   render();
-  intervalEditor.dismiss();
+  momentEditor.dismiss();
 }
 
 // ---------- Asistente ----------
@@ -836,34 +836,34 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 function systemPrompt() {
   const now = new Date();
   const summary = state.meds.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), inactiva: finished(m),
-    tomas_hoy: onDay(m, today()) ? Object.fromEntries(slotsOn(m, today()).map(sl => [sl, state.log.some(e => e.id === m.id && e.day === today() && e.slot === sl) ? 'tomada' : 'pendiente'])) : {},
+    tomas_hoy: onDay(m, today()) ? Object.fromEntries(momentsOn(m, today()).map(sl => [sl, state.log.some(e => e.id === m.id && e.day === today() && e.moment === sl) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.log.filter(e => e.id === m.id).length }));
   return `Eres el asistente de Dosify, una app para llevar pautas de medicación y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
-- intervals: intervalos de toma, siempre en este orden fijo (id fijo i1, i2, i3, i4; por defecto Desayuno, Almuerzo, Cena y Demanda, pero name es el nombre que ve el usuario y puede haberse cambiado; start y end, horas, opcionales; visible, si sale en la app; order, ids de pauta en el orden de tomas). En la toma de cada día solo se ven los intervalos que ese día tienen alguna pauta pendiente o toma hecha.
-- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, slots = ids de los intervalos en que se toma con esa programación, al menos uno }). Cada día vale la última programación que haya empezado, si su duración llega a ese día, en sus slots y con su dose (que empieza por la cantidad de cada toma). Una pauta sin programación vigente ni futura (también sin ninguna) está inactiva: no sale en la toma y va en la lista «Inactivas» de Pautas; para que se tome hay que darle una programación. Para cambiar los intervalos de una pauta, cambia los slots de su programación (o crea otra con otros). Al crear una pauta, propón ya su programación (dosis, inicio, duración e intervalos).
-- log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = pauta, slot = intervalo, name, dose y notes = la pauta tal como se tomó).
-Cálculos por pauta (dosis de hoy, si está inactiva, qué tomas de hoy están tomadas o pendientes por intervalo, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
+- moments: momentos de toma, siempre en este orden fijo (id fijo m1, m2, m3, m4; por defecto Desayuno, Almuerzo, Cena y Demanda, pero name es el nombre que ve el usuario y puede haberse cambiado; start y end, horas, opcionales; visible, si sale en la app; order, ids de pauta en el orden de tomas). En la toma de cada día solo se ven los momentos que ese día tienen alguna pauta pendiente o toma hecha.
+- meds: pautas (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, plan = programaciones { dose, start AAAA-MM-DD, days, moments = ids de los momentos en que se toma con esa programación, al menos uno }). Cada día vale la última programación que haya empezado, si su duración llega a ese día, en sus moments y con su dose (que empieza por la cantidad de cada toma). Una pauta sin programación vigente ni futura (también sin ninguna) está inactiva: no sale en la toma y va en la lista «Inactivas» de Pautas; para que se tome hay que darle una programación. Para cambiar los momentos de una pauta, cambia los moments de su programación (o crea otra con otros). Al crear una pauta, propón ya su programación (dosis, inicio, duración e momentos).
+- log: tomas registradas (at = cuándo se marcó, day = día de la toma, id = pauta, moment = momento, name, dose y notes = la pauta tal como se tomó).
+Cálculos por pauta (dosis de hoy, si está inactiva, qué tomas de hoy están tomadas o pendientes por momento, dosis al día, costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
 ${JSON.stringify(summary)}
 Datos completos:
-${JSON.stringify({ intervals: state.intervals, meds: state.meds, log: state.log })}
+${JSON.stringify({ moments: state.moments, meds: state.meds, log: state.log })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; una pauta con el mismo nombre que ya está en los datos se modifica, no se crea otra.
-Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a interfaz y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por pauta pendiente del intervalo de la mañana, cada uno con action registrar_toma (id, slot, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions modificar_pauta con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué pauta?» → radio o buttons con las candidatas; elegir intervalos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
-Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar la pauta, la toma o el intervalo), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué pauta se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.`;
+Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a interfaz y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por pauta pendiente del momento de la mañana, cada uno con action registrar_toma (id, moment, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions modificar_pauta con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué pauta?» → radio o buttons con las candidatas; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar la pauta, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué pauta se refiere, propón una llamada por cada candidata. Usa los id que ves en los datos.`;
 }
 
 // Herramientas: qué puede cambiar el asistente. Cada llamada se convierte en una propuesta: una tarjeta editable en la
-// conversación (campos, chips de intervalos, filas de programación) que el usuario guarda o descarta.
+// conversación (campos, chips de momentos, filas de programación) que el usuario guarda o descarta.
 const stringProp = description => ({ type: 'string', description });
 const medProps = {
   name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
   cost: { type: 'integer', description: '€ por envase' }, units: { type: 'integer', description: 'Dosis por envase' },
-  plan: { type: 'array', description: 'Programaciones (sustituyen a las que haya); sin ellas la pauta no sale en la toma', items: { type: 'object', required: ['dose', 'start', 'days', 'slots'],
-    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, slots: { type: 'array', items: { type: 'string', enum: IDS }, description: 'Ids de los intervalos en que se toma con esta programación (al menos uno)' } } } },
+  plan: { type: 'array', description: 'Programaciones (sustituyen a las que haya); sin ellas la pauta no sale en la toma', items: { type: 'object', required: ['dose', 'start', 'days', 'moments'],
+    properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: { type: 'integer', description: 'Duración en días' }, moments: { type: 'array', items: { type: 'string', enum: MOMENT_IDS }, description: 'Ids de los momentos en que se toma con esta programación (al menos uno)' } } } },
 };
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
-const ACTIONS = ['crear_pauta', 'modificar_pauta', 'borrar_pauta', 'registrar_toma', 'quitar_toma', 'modificar_intervalo'];
+const ACTIONS = ['crear_pauta', 'modificar_pauta', 'borrar_pauta', 'registrar_toma', 'quitar_toma', 'modificar_momento'];
 const UI_TYPES = ['text', 'check', 'toggle', 'radio', 'chips', 'select', 'input', 'textarea', 'button'];
 const ACTION = { type: 'object', description: 'Acción: una de las otras herramientas con sus argumentos; en los argumentos, {{clave}} se sustituye por el valor del elemento con esa clave', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } };
 const TOOLS = [
@@ -884,11 +884,11 @@ const TOOLS = [
     actions: { type: 'array', description: 'Acciones globales al aplicar (p. ej. modificar_pauta con los valores de los campos como {{clave}})', items: ACTION },
   }, ['title', 'sections']),
   tool('crear_pauta', 'Úsala en cuanto pidan crear o añadir una pauta o producto, aunque falten datos: abre un formulario editable con lo que propongas y quien usa la app completa el resto', medProps),
-  tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, intervalos, coste…), aunque no digan el valor nuevo: abre un formulario con la pauta y tus cambios, si los hay', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
+  tool('modificar_pauta', 'Úsala en cuanto pidan modificar, cambiar o editar algo de una pauta (dosis, programación, momentos, coste…), aunque no digan el valor nuevo: abre un formulario con la pauta y tus cambios, si los hay', { id: stringProp('Id de la pauta'), ...medProps }, ['id']),
   tool('borrar_pauta', 'Úsala en cuanto pidan borrar o eliminar una pauta (sus tomas se conservan)', { id: stringProp('Id de la pauta') }, ['id']),
-  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan intervalo ni día (el formulario sale con el primero de la pauta y hoy)', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS, description: 'Intervalo; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
-  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan intervalo ni día', { id: stringProp('Id de la pauta'), slot: { type: 'string', enum: IDS, description: 'Intervalo; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
-  tool('modificar_intervalo', 'Úsala en cuanto pidan cambiar un intervalo (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
+  tool('registrar_toma', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primero de la pauta y hoy)', { id: stringProp('Id de la pauta'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy'), hora: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
+  tool('quitar_toma', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id de la pauta'), moment: { type: 'string', enum: MOMENT_IDS, description: 'Momento; si no, el primero de la pauta' }, day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
+  tool('modificar_momento', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: MOMENT_IDS }, name: stringProp('Nombre'), start: { type: 'integer', description: 'Hora de inicio 0-24' }, end: { type: 'integer', description: 'Hora de fin 0-24' }, visible: { type: 'boolean' } }, ['id']),
 ];
 
 // Formularios de las propuestas. Para cada herramienta: draft (los datos editables a partir de lo que propone el
@@ -905,28 +905,28 @@ const medFields = d => `
   ${d.plan.map((p, i) => `
   <ion-item><ion-input data-plan="dose" data-row="${i}" label="Programación ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-plan" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
   <ion-item><ion-input data-plan="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-plan="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
-  <ion-item lines="none"><ion-label><p>Intervalos de la programación ${i + 1}</p><p>${visibleIntervals().map(iv => `<ion-chip data-chip="plan-slot" data-row="${i}" data-value="${esc(iv.id)}" ${p.slots.includes(iv.id) ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(label(iv.id))}</ion-label></ion-chip>`).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un intervalo</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
+  <ion-item lines="none"><ion-label><p>Momentos de la programación ${i + 1}</p><p>${visibleMoments().map(mo => `<ion-chip data-chip="plan-moment" data-row="${i}" data-value="${esc(mo.id)}" ${p.moments.includes(mo.id) ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(label(mo.id))}</ion-label></ion-chip>`).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un momento</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
   <ion-item lines="none"><ion-label><p>${chipAction('add-plan', 'Añadir programación', 'add-outline')}</p></ion-label></ion-item>`;
 const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" data-value="${esc(value)}" ${on ? 'color="primary"' : 'outline="true" color="medium"'}><ion-label>${esc(text)}</ion-label></ion-chip>`;
 const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
 const medDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
   cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
-  plan: (Array.isArray(a.plan) ? a.plan : base.plan).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), slots: IDS.filter(id => list(p.slots).includes(id)) })) });
-// Una programación sin intervalos no vale (se marca en su fila: «Marca al menos un intervalo»).
+  plan: (Array.isArray(a.plan) ? a.plan : base.plan).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), moments: MOMENT_IDS.filter(id => list(p.moments).includes(id)) })) });
+// Una programación sin momentos no vale (se marca en su fila: «Marca al menos un momento»).
 const medValidate = d => [
   ...(d.name.trim() ? [] : ['name']), ...(int(d.cost) === null ? ['cost'] : []), ...(int(d.units, 1) === null ? ['units'] : []),
-  ...d.plan.flatMap((p, i) => [['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)], ['slots', p.slots.length]].filter(([, ok]) => !ok).map(([f]) => `${f}:${i}`)),
+  ...d.plan.flatMap((p, i) => [['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)], ['moments', p.moments.length]].filter(([, ok]) => !ok).map(([f]) => `${f}:${i}`)),
 ];
 const medValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), cost: int(d.cost), units: int(d.units, 1),
-  plan: d.plan.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), slots: p.slots })) });
-const slotChips = (d, slots = visibleIntervals().map(iv => iv.id)) => slots.map(id => chipToggle('pick-slot', id, label(id), d.slot === id)).join('');
+  plan: d.plan.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), moments: p.moments })) });
+const momentChips = (d, moments = visibleMoments().map(mo => mo.id)) => moments.map(id => chipToggle('pick-moment', id, label(id), d.moment === id)).join('');
 const tomaFields = (d, withTime) => `
-  <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${slotChips(d)}</p></ion-label></ion-item>
+  <ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>${momentChips(d)}</p></ion-label></ion-item>
   <ion-item><ion-input data-field="day" type="date" label="Día" label-placement="stacked" value="${esc(d.day)}"></ion-input>${withTime ? `<ion-input data-field="hora" type="time" label="Hora" label-placement="stacked" value="${esc(d.hora)}"></ion-input>` : ''}</ion-item>`;
-const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.name, slot: IDS.includes(a.slot) ? a.slot : slotsOn(m, date(str(a.day)) || today())[0] ?? IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
+const tomaDraft = a => { const m = med(a.id); return m && { id: m.id, name: m.name, moment: MOMENT_IDS.includes(a.moment) ? a.moment : momentsOn(m, date(str(a.day)) || today())[0] ?? MOMENT_IDS[0], day: date(str(a.day)) || today(), hora: /^\d{1,2}:\d{2}$/.test(str(a.hora)) ? str(a.hora).padStart(5, '0') : '' }; };
 const tomaValidate = d => [...(date(d.day) ? [] : ['day']), ...(d.hora === '' || /^\d{1,2}:\d{2}$/.test(d.hora) ? [] : ['hora'])];
-const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${(d.plan[0]?.slots ?? []).map(label).join(', ') || 'sin intervalos'}`;
-const tomaBrief = d => `${d.name} · ${label(d.slot)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
+const medBrief = d => `${d.name.trim() || 'Sin nombre'} · ${d.plan[0]?.dose || 'sin dosis'} · ${(d.plan[0]?.moments ?? []).map(label).join(', ') || 'sin momentos'}`;
+const tomaBrief = d => `${d.name} · ${label(d.moment)} · ${shortDate(d.day)}${d.hora ? ` ${d.hora}` : ''}`;
 // Interfaz dinámica: secciones (una lista cada una) de elementos hechos con componentes de Ionic. Cada elemento tiene
 // una clave; su valor (marcado, elegido o escrito) se guarda en el borrador, vuelve al asistente al aplicar y puede ir
 // en los argumentos de las acciones como {{clave}}. Las acciones (de elementos marcados o elegidos, de un botón
@@ -1029,27 +1029,27 @@ const FORMS = {
     draft: tomaDraft, title: () => 'Marcar toma', brief: tomaBrief, fields: d => tomaFields(d, true), validate: tomaValidate,
     apply: d => {
       const m = med(d.id); if (!m) return null;
-      if (!state.log.some(e => e.id === d.id && e.slot === d.slot && e.day === d.day)) {
+      if (!state.log.some(e => e.id === d.id && e.moment === d.moment && e.day === d.day)) {
         const at = d.hora ? new Date(`${d.day}T${d.hora.padStart(5, '0')}`) : new Date();
-        state.log.unshift({ at: at.toISOString(), day: d.day, id: d.id, slot: d.slot, ...snapOn(m, d.day) });
+        state.log.unshift({ at: at.toISOString(), day: d.day, id: d.id, moment: d.moment, ...snapOn(m, d.day) });
       }
-      return `«${m.name}» marcada en ${label(d.slot)} el ${shortDate(d.day)}`;
+      return `«${m.name}» marcada en ${label(d.moment)} el ${shortDate(d.day)}`;
     },
   },
   quitar_toma: {
     draft: tomaDraft, title: () => 'Dejar pendiente', brief: tomaBrief, fields: d => tomaFields(d, false), validate: tomaValidate,
-    apply: d => { state.log = state.log.filter(e => !(e.id === d.id && e.slot === d.slot && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.slot)} el ${shortDate(d.day)}`; },
+    apply: d => { state.log = state.log.filter(e => !(e.id === d.id && e.moment === d.moment && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.moment)} el ${shortDate(d.day)}`; },
   },
-  modificar_intervalo: {
-    draft: a => { const iv = IDS.includes(a.id) && interval(a.id); return iv && { id: iv.id, name: str(a.name ?? iv.name), start: str(a.start ?? iv.start), end: str(a.end ?? iv.end), visible: typeof a.visible === 'boolean' ? a.visible : iv.visible }; },
-    title: d => `Cambiar el intervalo «${esc(label(d.id))}»`,
+  modificar_momento: {
+    draft: a => { const mo = MOMENT_IDS.includes(a.id) && momentOf(a.id); return mo && { id: mo.id, name: str(a.name ?? mo.name), start: str(a.start ?? mo.start), end: str(a.end ?? mo.end), visible: typeof a.visible === 'boolean' ? a.visible : mo.visible }; },
+    title: d => `Cambiar el momento «${esc(label(d.id))}»`,
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
     fields: d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="start" type="number" inputmode="numeric" label="Hora de inicio (de 0 a 24)" label-placement="stacked" value="${esc(d.start)}"></ion-input><ion-input data-field="end" type="number" inputmode="numeric" label="Hora de fin (de 0 a 24)" label-placement="stacked" value="${esc(d.end)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>${chipToggle('visible', 'visible', 'Visible en la toma', d.visible)}</p></ion-label></ion-item>`,
     validate: d => [...(hour(d.start) === null ? ['start'] : []), ...(hour(d.end) === null ? ['end'] : [])],
-    apply: d => { Object.assign(interval(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Intervalo «${label(d.id)}» cambiado`; },
+    apply: d => { Object.assign(momentOf(d.id), { name: d.name.trim(), start: hour(d.start), end: hour(d.end), visible: d.visible }); return `Momento «${label(d.id)}» cambiado`; },
   },
 };
 
@@ -1066,10 +1066,10 @@ function describe(tool, d) {
     const v = medValues(d);
     return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
       v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
-      v.plan.length ? `programaciones: ${v.plan.map(p => `${p.dose} desde el ${dateText(p.start)} durante ${p.days} días en ${p.slots.map(label).join(', ')}`).join('; ')}` : 'sin programaciones (no sale en la toma)'].filter(Boolean).join(', ');
+      v.plan.length ? `programaciones: ${v.plan.map(p => `${p.dose} desde el ${dateText(p.start)} durante ${p.days} días en ${p.moments.map(label).join(', ')}`).join('; ')}` : 'sin programaciones (no sale en la toma)'].filter(Boolean).join(', ');
   }
-  if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.slot)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
-  if (tool === 'modificar_intervalo') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
+  if (tool === 'registrar_toma' || tool === 'quitar_toma') return `${d.name} en ${label(d.moment)} el ${dateText(d.day)}${d.hora ? ` a las ${d.hora}` : ''}`;
+  if (tool === 'modificar_momento') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
   if (tool === 'interfaz') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
   return d.name;
 }
@@ -1097,13 +1097,13 @@ function trySave(v, card) {
   const bad = FORMS[v.tool].validate(v.draft);
   for (const f of bad) {
     const [field, row] = f.split(':');
-    if (field === 'slots') { v.draft.plan[Number(row)].bad = true; continue; }
+    if (field === 'moments') { v.draft.plan[Number(row)].bad = true; continue; }
     const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-plan="${field}"][data-row="${row}"]`);
     if (!el) continue;
     el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : PLAN_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
   }
-  if (bad.length) { if (card && bad.some(f => f.startsWith('slots:'))) refreshCard(card, v); return false; }
+  if (bad.length) { if (card && bad.some(f => f.startsWith('moments:'))) refreshCard(card, v); return false; }
   decide(v, true);
   return true;
 }
@@ -1162,15 +1162,15 @@ let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST
 let suggestLoading = null; // promesa de la petición en curso
 function suggestionPool() {
   const meds = state.meds.filter(m => !finished(m)), day = today(), h = new Date().getHours();
-  const slot = intervalNow(), slotName = slot ? label(slot) : 'ahora';
-  const taken = (m, sl) => state.log.some(e => e.id === m.id && e.day === day && e.slot === sl);
-  const pendingNow = meds.filter(m => slotsOn(m, day).includes(slot) && onDay(m, day) && !taken(m, slot));
+  const moment = momentNow(), momentName = moment ? label(moment) : 'ahora';
+  const taken = (m, sl) => state.log.some(e => e.id === m.id && e.day === day && e.moment === sl);
+  const pendingNow = meds.filter(m => momentsOn(m, day).includes(moment) && onDay(m, day) && !taken(m, moment));
   const logged = meds.filter(m => state.log.some(e => e.id === m.id)), priced = meds.filter(m => m.cost !== ''), ending = meds.filter(m => m.plan.length && planEnd(m.plan.at(-1)) <= addDays(day, 7));
   const week = state.log.filter(e => e.day >= addDays(day, -7)).length, pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const some = meds.length ? pick(meds) : null, withLog = logged.length ? pick(logged) : null;
   return [
     // Ahora mismo
-    ...(pendingNow.length ? [`Hazme una lista con check para marcar lo que me toca en ${slotName}.`, `¿Qué me queda por tomar en ${slotName}?`] : []),
+    ...(pendingNow.length ? [`Hazme una lista con check para marcar lo que me toca en ${momentName}.`, `¿Qué me queda por tomar en ${momentName}?`] : []),
     ...(meds.length ? ['¿Qué me falta por tomar hoy?', h >= 20 ? '¿Me queda algo pendiente de hoy antes de dormir?' : h < 12 ? '¿Qué tengo que tomar a lo largo del día de hoy?' : '¿Qué me queda por tomar en lo que falta de día?'] : []),
     // Envases y compras
     ...meds.filter(m => runsOut(m)).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
@@ -1181,17 +1181,17 @@ function suggestionPool() {
     ...(priced.length && state.log.length ? ['¿Cuánto me he gastado este mes según las tomas registradas?'] : []),
     // Historial
     ...(state.log.length ? ['¿Cómo he cumplido las tomas esta semana? Hazme una tabla por día.', '¿Qué tomas se me olvidaron en los últimos 7 días?', 'Hazme una gráfica de las tomas por día de los últimos 14 días.'] : []),
-    ...(week > 7 ? ['¿Qué día de la semana se me olvidan más tomas?', '¿En qué intervalo cumplo peor?'] : []),
+    ...(week > 7 ? ['¿Qué día de la semana se me olvidan más tomas?', '¿En qué momento cumplo peor?'] : []),
     ...(withLog ? [`Resume el registro de ${withLog.name} en una tabla.`, `¿A qué hora suelo tomar ${withLog.name}?`, `¿Cuántas dosis de ${withLog.name} llevo tomadas en total?`] : []),
     // Programaciones
     ...meds.filter(m => m.plan.length > 1).map(m => `¿Cómo ha cambiado la dosis de ${m.name} según sus programaciones?`),
     ...(ending.length ? [`¿Qué pautas terminan esta semana y cuándo?`] : []),
     ...(state.meds.some(finished) ? ['¿Qué pautas tengo inactivas y por qué?'] : []),
     // Cambios con formulario
-    ...(some ? [`Quiero cambiar los intervalos de la programación de ${some.name}.`, `Añade una programación nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
-    ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, intervalos, coste y fin del envase.', 'Revisa mis pautas y dime si ves algo raro o incompleto.', 'Quiero añadir una pauta nueva.'] : ['Ayúdame a crear mi primera pauta.', 'Crea una pauta de ejemplo para ver cómo funciona.']),
+    ...(some ? [`Quiero cambiar los momentos de la programación de ${some.name}.`, `Añade una programación nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
+    ...(meds.length ? ['Hazme una tabla con mis pautas: dosis de hoy, momentos, coste y fin del envase.', 'Revisa mis pautas y dime si ves algo raro o incompleto.', 'Quiero añadir una pauta nueva.'] : ['Ayúdame a crear mi primera pauta.', 'Crea una pauta de ejemplo para ver cómo funciona.']),
     // Otras
-    ...(state.intervals.some(iv => iv.visible && (iv.start === '' || iv.end === '')) ? ['Quiero poner horas a mis intervalos.'] : []),
+    ...(state.moments.some(mo => mo.visible && (mo.start === '' || mo.end === '')) ? ['Quiero poner horas a mis momentos.'] : []),
     '¿Qué puedes hacer por mí?',
   ];
 }
@@ -1220,7 +1220,7 @@ async function askSuggestions(count, exclude) {
   const recent = chat.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-6).map(m => ({ role: m.role, content: m.content }));
   const asked = chat.filter(m => m.role === 'user').map(m => m.content);
   const linked = recent.some(m => m.role === 'assistant') ? ` La mitad de ellas (${Math.ceil(count / 2)}) deben seguir el hilo de tu última respuesta y de la conversación: profundizar, detallar o actuar sobre lo que acabas de decir (por ejemplo, si has mostrado una tabla, pedir una gráfica, un detalle o un cambio sobre esos mismos datos); la otra mitad, libres: otras cosas útiles ahora mismo con sus datos.` : '';
-  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, intervalos, envases, costes, historial) y útiles según el momento del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
+  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de pautas, momentos, envases, costes, historial) y útiles según el momento del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
   const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal: AbortSignal.timeout(25000),
     body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: ask }] }),
@@ -1390,11 +1390,11 @@ async function sendChat() {
       const waits = [], seen = new Set();
       for (const call of message.tool_calls) {
         let args = {}; try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-        const key = `${call.function.name} ${call.function.name === 'crear_pauta' ? str(args.name).trim().toLowerCase() : call.function.name === 'interfaz' ? str(args.title).trim().toLowerCase() : [args.id, args.slot, args.day].map(str).join('|')}`;
+        const key = `${call.function.name} ${call.function.name === 'crear_pauta' ? str(args.name).trim().toLowerCase() : call.function.name === 'interfaz' ? str(args.title).trim().toLowerCase() : [args.id, args.moment, args.day].map(str).join('|')}`;
         if (seen.has(key)) { pushToolResult(call.id, 'Llamada repetida: ya has propuesto ese mismo cambio en este turno, no se propone otra vez.'); continue; }
         seen.add(key);
         const form = FORMS[call.function.name], draft = form?.draft(args);
-        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${form ? `no existe ${call.function.name === 'modificar_intervalo' ? 'ese intervalo' : 'ninguna pauta con ese id'}. ${existing()}` : 'herramienta desconocida.'}`); continue; }
+        if (!draft) { pushToolResult(call.id, `No se ha podido proponer: ${form ? `no existe ${call.function.name === 'modificar_momento' ? 'ese momento' : 'ninguna pauta con ese id'}. ${existing()}` : 'herramienta desconocida.'}`); continue; }
         chatView.push({ who: 'proposal', id: call.id, tool: call.function.name, draft, status: 'pending' });
         waits.push(new Promise(resolve => resolvers.set(call.id, resolve)));
       }
@@ -1414,26 +1414,26 @@ async function sendChat() {
 // ---------- Wiring ----------
 
 function render() {
-  renderSlots();
+  renderMomentTabs();
   renderDays();
   renderToma();
-  keepScroll($('#manager ion-content'), () => { renderPautas(); renderCosts(); renderIntervals(); renderPdfMonths(); });
+  keepScroll($('#manager ion-content'), () => { renderPautas(); renderCosts(); renderMomentRows(); renderPdfMonths(); });
 }
 
-$('#day').addEventListener('ionChange', () => { renderSlots(); renderToma(); });
-$('#slot').addEventListener('ionChange', renderToma);
+$('#day').addEventListener('ionChange', () => { renderMomentTabs(); renderToma(); });
+$('#moment').addEventListener('ionChange', renderToma);
 // El nombre de una fila de la toma: si ese día ya está tomada, como se tomó; si no, el de la pauta.
-const rowName = id => (state.log.find(e => e.day === selectedDay() && e.slot === selectedSlot() && String(e.id) === id) ?? med(id)).name;
+const rowName = id => (state.log.find(e => e.day === selectedDay() && e.moment === selectedMoment() && String(e.id) === id) ?? med(id)).name;
 // Marcar o desmarcar se confirma en un action sheet; si se cancela, la casilla vuelve a como estaba.
 $('#toma').addEventListener('ionChange', e => {
-  const { id, slot } = e.target.dataset;
+  const { id, moment } = e.target.dataset;
   const { checked } = e.detail;
-  sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, slot, checked) }], renderToma);
+  sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, moment, checked) }], renderToma);
 });
-// El (i) de una fila abre la ficha de la pauta; desde la toma, con la toma de ese día e intervalo si ya está hecha.
+// El (i) de una fila abre la ficha de la pauta; desde la toma, con la toma de ese día e momento si ya está hecha.
 const viewFrom = (e, fromToma) => {
   const id = e.target.closest('[data-view]')?.dataset.view;
-  if (id) openView(id, fromToma ? state.log.find(x => x.day === selectedDay() && x.slot === selectedSlot() && String(x.id) === id) : undefined);
+  if (id) openView(id, fromToma ? state.log.find(x => x.day === selectedDay() && x.moment === selectedMoment() && String(x.id) === id) : undefined);
   return !!id;
 };
 $('#toma').addEventListener('click', e => {
@@ -1445,8 +1445,8 @@ $('#toma').addEventListener('click', e => {
 });
 // Al soltar, complete() deja la fila en su sitio en pantalla: solo se guarda el orden, sin repintar ni mover el scroll.
 $('#toma').addEventListener('ionReorderEnd', e => {
-  const slot = selectedSlot();
-  reorderPending(slot, move([...e.target.children].map(el => state.meds.find(m => m.id === el.dataset.id)), e.detail));
+  const moment = selectedMoment();
+  reorderPending(moment, move([...e.target.children].map(el => state.meds.find(m => m.id === el.dataset.id)), e.detail));
   e.detail.complete();
 });
 
@@ -1480,16 +1480,16 @@ $('#list').addEventListener('ionReorderEnd', e => {
   renderToma();
 });
 
-// Intervalos: la casilla cambia si es visible; tocar la fila (fuera de la casilla y del asa) abre su editor.
-$('#intervals').addEventListener('ionChange', e => {
-  interval(e.target.dataset.interval).visible = e.detail.checked;
+// Momentos: la casilla cambia si es visible; tocar la fila (fuera de la casilla y del asa) abre su editor.
+$('#moments').addEventListener('ionChange', e => {
+  momentOf(e.target.dataset.moment).visible = e.detail.checked;
   save();
   render();
 });
-$('#intervals').addEventListener('click', e => {
+$('#moments').addEventListener('click', e => {
   if (e.target.closest('ion-checkbox, ion-reorder')) return;
-  const id = e.target.closest('ion-item')?.dataset.interval;
-  if (id) openIntervalEditor(id);
+  const id = e.target.closest('ion-item')?.dataset.moment;
+  if (id) openMomentEditor(id);
 });
 $('#open-record').onclick = () => openRecord(editing);
 $('#record-close').onclick = () => recordModal.dismiss();
@@ -1503,10 +1503,10 @@ $('#plan-list').addEventListener('click', e => {
 $('#plan-cancel').onclick = () => planEditor.dismiss();
 $('#plan-save').onclick = savePlan;
 $('#plan-delete').onclick = () => { plan.splice(editingPlan, 1); renderPlan(); planEditor.dismiss(); };
-$('#interval-cancel').onclick = () => intervalEditor.dismiss();
-intervalEditor.addEventListener('ionModalDidDismiss', restoreScroll);
-$('#interval-save').onclick = saveIntervalEditor;
-for (const f of ['start', 'end']) ivField(f).addEventListener('ionInput', () => ivField(f).classList.remove('ion-invalid'));
+$('#moment-cancel').onclick = () => momentEditor.dismiss();
+momentEditor.addEventListener('ionModalDidDismiss', restoreScroll);
+$('#moment-save').onclick = saveMomentEditor;
+for (const f of ['start', 'end']) momentField(f).addEventListener('ionInput', () => momentField(f).classList.remove('ion-invalid'));
 
 $('#import').onclick = () => $('#file').click();
 $('#file').onchange = e => { importCSV(e.target.files[0]); e.target.value = ''; };
@@ -1519,7 +1519,7 @@ editor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#save').onclick = saveEditor;
 $('#delete').onclick = () => ask('¿Eliminar esta pauta?', () => {
   state.meds = state.meds.filter(m => m.id !== editing);
-  for (const iv of state.intervals) iv.order = iv.order.filter(id => id !== editing);
+  for (const mo of state.moments) mo.order = mo.order.filter(id => id !== editing);
   save();
   render();
   editor.dismiss();
@@ -1529,7 +1529,7 @@ $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().
 $('#chat-close').onclick = () => chatModal.dismiss();
 $('#chat-new').onclick = () => { chatEpoch++; suggested = []; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
-// Interacción con las propuestas: campos (se escriben en el borrador), chips (intervalos, programaciones, visible)
+// Interacción con las propuestas: campos (se escriben en el borrador), chips (momentos, programaciones, visible)
 // y botones (guardar, descartar, todas).
 const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: 'edit' in card.dataset ? proposalEdit.v : chatView[Number(card.dataset.proposal)] }; };
 const refreshCard = (card, v) => { card.outerHTML = ('edit' in card.dataset ? editBlock : proposalCard)(v, Number(card.dataset.proposal)); };
@@ -1567,11 +1567,11 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   if (act === 'discard') { decide(p.v, false); return renderChat(); }
   const chip = e.target.closest('ion-chip[data-chip]'); if (!chip) return;
   const { chip: kind, value, row } = chip.dataset, d = p.v.draft;
-  if (kind === 'pick-slot') { d.slot = value; refreshCard(p.card, p.v); }
+  if (kind === 'pick-moment') { d.moment = value; refreshCard(p.card, p.v); }
   if (kind === 'ui') { const k = chip.dataset.ui, multi = uiElements(d).find(x => x.key === k)?.multiple, cur = d.values[k]; d.values[k] = multi ? (cur.includes(value) ? cur.filter(x => x !== value) : [...cur, value]) : cur === value ? '' : value; refreshCard(p.card, p.v); }
   if (kind === 'visible') { d.visible = !d.visible; chip.outline = !d.visible; chip.color = d.visible ? 'primary' : 'medium'; }
-  if (kind === 'add-plan') { d.plan.push({ dose: d.plan.at(-1)?.dose ?? '', start: today(), days: '', slots: d.plan.at(-1)?.slots ?? [] }); refreshCard(p.card, p.v); }
-  if (kind === 'plan-slot') { const ps = d.plan[Number(row)]; ps.slots = ps.slots.includes(value) ? ps.slots.filter(x => x !== value) : IDS.filter(id => id === value || ps.slots.includes(id)); delete ps.bad; refreshCard(p.card, p.v); }
+  if (kind === 'add-plan') { d.plan.push({ dose: d.plan.at(-1)?.dose ?? '', start: today(), days: '', moments: d.plan.at(-1)?.moments ?? [] }); refreshCard(p.card, p.v); }
+  if (kind === 'plan-moment') { const ps = d.plan[Number(row)]; ps.moments = ps.moments.includes(value) ? ps.moments.filter(x => x !== value) : MOMENT_IDS.filter(id => id === value || ps.moments.includes(id)); delete ps.bad; refreshCard(p.card, p.v); }
   if (kind === 'remove-plan') { d.plan.splice(Number(row), 1); refreshCard(p.card, p.v); }
   saveChat();
 });
@@ -1601,8 +1601,8 @@ if (window.visualViewport) {
   vv.addEventListener('scroll', () => { if (vv.offsetTop > 0 && window.innerHeight - vv.height > 0) window.scrollTo(0, 0); });
 }
 $('#day').setAttribute('value', today());
-renderSlots();
-$('#slot').value = intervalNow();
+renderMomentTabs();
+$('#moment').value = momentNow();
 render();
 // Al cargar, si el asistente está configurado y no hay sugerencias guardadas, se piden en segundo plano.
 if (ai.key && ai.model && ai.url) setTimeout(() => { if (!suggestLoading && !suggested.length) requestSuggestions(chatView.length ? 3 : 4, []); }, 1500);

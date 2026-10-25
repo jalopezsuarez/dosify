@@ -102,7 +102,7 @@
       <ion-segment id="day" scrollable="true"></ion-segment>
     </ion-toolbar>
     <ion-toolbar>
-      <ion-segment id="slot"></ion-segment>
+      <ion-segment id="moment"></ion-segment>
     </ion-toolbar>
   </ion-header>
   <ion-content id="toma" color="light"></ion-content>
@@ -129,12 +129,12 @@
         <ion-item button="true" id="open-finished"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Inactivas</ion-label><ion-note slot="end" id="finished-count"></ion-note></ion-item>
       </ion-list>
       <div id="costs"></div>
-      <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
-      <ion-list inset="true" id="intervals"></ion-list>
+      <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
+      <ion-list inset="true" id="moments"></ion-list>
       <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (intervalos, pautas y tomas)</ion-label></ion-item>
-        <ion-item button id="export"><ion-icon slot="start" name="cloud-download-outline"></ion-icon><ion-label>Exportar CSV (intervalos, pautas y tomas)</ion-label></ion-item>
+        <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (momentos, pautas y tomas)</ion-label></ion-item>
+        <ion-item button id="export"><ion-icon slot="start" name="cloud-download-outline"></ion-icon><ion-label>Exportar CSV (momentos, pautas y tomas)</ion-label></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Exportar</ion-label></ion-list-header>
       <ion-list inset="true">
@@ -280,21 +280,21 @@
         <ion-item><ion-input name="start" type="date" label="Fecha de inicio" label-placement="stacked"></ion-input></ion-item>
         <ion-item><ion-input name="days" type="number" min="1" inputmode="numeric" label="Duración (días)" label-placement="stacked" placeholder="7"></ion-input></ion-item>
       </ion-list>
-      <ion-list-header><ion-label>Intervalos</ion-label></ion-list-header>
-      <ion-list inset="true" id="plan-slots"></ion-list>
-      <ion-list inset="true" id="plan-slots-error" class="ion-hide"><ion-item lines="none"><ion-label color="danger" class="ion-text-center">Marca al menos un intervalo</ion-label></ion-item></ion-list>
+      <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
+      <ion-list inset="true" id="plan-moments"></ion-list>
+      <ion-list inset="true" id="plan-moments-error" class="ion-hide"><ion-item lines="none"><ion-label color="danger" class="ion-text-center">Marca al menos un momento</ion-label></ion-item></ion-list>
       <ion-list inset="true" id="plan-delete">
         <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar programación</ion-label></ion-item>
       </ion-list>
     </ion-content>
   </ion-modal>
 
-  <ion-modal id="interval-editor">
+  <ion-modal id="moment-editor">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="interval-cancel">Cancelar</ion-button></ion-buttons>
-        <ion-title>Intervalo</ion-title>
-        <ion-buttons slot="end"><ion-button id="interval-save" strong="true">Guardar</ion-button></ion-buttons>
+        <ion-buttons slot="start"><ion-button id="moment-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-title>Momento</ion-title>
+        <ion-buttons slot="end"><ion-button id="moment-save" strong="true">Guardar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
