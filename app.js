@@ -699,7 +699,7 @@ function openEditor(product = {}) {
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
   const last = editing && lastRecord(editing);
-  $('#last-record').innerHTML = last ? recordLabel(last) : ''; $('#last-record').classList.toggle('ion-hide', !last);
+  $('#last-record').innerHTML = last ? `<ion-item>${recordLabel(last)}</ion-item>` : ''; $('#last-record').classList.toggle('ion-hide', !last);
   rememberScroll();
   editor.present();
 }
@@ -812,8 +812,8 @@ function openHistory(id) {
 // ---------- Product view (ficha) ----------
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
-// Otros datos and Estadísticas, three blocks: «Registro» with, below it, the dose taken when opened from home; the
-// estimated next purchase; and «Últimos cambios». For a deleted product it shows what the record
+// Otros datos and Estadísticas, one block each: the dose taken when opened from home, «Registro», the estimated next
+// purchase and «Últimos cambios». For a deleted product it shows what the record
 // stores (name, notes and the dose) and «—» elsewhere.
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
@@ -831,9 +831,9 @@ function openView(id, record) {
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
-    + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>${record ? `<ion-item>${recordLabel(record)}</ion-item>` : ''}`)
-    + `<ion-list inset="true">${purchaseRow(m)}</ion-list>`
-    + `<ion-list inset="true"><ion-item>${updatedLabel(m)}</ion-item></ion-list>`
+    + '<ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>'
+    + [record && `<ion-item>${recordLabel(record)}</ion-item>`, `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
+      purchaseRow(m), `<ion-item>${updatedLabel(m)}</ion-item>`].filter(Boolean).map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
     + (m ? '' : emptyList('El producto se borró: se muestra lo que guarda la toma.'));
   viewModal.present();
 }
