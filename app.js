@@ -291,8 +291,8 @@ async function renderToma() {
 // ---------- Pautas ----------
 
 const manager = $('#manager');
-// Una pauta está finalizada si no tiene programación vigente ni futura (también si no tiene ninguna): va en la lista
-// de finalizadas, en gris, sin costes.
+// Una pauta está inactiva si no tiene programación vigente ni futura (también si no tiene ninguna): va en la lista
+// de inactivas, en gris, sin costes.
 const finished = m => !planOn(m, today()) && !m.plan.some(p => p.start > today());
 // Línea de la programación en la lista: la dosis y los intervalos visibles, separados por puntos («1 cápsula ·
 // Desayuno · Almuerzo»), de la programación de hoy (o de la última); sin programaciones, «Sin programación».
@@ -400,7 +400,7 @@ function openShopping() {
   shoppingModal.present();
 }
 
-// Lista de pautas: solo las activas; las finalizadas van aparte, en la fila «Finalizadas» (solo si hay alguna), que
+// Lista de pautas: solo las activas; las inactivas van aparte, en la fila «Inactivas» (solo si hay alguna), que
 // abre su propia lista. Desde allí se editan y, con una programación nueva, vuelven a las activas.
 const finishedModal = $('#finished');
 function renderPautas() {
@@ -409,7 +409,7 @@ function renderPautas() {
   $('#list').innerHTML = live.map(pautaRow).join('') || empty('Sin pautas. Pulsa «Añadir» para crear una.');
   $('#finished-row').classList.toggle('ion-hide', !done.length);
   $('#finished-count').textContent = done.length;
-  $('#finished-list').innerHTML = done.map(pautaRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay pautas finalizadas.');
+  $('#finished-list').innerHTML = done.map(pautaRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay pautas inactivas.');
 }
 
 // Intervalos: casilla de visible a la izquierda, asa de ordenar a la derecha; tocar la fila abre su editor.
@@ -1467,7 +1467,7 @@ $('#list').addEventListener('click', e => {
 });
 // Igual en Pautas: no se repinta la lista que se está ordenando; solo la toma, que queda detrás del modal.
 $('#list').addEventListener('ionReorderEnd', e => {
-  // Se ordenan las activas (las de la lista); las finalizadas quedan detrás.
+  // Se ordenan las activas (las de la lista); las inactivas quedan detrás.
   state.meds = [...move(state.meds.filter(m => !finished(m)), e.detail), ...state.meds.filter(finished)];
   e.detail.complete();
   save();
