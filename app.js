@@ -11,7 +11,7 @@ const DEFAULT_INTERVALS = [
   { id: 'i1', name: 'Desayuno', start: 6, end: 12, visible: true, order: [] },
   { id: 'i2', name: 'Almuerzo', start: 12, end: 18, visible: true, order: [] },
   { id: 'i3', name: 'Cena', start: 18, end: 24, visible: true, order: [] },
-  { id: 'i4', name: 'Demanda', start: '', end: '', visible: true, order: [] }, // a demanda: sin horas
+  { id: 'i4', name: 'Demanda', start: '', end: '', visible: true, order: [] },
 ];
 const IDS = DEFAULT_INTERVALS.map(iv => iv.id);
 const newId = () => crypto.randomUUID().slice(0, 8);
