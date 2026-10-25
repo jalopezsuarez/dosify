@@ -93,9 +93,9 @@
       <ion-buttons slot="start">
         <ion-button id="assistant"><ion-icon slot="start" name="sparkles-outline"></ion-icon>Asistente</ion-button>
       </ion-buttons>
-      <ion-title>Toma</ion-title>
+      <ion-title>Dosify</ion-title>
       <ion-buttons slot="end">
-        <ion-button id="manage"><ion-icon slot="start" name="list"></ion-icon>Pautas</ion-button>
+        <ion-button id="manage"><ion-icon slot="start" name="list"></ion-icon>Productos</ion-button>
       </ion-buttons>
     </ion-toolbar>
     <ion-toolbar>
@@ -111,7 +111,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start"><ion-button id="close">Cerrar</ion-button></ion-buttons>
-        <ion-title>Pautas</ion-title>
+        <ion-title>Productos</ion-title>
         <ion-buttons slot="end">
           <ion-button id="add"><ion-icon slot="start" name="add"></ion-icon>Añadir</ion-button>
         </ion-buttons>
@@ -119,22 +119,22 @@
     </ion-header>
     <ion-content color="light">
       <ion-list-header>
-        <ion-label>Pautas (<span id="list-count">0</span>)</ion-label>
+        <ion-label>Productos (<span id="list-count">0</span>)</ion-label>
         <ion-button id="sort" fill="clear" aria-label="Ordenar"><ion-icon slot="icon-only" name="swap-vertical-outline"></ion-icon></ion-button>
       </ion-list-header>
       <ion-list inset="true">
         <ion-reorder-group id="list"></ion-reorder-group>
       </ion-list>
       <ion-list inset="true" id="finished-row">
-        <ion-item button="true" id="open-finished"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Inactivas</ion-label><ion-note slot="end" id="finished-count"></ion-note></ion-item>
+        <ion-item button="true" id="open-finished"><ion-icon slot="start" name="archive-outline" color="medium"></ion-icon><ion-label>Inactivos</ion-label><ion-note slot="end" id="finished-count"></ion-note></ion-item>
       </ion-list>
       <div id="costs"></div>
       <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
       <ion-list inset="true" id="moments"></ion-list>
       <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (momentos, pautas y tomas)</ion-label></ion-item>
-        <ion-item button id="export"><ion-icon slot="start" name="cloud-download-outline"></ion-icon><ion-label>Exportar CSV (momentos, pautas y tomas)</ion-label></ion-item>
+        <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (momentos, productos y tomas)</ion-label></ion-item>
+        <ion-item button id="export"><ion-icon slot="start" name="cloud-download-outline"></ion-icon><ion-label>Exportar CSV (momentos, productos y tomas)</ion-label></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Exportar</ion-label></ion-list-header>
       <ion-list inset="true">
@@ -159,7 +159,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start"><ion-button id="cancel">Cancelar</ion-button></ion-buttons>
-        <ion-title>Pauta</ion-title>
+        <ion-title>Producto</ion-title>
         <ion-buttons slot="end"><ion-button id="save" strong="true">Guardar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
@@ -169,8 +169,8 @@
         <ion-item><ion-input name="name" label="Nombre" label-placement="stacked" placeholder="Paracetamol"></ion-input></ion-item>
         <ion-item><ion-input name="notes" label="Indicaciones" label-placement="stacked" placeholder="Con comida"></ion-input></ion-item>
       </ion-list>
-      <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
-      <ion-list inset="true" id="plan-list"></ion-list>
+      <ion-list-header><ion-label>Pautas</ion-label></ion-list-header>
+      <ion-list inset="true" id="regimen-list"></ion-list>
       <ion-list-header><ion-label>Otros datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Médico, enlaces…" auto-grow="true"></ion-textarea></ion-item>
@@ -188,7 +188,7 @@
       </div>
       <ion-list-header id="delete-header"><ion-label>Zona de peligro</ion-label></ion-list-header>
       <ion-list inset="true" id="delete">
-        <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar pauta</ion-label></ion-item>
+        <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar producto</ion-label></ion-item>
       </ion-list>
     </ion-content>
   </ion-modal>
@@ -205,7 +205,7 @@
     <ion-content id="chat-body" color="light"></ion-content>
     <ion-footer>
       <ion-toolbar>
-        <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta sobre tus pautas…" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
+        <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta sobre tus productos…" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
         <ion-buttons slot="end"><ion-button id="chat-send" aria-label="Enviar"><ion-icon slot="icon-only" name="send"></ion-icon></ion-button></ion-buttons>
       </ion-toolbar>
     </ion-footer>
@@ -236,7 +236,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start"><ion-button id="finished-close">Cerrar</ion-button></ion-buttons>
-        <ion-title>Inactivas</ion-title>
+        <ion-title>Inactivos</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
@@ -265,26 +265,26 @@
     <ion-content id="view-body" color="light"></ion-content>
   </ion-modal>
 
-  <ion-modal id="plan-editor">
+  <ion-modal id="regimen-editor">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="plan-cancel">Cancelar</ion-button></ion-buttons>
-        <ion-title>Programación</ion-title>
-        <ion-buttons slot="end"><ion-button id="plan-save" strong="true">Guardar</ion-button></ion-buttons>
+        <ion-buttons slot="start"><ion-button id="regimen-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-title>Pauta</ion-title>
+        <ion-buttons slot="end"><ion-button id="regimen-save" strong="true">Guardar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
-      <ion-list-header><ion-label>Programación</ion-label></ion-list-header>
+      <ion-list-header><ion-label>Pauta</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-input name="dose" label="Dosis (empieza por un número)" label-placement="stacked" placeholder="1 comprimido"></ion-input></ion-item>
         <ion-item><ion-input name="start" type="date" label="Fecha de inicio" label-placement="stacked"></ion-input></ion-item>
         <ion-item><ion-input name="days" type="number" min="1" inputmode="numeric" label="Duración (días)" label-placement="stacked" placeholder="7"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
-      <ion-list inset="true" id="plan-moments"></ion-list>
-      <ion-list inset="true" id="plan-moments-error" class="ion-hide"><ion-item lines="none"><ion-label color="danger" class="ion-text-center">Marca al menos un momento</ion-label></ion-item></ion-list>
-      <ion-list inset="true" id="plan-delete">
-        <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar programación</ion-label></ion-item>
+      <ion-list inset="true" id="regimen-moments"></ion-list>
+      <ion-list inset="true" id="regimen-moments-error" class="ion-hide"><ion-item lines="none"><ion-label color="danger" class="ion-text-center">Marca al menos un momento</ion-label></ion-item></ion-list>
+      <ion-list inset="true" id="regimen-delete">
+        <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar pauta</ion-label></ion-item>
       </ion-list>
     </ion-content>
   </ion-modal>
