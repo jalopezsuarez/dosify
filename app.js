@@ -1,3 +1,5 @@
+// ---------- Model ----------
+
 const KEY = 'dosify';
 // Model:
 // · timings: dose timings, in stored order (never reordered): { id (random), name, start, end (hours),
@@ -20,16 +22,39 @@ const newId = () => crypto.randomUUID().slice(0, 8);
 const defaultTimings = () => DEFAULT_TIMINGS.map(d => ({ id: newId(), ...d, visible: true, order: [] }));
 const timingIds = () => state.timings.map(ti => ti.id);
 const TEXT = ['name', 'notes', 'refs', 'memo'];
-const SEP = ';';
 const DAYS = 7; // past days always shown
 const DAYS_MAX = 30; // how far back days with records are shown
 const RECORDS_MAX = 1000;
 
+// ---------- Helpers: DOM, text, storage ----------
+
 const $ = (sel, root = document) => root.querySelector(sel);
+const str = v => v == null ? '' : String(v);
+const load = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Plain text with line breaks and clickable links (http, https or www.) that open in a new tab.
-const linkify = text => esc(text).replace(/\n/g, '<br>').replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
-const yes = v => ['1', 'yes', 'true', 'sí', 'si'].includes(String(v).trim().toLowerCase());
+const lines = text => esc(text).replace(/\n/g, '<br>');
+const linkify = text => lines(text).replace(/(https?:\/\/|www\.)[^\s<]*[^\s<.,;:)]/g, url => `<a href="${url.startsWith('http') ? url : `https://${url}`}" target="_blank" rel="noopener">${url}</a>`);
+const empty = text => `<ion-item lines="none"><ion-label color="medium" class="ion-text-center">${text}</ion-label></ion-item>`;
+const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
+// Shared dialogs: an action sheet with options + «Cancelar» (onCancel runs if dismissed without choosing) and a confirm alert.
+function sheet(header, buttons, onCancel) {
+  const el = $('#sheet');
+  el.header = header;
+  el.buttons = [...buttons, { text: 'Cancelar', role: 'cancel' }];
+  el.present();
+  if (onCancel) el.onDidDismiss().then(({ role }) => role === 'cancel' || role === 'backdrop' ? onCancel() : null);
+}
+function ask(header, handler) {
+  const alert = $('#confirm');
+  alert.header = header;
+  alert.message = '';
+  alert.buttons = [{ text: 'Cancelar', role: 'cancel' }, { text: 'Aceptar', role: 'destructive', handler }];
+  alert.present();
+}
+
+// ---------- Dates and times ----------
+
 const dayKey = d => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 const fromKey = key => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
 const today = () => dayKey(new Date());
@@ -41,7 +66,6 @@ const shortDate = key => otherYear(key) ? `${dayMonth(key)}/${key.slice(0, 4)}` 
 const longDate = (key, weekday = true) => fromKey(key).toLocaleDateString('es', { ...(weekday ? { weekday: 'long' } : {}), day: 'numeric', month: 'long', ...(otherYear(key) ? { year: 'numeric' } : {}) });
 const monthName = key => { const t = fromKey(`${key.slice(0, 7)}-01`).toLocaleDateString('es', { month: 'long' }); return `${t[0].toUpperCase()}${t.slice(1)}${otherYear(key) ? ` ${key.slice(0, 4)}` : ''}`; };
 const time = iso => { const d = new Date(iso); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const hhmm = iso => time(iso).padStart(5, '0'); // data format («05:06»), for the CSV
 const dateTime = iso => `${longDate(dayKey(new Date(iso)), false)} a las ${time(iso)}`; // «23 de octubre a las 6:02»
 // Time spans in plain words, on a scale of days, weeks, months and years («3 días», «2 semanas», «1 mes»).
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -57,16 +81,18 @@ function relative(iso) {
 }
 // How far ahead, in days: «Hoy», «Mañana», «Dentro de 3 semanas»…
 const until = days => days <= 0 ? 'Hoy' : days === 1 ? 'Mañana' : `Dentro de ${daysText(days)}`;
-const empty = text => `<ion-item lines="none"><ion-label color="medium" class="ion-text-center">${text}</ion-label></ion-item>`;
+
+// ---------- Data: validation and cleaning ----------
+
 // Whole hour from 0 to 24 or '' (no hour); null if invalid.
 const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d{1,2}$/.test(t) && Number(t) <= 24 ? Number(t) : null; };
 
-// Cleans stored or imported data: whatever is missing or wrong takes its default and records that cannot be
-// understood are dropped. No compatibility with older formats.
 const asText = v => typeof v === 'string' ? v : '';
 const date = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
 const stamp = v => { const t = new Date(v ?? ''); return isNaN(t) ? '' : t.toISOString(); }; // ISO timestamp or ''
 const asList = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+// Names of the failing checks: [['field', ok], …] → ['field', …].
+const failing = checks => checks.filter(([, ok]) => !ok).map(([f]) => f);
 // Integer ≥ min or '' (empty); null if something else was written.
 const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d+$/.test(t) && Number(t) >= min ? Number(t) : null; };
 // Amount of each dose: the number the dose starts with («1 comprimido», «0,5 ml»); 0 if it does not start with one.
@@ -75,6 +101,8 @@ const amount = dose => Number(String(dose).match(/^\s*(\d+(?:[.,]\d+)?)/)?.[1].r
 // on equal dates, by duration; incomplete ones are dropped.
 const cleanSchedules = (v, ids = timingIds()) => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, timings: ids.filter(id => asList(p.timings).includes(id)) } : null)
   .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.timings.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
+// Cleans stored or imported data: whatever is missing or wrong takes its default and records that cannot be
+// understood are dropped. No compatibility with older formats.
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   // Timings: the stored ones with an id, in order (name, hours and visibility defaulted if missing); if none
@@ -97,9 +125,9 @@ function clean(raw) {
     .sort((a, b) => b.at.localeCompare(a.at)).slice(0, RECORDS_MAX);
   return { timings, products, records };
 }
-const stored = (() => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } })();
-const state = clean(stored);
+const state = clean(load(KEY));
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+const commit = () => { save(); render(); };
 
 // ---------- Timings ----------
 
@@ -117,12 +145,10 @@ function timingNow(list = visibleTimings()) {
   const next = list.filter(ti => ti.start !== '').sort((a, b) => (a.start - h + 24) % 24 - (b.start - h + 24) % 24)[0];
   return (list.find(ti => within(ti, h)) ?? next ?? list[0])?.id ?? '';
 }
-const selectedTiming = () => $('#timing').value;
 
-// ---------- Schedules and doses of a day ----------
+// ---------- Schedules, doses and records of a day ----------
 
 const addDays = (key, n) => { const d = fromKey(key); d.setDate(d.getDate() + n); return dayKey(d); };
-const selectedDay = () => $('#day').value || today();
 // Record order of a timing: its «order» list; products not in it go after, in product order.
 const pos = (m, timing) => { const i = timingOf(timing).order.indexOf(m.id); return i < 0 ? Infinity : i; };
 const byTiming = (products, timing) => [...products].sort((a, b) => pos(a, timing) - pos(b, timing));
@@ -136,14 +162,18 @@ const doseOn = (m, day) => scheduleOn(m, day)?.dose ?? '';
 // Timings that apply on a day: those of that day's schedule (or, if none applies, the last one's); without
 // schedules, none.
 const timingsOn = (m, day) => (scheduleOn(m, day) ?? m.schedules.at(-1))?.timings ?? [];
-const doses = (timing, day = selectedDay()) => byTiming(state.products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), timing);
+const doses = (timing, day) => byTiming(state.products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day)).map(m => ({ ...m, dose: doseOn(m, day) })), timing);
 // Each record stores the product's name, dose and notes as taken; so the history shows what was taken even if
 // the product changes or is deleted.
 const SNAP = ['name', 'dose', 'notes'];
-const EDITED = ['name', 'notes']; // changes the product editor asks about before touching earlier records (the dose is re-read from the schedule)
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
 const snapOn = (m, day, dose = '') => ({ ...snap(m), dose: doseOn(m, day) || dose }); // the product as taken on that day (no schedule: the given dose)
 const takenAs = e => ({ id: e.id, ...snap(e) });
+// A record is identified by product, timing and day.
+const recordOf = (id, timing, day) => state.records.find(e => e.id === id && e.timing === timing && e.day === day);
+const recordsOfProduct = id => state.records.filter(e => e.id === id);
+const addRecord = (m, timing, day, at = new Date()) => state.records.unshift({ at: at.toISOString(), day, id: m.id, timing, ...snapOn(m, day) });
+const removeRecord = (id, timing, day) => { state.records = state.records.filter(e => !(e.id === id && e.timing === timing && e.day === day)); };
 // Rows of a day and timing: pending (current products without a record) and taken (their records, including products no
 // longer in the timing or deleted).
 function dayRows(timing, day) {
@@ -154,20 +184,17 @@ function dayRows(timing, day) {
 
 // ---------- Home ----------
 
+const selectedDay = () => $('#day').value || today();
+const selectedTiming = () => $('#timing').value;
 // Checking a dose adds a record with the product as it is that day; unchecking removes it.
 function toggle(id, timing, checked) {
-  const day = selectedDay();
-  if (checked) {
-    state.records.unshift({ at: new Date().toISOString(), day, id, timing, ...snapOn(productOf(id), day) });
-  } else {
-    state.records = state.records.filter(e => !(e.day === day && String(e.id) === id && e.timing === timing));
-  }
-  save();
-  render();
+  if (checked) addRecord(productOf(id), timing, selectedDay()); else removeRecord(id, timing, selectedDay());
+  commit();
 }
 
-const ring = (done, total, caption, size = 44, font = 11, color = 'primary') => `
-  <ion-text color="${color}">
+// Progress ring with a caption inside.
+const ring = (done, total, caption, size = 44, font = 11) => `
+  <ion-text color="primary">
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
@@ -247,15 +274,6 @@ const SORTS = {
 };
 let sortMode = 'records';
 
-// Shared action sheet: options + «Cancelar»; onCancel runs if dismissed without choosing.
-function sheet(header, buttons, onCancel) {
-  const el = $('#sheet');
-  el.header = header;
-  el.buttons = [...buttons, { text: 'Cancelar', role: 'cancel' }];
-  el.present();
-  if (onCancel) el.onDidDismiss().then(({ role }) => role === 'cancel' || role === 'backdrop' ? onCancel() : null);
-}
-
 const chooseSort = () => sheet('Ordenar tomas', Object.entries(SORTS).map(([key, o]) => (
   { text: o.label, role: key === sortMode ? 'selected' : undefined, handler: () => { sortMode = key; renderHome(); } })));
 // Position in product order; records of deleted products go last.
@@ -279,17 +297,15 @@ function reorderPending(timing, moved) {
   save();
 }
 
+const setScroll = (sc, y) => { sc.scrollTop = y; requestAnimationFrame(() => { sc.scrollTop = y; }); };
 // Keeps an ion-content's scroll when re-rendering: saves it, renders and restores it once Ionic has drawn the rows.
 async function keepScroll(content, paint) {
   const scroller = await content.getScrollElement();
   const y = scroller.scrollTop;
   paint();
   await Promise.all([...content.querySelectorAll('ion-item')].map(el => el.componentOnReady?.()));
-  scroller.scrollTop = y;
-  requestAnimationFrame(() => { scroller.scrollTop = y; });
+  setScroll(scroller, y);
 }
-
-const emptyList = text => `<ion-list inset="true">${empty(text)}</ion-list>`;
 
 async function renderHome() {
   const day = selectedDay();
@@ -327,9 +343,14 @@ async function renderHome() {
 // ---------- Products ----------
 
 const manager = $('#manager');
-// New product with its timestamps; saving one (editor or assistant) stamps «updated», even with nothing changed.
+// New product with its timestamps. Saving one (editor or assistant) stamps «updated» even with nothing changed, and its
+// records from today on (all of them with `all`) copy the product again, the dose re-read from the schedule.
 const newProduct = values => { const now = new Date().toISOString(); return { id: newId(), ...values, created: now, updated: now }; };
-const updateProduct = (m, values) => Object.assign(m, values, { updated: new Date().toISOString() });
+function updateProduct(m, values, all = false) {
+  Object.assign(m, values, { updated: new Date().toISOString() });
+  for (const e of recordsOfProduct(m.id)) if (all || e.day >= today()) Object.assign(e, snapOn(m, e.day, e.dose));
+}
+const deleteProduct = id => { state.products = state.products.filter(m => m.id !== id); for (const ti of state.timings) ti.order = ti.order.filter(x => x !== id); };
 // Last change of a product, for Estadísticas: date and time as title and, below, how long ago.
 const updatedLabel = m => m ? `<ion-label><p>Últimos cambios</p><h2>${dateTime(m.updated)}</h2><p>${relative(m.updated)}</p></ion-label>` : readLabel('Últimos cambios', '');
 
@@ -383,7 +404,7 @@ const SOON_DAYS = 7, SHOP_DAYS = 14;
 // · records, dosesTaken, costTaken (doses taken × cost / units) and firstDay: its history.
 // The product list, Costes, Próximas compras, the product view, the history and the assistant all read from here.
 function figures(m) {
-  const records = state.records.filter(e => e.id === m.id), dosesTaken = dosesSum(records), daily = perDayUnits(m);
+  const records = recordsOfProduct(m.id), dosesTaken = dosesSum(records), daily = perDayUnits(m);
   const unitCost = m.cost !== '' && m.units !== '' ? m.cost / m.units : null;
   const costPerDay = unitCost !== null && daily ? unitCost * daily : null;
   let end = '';
@@ -488,16 +509,11 @@ const timingRow = ti => `
 
 const renderTimingRows = () => { $('#timings').innerHTML = state.timings.map(timingRow).join(''); };
 
-function ask(header, handler) {
-  const alert = $('#confirm');
-  alert.header = header;
-  alert.message = '';
-  alert.buttons = [{ text: 'Cancelar', role: 'cancel' }, { text: 'Aceptar', role: 'destructive', handler }];
-  alert.present();
-}
-
 // ---------- CSV ----------
 
+const SEP = ';';
+const yes = v => ['1', 'yes', 'true', 'sí', 'si'].includes(String(v).trim().toLowerCase());
+const hhmm = iso => time(iso).padStart(5, '0'); // data format («05:06»)
 const csv = rows => '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(SEP)).join('\r\n');
 
 function parseCSV(text) {
@@ -543,7 +559,7 @@ const exportCSV = () => csv([
   ...state.products.flatMap(m => m.schedules.map(p => ({ id: m.id, ...p }))).sort((a, b) => a.start.localeCompare(b.start))
     .map(p => csvRow('schedule', { id: p.id, dose: p.dose, start: p.start, days: p.days, timings: p.timings.join(' ') })),
   ...[...state.records].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
-    .map(e => csvRow('record', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, timing: e.timing, at: `${e.day} ${hhmm(e.at)}` })),
+    .map(e => csvRow('record', { id: e.id, name: e.name, dose: e.dose, notes: e.notes, timing: e.timing, at: `${e.day} ${hhmm(e.at)}` })),
 ]);
 
 // Reads rows into objects and cleans them with clean(), like stored data.
@@ -560,7 +576,7 @@ async function importCSV(file) {
     if (c.type === 'record') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.records.push({ at: `${day}T${hhmm}`, day, id: c.id, timing: c.timing, name: c.name, dose: c.dose, notes: c.notes }); }
   }
   if (!raw.timings.length && !raw.products.length && !raw.records.length) return;
-  const apply = () => { Object.assign(state, clean(raw)); save(); render(); };
+  const apply = () => { Object.assign(state, clean(raw)); commit(); };
   ask('¿Reemplazar la base de datos?', apply);
 }
 
@@ -709,17 +725,13 @@ function saveEditor() {
   const bad = ['cost', 'units'].find(f => product[f] === null);
   if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
   product.schedules = cleanSchedules(schedules);
-  const done = () => { save(); render(); editor.dismiss(); };
+  const done = () => { commit(); editor.dismiss(); };
   if (!old) return state.products.push(newProduct(product)), done();
-  // Changing the product: records from today on show the new one; if what the history shows changes
-  // (name, notes) and there are earlier records, the user chooses whether those change too. The dose lives in the schedule.
-  const apply = all => {
-    updateProduct(old, product);
-    for (const e of state.records) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snapOn(old, e.day, e.dose));
-    done();
-  };
-  const changed = EDITED.some(k => product[k] !== old[k]);
-  if (!changed || !state.records.some(e => e.id === old.id && e.day < today())) return apply(false);
+  // If what the history shows (name, notes) changes and there are earlier records, the user chooses whether those
+  // change too (the dose lives in the schedule).
+  const apply = all => { updateProduct(old, product, all); done(); };
+  const changed = ['name', 'notes'].some(k => product[k] !== old[k]);
+  if (!changed || !recordsOfProduct(old.id).some(e => e.day < today())) return apply(false);
   sheet('¿A qué se aplican los cambios?', [
     { text: 'Aplicar a partir de hoy', handler: () => apply(false) },
     { text: 'Aplicar a todo el registro', handler: () => apply(true) },
@@ -778,13 +790,13 @@ function saveSchedule() {
 
 // How many records a product has («1 toma», «12 tomas»), for the «Registro» row of the editor and the product view.
 const recordsLabel = n => `${n} ${n === 1 ? 'toma' : 'tomas'}`;
-const recordCount = id => recordsLabel(state.records.filter(e => e.id === id).length);
+const recordCount = id => recordsLabel(recordsOfProduct(id).length);
 
 // All records of the product: summary (since when, how many, doses and estimated cost) and, below, grouped by the
 // schedule that applied each day (newest first; those without one under «Sin pauta»).
 const historyModal = $('#history');
 function openHistory(id) {
-  const taken = state.records.filter(e => e.id === id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
+  const taken = recordsOfProduct(id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
   const m = productOf(id) ?? { id, name: taken[0]?.name ?? '', schedules: [], cost: '', units: '' }; // deleted product: only its records
   const f = figures(m), item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
   const summary = [
@@ -871,7 +883,7 @@ function saveTimingEditor() {
 const AI_KEY = 'dosify-assistant';
 // No defaults: until all three fields are filled in, the assistant cannot be used.
 const AI_FIELDS = ['url', 'key', 'model'];
-const ai = (() => { let v = {}; try { v = JSON.parse(localStorage.getItem(AI_KEY)) ?? {}; } catch {} return Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])); })();
+const ai = (() => { const v = load(AI_KEY) ?? {}; return Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])); })();
 const aiField = name => $(`#assistant-settings [name="${name}"]`);
 // Saved while typing (not only on blur, which on iOS may not fire when closing Products) and the fields are
 // filled with the stored values each time Products opens.
@@ -883,7 +895,7 @@ manager.addEventListener('ionModalWillPresent', showAi);
 const chatModal = $('#chat'), chatBody = $('#chat-body'), chatInput = $('#chat-input');
 // The chat is stored (apart from the data and outside the CSV) until «Limpiar» is pressed.
 const CHAT_KEY = 'dosify-chat';
-let { chat = [], chatView = [] } = (() => { try { const v = JSON.parse(localStorage.getItem(CHAT_KEY)); return Array.isArray(v?.chat) && Array.isArray(v?.chatView) ? v : {}; } catch { return {}; } })();
+let { chat = [], chatView = [] } = (() => { const v = load(CHAT_KEY); return Array.isArray(v?.chat) && Array.isArray(v?.chatView) ? v : {}; })();
 let chatBusy = false;
 const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, chatView }));
 
@@ -893,7 +905,7 @@ function systemPrompt() {
   // The same figures the app shows, per product and overall, with Spanish keys and euros rounded to cents.
   const cents = n => n === null ? null : Math.round(n * 100) / 100;
   const summary = state.products.map(m => { const f = figures(m); return { id: m.id, nombre: m.name, dosis_hoy: f.doseToday, pausado: f.paused,
-    tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, state.records.some(e => e.id === m.id && e.day === today() && e.timing === id) ? 'tomada' : 'pendiente'])) : {},
+    tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, recordOf(m.id, id, today()) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: f.daily, coste_envase: m.cost === '' ? null : m.cost, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth),
     fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
     tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken, coste_consumido: cents(f.costTaken) }; });
@@ -960,7 +972,6 @@ const tools = () => [
 // one list per section), validate (bad fields), apply (saves and returns the summary) and, when needed,
 // button or danger (text and color of the save button) and live (card text recomputed while typing in a
 // field, in the [data-live] element). Draft values are text, as in the fields.
-const str = v => v == null ? '' : String(v);
 const productFields = d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" value="${esc(d.name)}"></ion-input></ion-item>
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
@@ -999,7 +1010,7 @@ const recordBrief = d => `${d.name} · ${label(d.timing)} · ${shortDate(d.day)}
 // product (its records keep its id).
 const recordsOf = d => state.records.filter(e => e.id === d.id && e.day >= d.from && e.day <= d.to && (!d.timing || e.timing === d.timing));
 const recordsDraft = a => {
-  const id = str(a.id), days = state.records.filter(e => e.id === id).map(e => e.day).sort(), product = productOf(id)?.name ?? state.records.find(e => e.id === id)?.name;
+  const id = str(a.id), days = recordsOfProduct(id).map(e => e.day).sort(), product = productOf(id)?.name ?? state.records.find(e => e.id === id)?.name;
   return product ? { id, product, from: date(str(a.from)) || days[0] || today(), to: date(str(a.to)) || days.at(-1) || today(), timing: timingIds().includes(a.timing) ? a.timing : '', dose: str(a.dose), notes: str(a.notes), name: str(a.name) } : null;
 };
 const recordsFields = d => `
@@ -1100,7 +1111,6 @@ const FORMS = {
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
       updateProduct(m, productValues(d));
-      for (const e of state.records) if (e.id === m.id && e.day >= today()) Object.assign(e, snapOn(m, e.day, e.dose));
       return `Producto «${m.name}» cambiado`;
     },
   },
@@ -1109,22 +1119,19 @@ const FORMS = {
     title: () => 'Borrar producto', danger: 'Borrar', brief: d => `${d.name} · se conservan sus tomas`,
     fields: d => `<ion-item lines="none"><ion-label><h2 class="medium">${esc(d.name)}</h2><p>Sus tomas registradas se conservan.</p></ion-label></ion-item>`,
     validate: () => [],
-    apply: d => { state.products = state.products.filter(m => m.id !== d.id); return `Producto «${d.name}» borrado`; },
+    apply: d => { deleteProduct(d.id); return `Producto «${d.name}» borrado`; },
   },
   add_record: {
     draft: recordDraft, title: () => 'Marcar toma', brief: recordBrief, fields: d => recordFields(d, true), validate: recordValidate,
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
-      if (!state.records.some(e => e.id === d.id && e.timing === d.timing && e.day === d.day)) {
-        const at = d.time ? new Date(`${d.day}T${d.time.padStart(5, '0')}`) : new Date();
-        state.records.unshift({ at: at.toISOString(), day: d.day, id: d.id, timing: d.timing, ...snapOn(m, d.day) });
-      }
+      if (!recordOf(d.id, d.timing, d.day)) addRecord(m, d.timing, d.day, d.time ? new Date(`${d.day}T${d.time.padStart(5, '0')}`) : new Date());
       return `«${m.name}» marcado en ${label(d.timing)} el ${shortDate(d.day)}`;
     },
   },
   remove_record: {
     draft: recordDraft, title: () => 'Dejar pendiente', brief: recordBrief, fields: d => recordFields(d, false), validate: recordValidate,
-    apply: d => { state.records = state.records.filter(e => !(e.id === d.id && e.timing === d.timing && e.day === d.day)); return `«${d.name}» pendiente en ${label(d.timing)} el ${shortDate(d.day)}`; },
+    apply: d => { removeRecord(d.id, d.timing, d.day); return `«${d.name}» pendiente en ${label(d.timing)} el ${shortDate(d.day)}`; },
   },
   edit_records: {
     draft: recordsDraft, title: () => 'Corregir tomas', brief: recordsBrief, fields: recordsFields, live: recordsLive, validate: recordsValidate,
@@ -1168,7 +1175,7 @@ function decide(v, saved) {
   const form = FORMS[v.tool];
   if (saved) {
     const summary = form.apply(v.draft);
-    Object.assign(state, clean(state)); save(); render();
+    Object.assign(state, clean(state)); commit(); // normalise after an assistant write (timing orders, sorted schedules and records)
     v.status = 'saved'; v.text = summary ?? 'No se ha podido aplicar';
     pushToolResult(v.id, summary ? `Has guardado la propuesta. ${summary}. Datos finales (con los cambios que hayas hecho): ${describe(v.tool, v.draft)}.` : 'No se ha podido aplicar: ya no existe.');
   } else {
@@ -1250,14 +1257,13 @@ function drawCharts() {
 // also on app load, in the background), after each reply (cleared on send; half of the new ones follow the thread
 // of the reply, the other half are free), on «Más» or after «Limpiar». If the service fails or takes over 25 s, they are picked at random from a local pool built from the data (suggestionPool).
 const SUGGEST_KEY = 'dosify-suggestions';
-let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
+let suggested = (() => { const v = load(SUGGEST_KEY); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; })();
 let suggestLoading = null; // promise of the request in flight
 function suggestionPool() {
   const products = state.products.filter(m => !paused(m)), day = today(), h = new Date().getHours();
   const timing = timingNow(), timingName = timing ? label(timing) : 'ahora';
-  const taken = (m, id) => state.records.some(e => e.id === m.id && e.day === day && e.timing === id);
-  const pendingNow = products.filter(m => timingsOn(m, day).includes(timing) && onDay(m, day) && !taken(m, timing));
-  const recorded = products.filter(m => state.records.some(e => e.id === m.id)), priced = products.filter(m => m.cost !== ''), ending = products.filter(m => m.schedules.length && scheduleEnd(m.schedules.at(-1)) <= addDays(day, 7));
+  const pendingNow = dayRows(timing, day).pending;
+  const recorded = products.filter(m => recordsOfProduct(m.id).length), priced = products.filter(m => m.cost !== ''), ending = products.filter(m => m.schedules.length && scheduleEnd(m.schedules.at(-1)) <= addDays(day, 7));
   const week = state.records.filter(e => e.day >= addDays(day, -7)).length, pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const some = products.length ? pick(products) : null, withRecords = recorded.length ? pick(recorded) : null;
   return [
@@ -1518,7 +1524,7 @@ function render() {
 $('#day').addEventListener('ionChange', () => { renderTimingTabs(); renderHome(); });
 $('#timing').addEventListener('ionChange', renderHome);
 // Name of a home row: if already taken that day, as taken; otherwise the product's.
-const rowName = id => (state.records.find(e => e.day === selectedDay() && e.timing === selectedTiming() && String(e.id) === id) ?? productOf(id)).name;
+const rowName = id => (recordOf(id, selectedTiming(), selectedDay()) ?? productOf(id)).name;
 // Checking or unchecking is confirmed in an action sheet; if cancelled, the checkbox goes back.
 $('#home').addEventListener('ionChange', e => {
   const { id, timing } = e.target.dataset;
@@ -1528,7 +1534,7 @@ $('#home').addEventListener('ionChange', e => {
 // The (i) of a row opens the product view; from home, with that day and timing's record if already taken.
 const viewFrom = (e, fromHome) => {
   const id = e.target.closest('[data-view]')?.dataset.view;
-  if (id) openView(id, fromHome ? state.records.find(x => x.day === selectedDay() && x.timing === selectedTiming() && String(x.id) === id) : undefined);
+  if (id) openView(id, fromHome ? recordOf(id, selectedTiming(), selectedDay()) : undefined);
   return !!id;
 };
 $('#home').addEventListener('click', e => {
@@ -1607,18 +1613,12 @@ $('#import').onclick = () => $('#file').click();
 $('#file').onchange = e => { importCSV(e.target.files[0]); e.target.value = ''; };
 $('#export').onclick = () => download('dosify.csv', exportCSV());
 $('#export-pdf').onclick = exportPdfMonth;
-$('#clear-records').onclick = () => ask('¿Borrar todas las tomas registradas?', () => { state.records = []; save(); render(); });
+$('#clear-records').onclick = () => ask('¿Borrar todas las tomas registradas?', () => { state.records = []; commit(); });
 
 $('#cancel').onclick = () => editor.dismiss();
 editor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#save').onclick = saveEditor;
-$('#delete').onclick = () => ask('¿Eliminar este producto?', () => {
-  state.products = state.products.filter(m => m.id !== editing);
-  for (const ti of state.timings) ti.order = ti.order.filter(id => id !== editing);
-  save();
-  render();
-  editor.dismiss();
-});
+$('#delete').onclick = () => ask('¿Eliminar este producto?', () => { deleteProduct(editing); commit(); editor.dismiss(); });
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-close').onclick = () => chatModal.dismiss();
