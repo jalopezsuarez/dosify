@@ -366,16 +366,16 @@ const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-
 
 // Product row: name (with the container end on the right), today's schedule (dose and timings), the notes
 // in grey and the costs.
-// Dot before the name in the product list, only if the product was saved since Products was opened this time. The
+// Check before the name in the product list, only if the product was saved since Products was opened this time. The
 // snapshot is taken each time Products opens, so going back home resets it.
 let updatedAtOpen = new Map();
 const snapshotUpdated = () => { updatedAtOpen = new Map(state.products.map(m => [m.id, m.updated])); };
-const changedDot = m => updatedAtOpen.get(m.id) === m.updated ? '' : '<span class="dot"></span>';
+const savedMark = m => updatedAtOpen.get(m.id) === m.updated ? '' : '<ion-icon class="saved" name="checkmark-circle" color="primary" aria-label="Guardado"></ion-icon>';
 const productRow = m => { const off = paused(m), cost = off ? '' : costLine(m); return `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap"${off ? ' color="medium"' : ''}>
       ${off ? '' : endNote(m.id)}
-      <h2 class="medium">${changedDot(m)}${esc(m.name)}</h2>
+      <h2 class="medium">${savedMark(m)}${esc(m.name)}</h2>
       <p>${off ? scheduleText(m) : `<ion-text color="dark">${scheduleText(m)}</ion-text>`}</p>
       ${notesLine(m)}
       ${cost ? `<p><ion-text color="teal" class="medium">${cost}</ion-text></p>` : ''}
