@@ -368,63 +368,77 @@ const productRow = m => paused(m) ? `
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
 
-// Costs and container. Doses per day are the amount of today's dose (from its schedule, if any) for each
-// visible timing of today's schedule.
-const perDayUnits = m => amount(doseOn(m, today())) * timingsOn(m, today()).filter(id => timingOf(id).visible).length;
-const perDay = m => m.cost / m.units * perDayUnits(m);
+// ---------- Figures: every calculation about a product, in one place ----------
+
 const monthDays = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
+const dosesSum = records => records.reduce((n, e) => n + amount(e.dose), 0);
+// Doses per day: the amount of today's dose for each visible timing of today's schedule.
+const perDayUnits = m => amount(doseOn(m, today())) * timingsOn(m, today()).filter(id => timingOf(id).visible).length;
+const SOON_DAYS = 7, SHOP_DAYS = 14;
+// What is known about a product from its schedules, cost, container and records (null when it cannot be computed):
+// · costPerDay = cost / units × daily; costPerMonth = costPerDay × days of the current month.
+// · end: when the current container runs out. All recorded doses are summed and, each time they complete a container,
+//   a new one starts: what is left of the current one is the remainder. Today's pending doses are subtracted and the
+//   rest is spread over the doses per day. If it does not cover today, it ends today. soon: under SOON_DAYS days.
+// · records, dosesTaken, costTaken (doses taken × cost / units) and firstDay: its history.
+// The product list, Costes, Próximas compras, the product view, the history and the assistant all read from here.
+function figures(m) {
+  const records = state.records.filter(e => e.id === m.id), dosesTaken = dosesSum(records), daily = perDayUnits(m);
+  const unitCost = m.cost !== '' && m.units !== '' ? m.cost / m.units : null;
+  const costPerDay = unitCost !== null && daily ? unitCost * daily : null;
+  let end = '';
+  if (m.units !== '' && daily) {
+    const pendingToday = Math.max(0, daily - dosesSum(records.filter(e => e.day === today())));
+    const left = m.units - dosesTaken % m.units - pendingToday;
+    end = addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
+  }
+  return { paused: paused(m), doseToday: doseOn(m, today()), daily, costPerDay, costPerMonth: costPerDay === null ? null : costPerDay * monthDays(),
+    end, daysLeft: end ? daysLeft(end) : null, soon: !!end && daysLeft(end) < SOON_DAYS,
+    records: records.length, dosesTaken, costTaken: unitCost === null ? null : dosesTaken * unitCost, firstDay: records.map(e => e.day).sort()[0] ?? '' };
+}
+// Figures of the active products together: cost of the containers, per day and per month, and what runs out within
+// SHOP_DAYS days (most urgent first).
+function totals() {
+  const products = state.products.filter(m => !paused(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
+  const costPerDay = full.reduce((sum, m) => sum + (figures(m).costPerDay ?? 0), 0);
+  const shopping = products.map(m => ({ m, ...figures(m) })).filter(x => x.end && x.daysLeft <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
+  return { products, priced, full, containers: priced.reduce((sum, m) => sum + m.cost, 0), costPerDay, costPerMonth: costPerDay * monthDays(), shopping };
+}
+
+// ---------- Figures shown ----------
+
 const euros = (n, digits = 2) => n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: digits, maximumFractionDigits: digits });
 const per = (n, unit) => `${euros(n, Number.isInteger(n) ? 0 : 2).replace(/\s*€/, '')} €/${unit}`;
-// When the current container runs out. All recorded doses of the product are summed and, each time they complete a
-// container, a new one starts: what is left of the current one is the remainder. Today's pending doses are subtracted
-// and the rest is spread over the doses per day (current schedule). If it does not cover today, it ends today.
-function runsOut(m) {
-  const daily = perDayUnits(m);
-  if (!m.units || !daily) return '';
-  const taken = state.records.filter(e => e.id === m.id);
-  const sum = list => list.reduce((n, e) => n + amount(e.dose), 0);
-  const pendingToday = Math.max(0, daily - sum(taken.filter(e => e.day === today())));
-  const left = m.units - sum(taken) % m.units - pendingToday;
-  return addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
-}
-// Container running out warning: under 7 days. Turns the home (i) and the product's end date rose.
-const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
-const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
-const supplyColor = id => { const m = productOf(id); return m && runningOut(m) ? 'rose' : 'teal'; };
-// Estimated purchase date, for Otros datos of the product view: the container end and how far ahead it is
-// («12/04 · Dentro de 3 semanas»), in rose when under 7 days; without units or schedule, nothing.
-const purchaseText = m => { const end = runsOut(m); return end ? `<ion-text ${runningOut(m) ? 'color="rose"' : ''}>${shortDate(end)} · ${until(daysLeft(end))}</ion-text>` : ''; };
+// Container end: rose when it runs out soon (the home (i), the product row and the purchase texts).
+const supplyColor = id => { const m = productOf(id); return m && figures(m).soon ? 'rose' : 'teal'; };
+// «12/04 · Dentro de 3 semanas», for Próximas compras and the product view; without units or schedule, nothing.
+const purchaseText = m => { const f = figures(m); return f.end ? `<ion-text ${f.soon ? 'color="rose"' : ''}>${shortDate(f.end)} · ${until(f.daysLeft)}</ion-text>` : ''; };
 const purchaseRow = m => `<ion-item>${readLabel('Fecha estimada de compra', m ? purchaseText(m) : '', true)}</ion-item>`;
-// Container end («5/01», the same day as «Fecha estimada de compra» in the product view) on the right of the product row,
-// level with the name: grey; rose and medium weight if running out.
+// Container end («5/01», the same day as «Fecha estimada de compra») on the right of the product row, level with the
+// name: grey; rose and medium weight if it runs out soon.
 const endNote = id => {
-  const m = productOf(id), end = m && runsOut(m);
-  if (!end) return '';
-  return `<ion-note ${runningOut(m) ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${shortDate(end)}</ion-note>`;
+  const m = productOf(id), f = m && figures(m);
+  return f?.end ? `<ion-note ${f.soon ? 'class="ion-float-right medium" color="rose"' : 'class="ion-float-right"'}>${shortDate(f.end)}</ion-note>` : '';
 };
 // Cost line of a product row: «30 €/ud · 15 €/mes · 1 €/día», with whatever can be computed.
 function costLine(m) {
-  const parts = [];
+  const f = figures(m), parts = [];
   if (m.cost !== '') parts.push(per(m.cost, 'ud'));
-  if (m.cost !== '' && m.units && perDayUnits(m)) parts.push(per(perDay(m) * monthDays(), 'mes'), per(perDay(m), 'día'));
+  if (f.costPerDay !== null) parts.push(per(f.costPerMonth, 'mes'), per(f.costPerDay, 'día'));
   return parts.join(' · ');
 }
-// Upcoming purchases: containers running out within SHOP_DAYS days, most urgent first.
-const SHOP_DAYS = 14;
-const shopping = () => state.products.filter(m => !paused(m)).map(m => ({ m, end: runsOut(m) })).filter(x => x.end && daysLeft(x.end) <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
-const inDays = n => n <= 0 ? 'Se acaba hoy' : n === 1 ? 'Queda 1 día' : `Quedan ${n} días`;
 
 function renderCosts() {
-  const products = state.products.filter(m => !paused(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
+  const { products, priced, full, containers, costPerDay, costPerMonth, shopping: shop } = totals();
   const row = (title, text, extra = '', icon = '') => `<ion-item${extra}>${icon}<ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
-  const daily = full.reduce((sum, m) => sum + perDay(m), 0), shop = shopping();
   // Overall costs: total of the containers and, with doses per container, per day and per month (days of the current month);
   // at the end, the upcoming purchases row (shown even without costs if something runs out).
   $('#costs').innerHTML = priced.length || shop.length ? `
     <ion-list-header><ion-label>Costes</ion-label></ion-list-header>
     <ion-list inset="true">
-      ${priced.length ? row(`${euros(priced.reduce((sum, m) => sum + m.cost, 0), 0)} en total`, `${priced.length} de ${products.length} productos con coste`)
-      + row(`${euros(daily * monthDays())} al mes`, `${euros(daily)} al día · ${full.length} de ${products.length} productos con coste y dosis por envase`) : ''}
+      ${priced.length ? row(`${euros(containers, 0)} en total`, `${priced.length} de ${products.length} productos con coste`)
+      + row(`${euros(costPerMonth)} al mes`, `${euros(costPerDay)} al día · ${full.length} de ${products.length} productos con coste y dosis por envase`) : ''}
       ${row('Próximas compras', shop.length ? `${shop.length} ${shop.length === 1 ? 'producto se acaba' : 'productos se acaban'} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"',
         `<ion-icon slot="start" name="cart-outline" color="${shop.length ? 'primary' : 'medium'}"></ion-icon>`)}
     </ion-list>` : '';
@@ -434,14 +448,14 @@ function renderCosts() {
 // (as on the home screen); the total at the end.
 const shoppingModal = $('#shopping');
 function openShopping() {
-  const shop = shopping(), priced = shop.filter(x => x.m.cost !== '');
+  const shop = totals().shopping, priced = shop.filter(x => x.m.cost !== '');
   $('#shopping-body').innerHTML = shop.length ? `
     <ion-list inset="true">
-      ${shop.map(({ m, end }) => `
+      ${shop.map(({ m }) => `
       <ion-item>
         <ion-label>
           <h2 class="medium">${esc(m.name)}</h2>
-          <p><ion-text ${runningOut(m) ? 'color="rose"' : ''}>${inDays(daysLeft(end))} · ${shortDate(end)}</ion-text></p>
+          <p>${purchaseText(m)}</p>
         </ion-label>
         ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}${viewButton(m.id)}
       </ion-item>`).join('')}
@@ -772,14 +786,13 @@ const recordCount = id => recordsLabel(state.records.filter(e => e.id === id).le
 const historyModal = $('#history');
 function openHistory(id) {
   const taken = state.records.filter(e => e.id === id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
-  const m = productOf(id) ?? { name: taken[0]?.name ?? '', schedules: [], cost: '', units: '' }; // deleted product: only its records
-  const units = taken.reduce((n, e) => n + amount(e.dose), 0);
-  const item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
+  const m = productOf(id) ?? { id, name: taken[0]?.name ?? '', schedules: [], cost: '', units: '' }; // deleted product: only its records
+  const f = figures(m), item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
   const summary = [
-    ['Desde', taken.length ? shortDate(taken.at(-1).day) : '—'],
-    ['Tomas', taken.length],
-    ['Dosis tomadas', units.toLocaleString('es')],
-    ...(m.cost !== '' && m.units ? [['Coste estimado', euros(units * m.cost / m.units)]] : []),
+    ['Desde', f.firstDay ? shortDate(f.firstDay) : '—'],
+    ['Tomas', f.records],
+    ['Dosis tomadas', f.dosesTaken.toLocaleString('es')],
+    ...(f.costTaken !== null ? [['Coste estimado', euros(f.costTaken)]] : []),
   ];
   const groups = new Map();
   for (const e of taken) {
@@ -878,17 +891,25 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
 function systemPrompt() {
   const now = new Date();
-  const summary = state.products.map(m => ({ id: m.id, nombre: m.name, dosis_hoy: doseOn(m, today()), pausado: paused(m),
+  // The same figures the app shows, per product and overall, with Spanish keys and euros rounded to cents.
+  const cents = n => n === null ? null : Math.round(n * 100) / 100;
+  const summary = state.products.map(m => { const f = figures(m); return { id: m.id, nombre: m.name, dosis_hoy: f.doseToday, pausado: f.paused,
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, state.records.some(e => e.id === m.id && e.day === today() && e.timing === id) ? 'tomada' : 'pendiente'])) : {},
-    dosis_al_dia: perDayUnits(m), costes: costLine(m) || null, fin_del_envase: runsOut(m) || null, tomas_registradas: state.records.filter(e => e.id === m.id).length }));
+    dosis_al_dia: f.daily, coste_envase: m.cost === '' ? null : m.cost, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth),
+    fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
+    tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken, coste_consumido: cents(f.costTaken) }; });
+  const t = totals(), overall = { productos_activos: t.products.length, coste_envases: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
+    proximas_compras: t.shopping.map(x => ({ id: x.m.id, nombre: x.m.name, fin_del_envase: x.end, dias_hasta_fin: x.daysLeft })) };
   return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, created y updated = fecha de creación y de última modificación en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
-Cálculos por producto (dosis de hoy, si está pausado, qué tomas de hoy están tomadas o pendientes por momento, dosis al día (la cantidad de la dosis de hoy por cada momento visible de su pauta), costes, fin del envase actual con reinicio automático al gastar cada envase, tomas registradas):
+Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; coste del envase, al día = coste ÷ dosis por envase × dosis al día, y al mes = al día × días del mes actual, en euros; fin del envase actual con reinicio automático al gastar cada envase, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; tomas registradas, primera toma, dosis tomadas y coste consumido = dosis tomadas × coste ÷ dosis por envase; null es que no se puede calcular):
 ${JSON.stringify(summary)}
+Totales de los productos activos (coste de los envases, al día y al mes, y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
+${JSON.stringify(overall)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
@@ -1245,8 +1266,8 @@ function suggestionPool() {
     ...(pendingNow.length ? [`Hazme una lista con check para marcar lo que me toca en ${timingName}.`, `¿Qué me queda por tomar en ${timingName}?`] : []),
     ...(products.length ? ['¿Qué me falta por tomar hoy?', h >= 20 ? '¿Me queda algo pendiente de hoy antes de dormir?' : h < 12 ? '¿Qué tengo que tomar a lo largo del día de hoy?' : '¿Qué me queda por tomar en lo que falta de día?'] : []),
     // Containers and purchases
-    ...products.filter(m => runsOut(m)).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
-    ...(products.some(m => runsOut(m)) ? [`¿Qué tengo que comprar en los próximos ${SHOP_DAYS} días? Hazme la lista con precios.`, '¿Qué envase se me acaba antes?'] : []),
+    ...products.filter(m => figures(m).end).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
+    ...(products.some(m => figures(m).end) ? [`¿Qué tengo que comprar en los próximos ${SHOP_DAYS} días? Hazme la lista con precios.`, '¿Qué envase se me acaba antes?'] : []),
     ...(products.some(m => m.units === '' || m.cost === '') ? ['Hazme un formulario para completar el coste y las dosis por envase de los productos que no lo tienen.'] : []),
     // Costs
     ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por producto.', '¿Qué producto me sale más caro al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por producto.'] : []),
