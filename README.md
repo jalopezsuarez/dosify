@@ -92,7 +92,7 @@ No hay compatibilidad con formatos anteriores. Al abrir la app y al cargar la ba
 
 ## Formato CSV
 
-Un solo fichero con todo: momentos, productos con sus pautas y tomas. Separador `;`, una cabecera y 17 columnas compartidas; cada columna es un campo de los datos, con su mismo nombre y significado (solo `at` junta `day` y la hora), y cada tipo de fila usa las suyas y deja las demás vacías.
+Un solo fichero con todo: momentos, productos con sus pautas y tomas. Separador `;`, una cabecera y 17 columnas compartidas; cada columna es un campo de los datos, con su mismo nombre y significado (solo `at` junta `day` y la hora), y cada tipo de fila usa las suyas y deja las demás vacías. Se exporta por tipos, en este orden: `timing`, `product`, `schedule` y `record`.
 
 ```
 type;id;name;notes;refs;memo;cost;units;dose;start;end;days;timings;timing;visible;order;at
@@ -100,10 +100,10 @@ timing;a1f3c9e2;Desayuno;;;;;;;6;12;;;;true;7b2e9d41 c4d8a0f6;
 timing;5e7d2b8c;Almuerzo;;;;;;;12;18;;;;true;;
 timing;9c0a4f17;Cena;;;;;;;18;24;;;;true;;
 timing;d2e6b3a9;Demanda;;;;;;;;;;;;true;;
-product;c4d8a0f6;Paracetamol;Si dolor;;;3;20;;;;;;;;;
-schedule;c4d8a0f6;;;;;;;1 comprimido de 500 mg;2026-10-15;;30;a1f3c9e2 5e7d2b8c 9c0a4f17;;;;
 product;7b2e9d41;Omeprazol;En ayunas;Dr. Ruiz;Comprar en farmacia;;;;;;;;;;;
+product;c4d8a0f6;Paracetamol;Si dolor;;;3;20;;;;;;;;;
 schedule;7b2e9d41;;;;;;;40 mg;2026-10-10;;7;a1f3c9e2;;;;
+schedule;c4d8a0f6;;;;;;;1 comprimido de 500 mg;2026-10-15;;30;a1f3c9e2 5e7d2b8c 9c0a4f17;;;;
 schedule;7b2e9d41;;;;;;;20 mg;2026-10-17;;30;a1f3c9e2;;;;
 record;7b2e9d41;Omeprazol;En ayunas;;;;;40 mg;;;;;a1f3c9e2;;;2026-10-16 08:05
 record;7b2e9d41;Omeprazol;En ayunas;;;;;20 mg;;;;;a1f3c9e2;;;2026-10-17 08:03
@@ -111,8 +111,8 @@ record;c4d8a0f6;Paracetamol;Si dolor;;;;;1 comprimido de 500 mg;;;;;a1f3c9e2;;;2
 ```
 
 - `timing`: `id`, `name` (puede ir vacío), `start` y `end` (horas enteras de 0 a 24, opcionales), `visible` (`true`/`false`) y `order` (los `id` de producto en el orden de tomas, separados por espacios). Van en su orden.
-- `product`: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase). El orden de estas filas es el orden de productos.
-- `schedule`: tras su producto, `id` del producto, `dose`, `start` (fecha de inicio, `AAAA-MM-DD`), `days` (duración) y `timings` (los `id` de los momentos en que se toma con esa pauta, separados por espacios); las cuatro son obligatorias (al menos un momento), y si falta alguna o no vale, la pauta se descarta.
+- `product`: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase). Se exportan del más antiguo al más nuevo (por la fecha de inicio de su primera pauta; sin pautas, al final, en el orden de productos). Al cargar, el orden de estas filas pasa a ser el orden de productos.
+- `schedule`: `id` del producto (su fila `product` va antes), `dose`, `start` (fecha de inicio, `AAAA-MM-DD`), `days` (duración) y `timings` (los `id` de los momentos en que se toma con esa pauta, separados por espacios), de la más antigua a la más nueva (fecha de inicio y, a igual fecha, duración); las cuatro son obligatorias (al menos un momento), y si falta alguna o no vale, la pauta se descarta.
 - `record`: `id` del producto, `timing` (el de la toma), `at` (`AAAA-MM-DD HH:MM`, hora local; de ahí sale `day`) y el producto tal como se tomó: `name`, `dose` y `notes`. En el ejemplo, el Omeprazol tiene dos pautas: 40 mg desde el 10 y 20 mg desde el 17; cada toma conserva la dosis con que se tomó.
 - Los `id` son aleatorios (8 caracteres), los mismos que en los datos; al cargar, los de los momentos tienen que coincidir con los que usan las pautas y las tomas. Un producto sin `id` recibe uno nuevo; un momento sin `id` se descarta (las pautas y las tomas no podrían referirse a él).
 - Al cargar, las columnas se buscan por su nombre en la cabecera, así que su orden da igual. No hay compatibilidad con formatos anteriores: lo que falte o no cuadre toma su valor por defecto (sin filas de momentos válidas, los de por defecto; números, fechas u horas mal escritos, vacíos) y las filas que no se entienden se ignoran.
