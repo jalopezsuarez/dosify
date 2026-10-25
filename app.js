@@ -43,19 +43,20 @@ const monthName = key => { const t = fromKey(`${key.slice(0, 7)}-01`).toLocaleDa
 const time = iso => { const d = new Date(iso); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const hhmm = iso => time(iso).padStart(5, '0'); // data format («05:06»), for the CSV
 const dateTime = iso => `${longDate(dayKey(new Date(iso)), false)} a las ${time(iso)}`; // «23 de octubre a las 6:02»
-// How long ago, in plain words: «Hace un momento», «Hace 3 minutos», «Ayer», «Hace 2 semanas»…
-const ago = (n, one, many) => `Hace ${n} ${n === 1 ? one : many}`;
+// Time spans in plain words, on a scale of days, weeks, months and years («3 días», «2 semanas», «1 mes»).
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const daysText = days => days < 7 ? count(days, 'día', 'días') : days < 30 ? count(Math.floor(days / 7), 'semana', 'semanas')
+  : days < 365 ? count(Math.floor(days / 30), 'mes', 'meses') : count(Math.floor(days / 365), 'año', 'años');
+// How long ago: «Hace un momento», «Hace 3 minutos», «Hace 2 horas», «Ayer», «Hace 2 semanas»…
 function relative(iso) {
   const minutes = Math.floor((Date.now() - new Date(iso)) / 60000), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
   if (minutes < 1) return 'Hace un momento';
-  if (hours < 1) return ago(minutes, 'minuto', 'minutos');
-  if (days < 1) return ago(hours, 'hora', 'horas');
-  if (days === 1) return 'Ayer';
-  if (days < 7) return ago(days, 'días', 'días');
-  if (days < 30) return ago(Math.floor(days / 7), 'semana', 'semanas');
-  if (days < 365) return ago(Math.floor(days / 30), 'mes', 'meses');
-  return ago(Math.floor(days / 365), 'año', 'años');
+  if (hours < 1) return `Hace ${count(minutes, 'minuto', 'minutos')}`;
+  if (days < 1) return `Hace ${count(hours, 'hora', 'horas')}`;
+  return days === 1 ? 'Ayer' : `Hace ${daysText(days)}`;
 }
+// How far ahead, in days: «Hoy», «Mañana», «Dentro de 3 semanas»…
+const until = days => days <= 0 ? 'Hoy' : days === 1 ? 'Mañana' : `Dentro de ${daysText(days)}`;
 const empty = text => `<ion-item lines="none"><ion-label color="medium" class="ion-text-center">${text}</ion-label></ion-item>`;
 // Whole hour from 0 to 24 or '' (no hour); null if invalid.
 const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d{1,2}$/.test(t) && Number(t) <= 24 ? Number(t) : null; };
@@ -336,7 +337,7 @@ function updateProduct(m, values) {
   if (fingerprint(m) !== before) m.updated = new Date().toISOString();
 }
 // Last change of a product, for Estadísticas: date and time as title and, below, how long ago.
-const updatedLabel = m => `<ion-label><p>Últimos cambios</p><h2>${m ? dateTime(m.updated) : '—'}</h2>${m ? `<p>${relative(m.updated)}</p>` : ''}</ion-label>`;
+const updatedLabel = m => m ? `<ion-label><p>Últimos cambios</p><h2>${dateTime(m.updated)}</h2><p>${relative(m.updated)}</p></ion-label>` : readLabel('Últimos cambios', '');
 
 // A product is paused when it has no current or future schedule (also when it has none): it goes in the
 // paused list, in grey, without costs.
@@ -390,6 +391,10 @@ function runsOut(m) {
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
 const runningOut = m => { const end = runsOut(m); return !!end && daysLeft(end) < 7; };
 const supplyColor = id => { const m = productOf(id); return m && runningOut(m) ? 'rose' : 'teal'; };
+// Estimated purchase date, for Otros datos (editor and product view): the container end and how far ahead it is
+// («12/04 · Dentro de 3 semanas»), in rose when under 7 days; without units or schedule, nothing.
+const purchaseText = m => { const end = runsOut(m); return end ? `<ion-text ${runningOut(m) ? 'color="rose"' : ''}>${shortDate(end)} · ${until(daysLeft(end))}</ion-text>` : ''; };
+const purchaseLabel = m => readLabel('Fecha estimada de compra', m ? purchaseText(m) : '', true);
 // Container end («5/01») on the right of the product row, level with the name: grey; rose and medium weight if running out.
 const endNote = id => {
   const m = productOf(id), end = m && runsOut(m);
@@ -676,6 +681,7 @@ function openEditor(product = {}) {
   $('#stats-section').classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
+  $('#purchase').innerHTML = purchaseLabel(productOf(editing)); $('#purchase').classList.toggle('ion-hide', !editing);
   rememberScroll();
   editor.present();
 }
@@ -799,7 +805,9 @@ function openHistory(id) {
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
 let viewing = null;
-const readRow = (name, value, links) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${(links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label></ion-item>`;
+// Read-only row: small title and value («—» when empty); html = the value is already HTML, links = make links clickable.
+const readLabel = (name, value, html, links) => `<ion-label class="ion-text-wrap"><p>${name}</p><h2>${(html ? value : links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label>`;
+const readRow = (name, value, links) => `<ion-item>${readLabel(name, value, false, links)}</ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 function openView(id, record) {
   const m = productOf(id), p = m ?? { name: record.name, notes: record.notes, refs: '', memo: '', cost: '', units: '', schedules: [] };
@@ -809,7 +817,7 @@ function openView(id, record) {
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
-    + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
+    + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}<ion-item>${purchaseLabel(m)}</ion-item></ion-list>`
     + (record ? readSection('Toma', readRow('Día', longDate(record.day)) + readRow('Hora', time(record.at)) + readRow('Momento', label(record.timing)) + readRow('Dosis', record.dose)) : '')
     + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item><ion-item>${updatedLabel(m)}</ion-item>`)
     + (m ? '' : `<ion-list inset="true">${empty('El producto se borró: se muestra lo que guarda la toma.')}</ion-list>`);
