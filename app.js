@@ -171,7 +171,7 @@ function renderSlots() {
 
 // Texto de una pauta: nombre (medio), dosis (texto principal) e indicaciones (gris, recortadas a unas dos líneas).
 const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return t.length > 80 ? `${t.slice(0, 80).trimEnd()}…` : t; };
-const doseLine = (text, on = true) => text ? `<p>${on ? `<ion-text color="dark">${esc(text)}</ion-text>` : esc(text)}</p>` : '';
+const doseLine = text => text ? `<p><ion-text color="dark">${esc(text)}</ion-text></p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
 // El (i) de una fila abre la ficha de la pauta (solo lectura); su color avisa del fin del envase, o es gris si la
@@ -293,19 +293,18 @@ async function renderToma() {
 const manager = $('#manager');
 // Una pauta con programaciones está terminada si ya acabaron todas (ni vigente ni futura): sale en gris, sin costes.
 const finished = m => m.plan.length > 0 && !planOn(m, today()) && !m.plan.some(p => p.start > today());
-const chip = (m, slot) => slotsOn(m, today()).includes(slot)
-  ? `<ion-chip color="${finished(m) ? 'medium' : 'primary'}"><ion-label>${esc(label(slot))}</ion-label></ion-chip>`
-  : `<ion-chip outline="true" color="medium"><ion-label>${esc(label(slot))}</ion-label></ion-chip>`;
+// Línea de la programación en la lista: la dosis y los intervalos visibles, separados por puntos («1 cápsula ·
+// Desayuno · Almuerzo»), de la programación de hoy (o de la última); sin programaciones, «Sin programación».
+const planText = m => { const p = planOn(m, today()) ?? m.plan.at(-1); return p ? [p.dose, ...p.slots.filter(id => interval(id).visible).map(label)].map(esc).join(' · ') : 'Sin programación'; };
 
-// Fila de una pauta: nombre (con el fin del envase a la derecha), costes, la dosis de hoy (la de su programación), las
-// indicaciones y sus intervalos.
+// Fila de una pauta: nombre (con el fin del envase a la derecha), las indicaciones en gris, la programación de hoy
+// (dosis e intervalos) y los costes.
 const pautaRow = m => finished(m) ? `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap" color="medium">
       <h2 class="medium">${esc(m.name)}</h2>
-      ${doseLine(m.plan.at(-1).dose, false)}
       ${notesLine(m)}
-      <p>${visibleIntervals().map(iv => chip(m, iv.id)).join('')}</p>
+      <p>${planText(m)}</p>
     </ion-label>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>` : `
@@ -313,10 +312,9 @@ const pautaRow = m => finished(m) ? `
     <ion-label class="ion-text-wrap">
       ${endNote(m.id)}
       <h2 class="medium">${esc(m.name)}</h2>
-      ${costLine(m) ? `<p><ion-text color="teal" class="medium">${costLine(m)}</ion-text></p>` : ''}
-      ${doseLine(doseOn(m, today()))}
       ${notesLine(m)}
-      <p>${visibleIntervals().map(iv => chip(m, iv.id)).join('')}</p>
+      <p><ion-text color="dark">${planText(m)}</ion-text></p>
+      ${costLine(m) ? `<p><ion-text color="teal" class="medium">${costLine(m)}</ion-text></p>` : ''}
     </ion-label>
     <ion-reorder slot="end"></ion-reorder>
   </ion-item>`;
