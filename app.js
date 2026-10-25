@@ -684,10 +684,10 @@ const shortDate = key => fromKey(key).toLocaleDateString('es');
 // Hasta qué día vale una pauta: su último día o, si la siguiente empieza antes, la víspera de esta.
 const scheduleUntil = (all, p) => { const next = all.find(q => q.start > p.start); return next && next.start <= scheduleEnd(p) ? addDays(next.start, -1) : scheduleEnd(p); };
 
-// Fila de una pauta (lista del editor y ficha): la dosis en gris, debajo las fechas en que vale y la duración en el color
-// principal («24/10/2026 – 22/11/2026 · 30 días») y, si tiene, una tercera línea con sus momentos («Desayuno, Cena»).
+// Fila de una pauta (lista del editor y ficha), como las de la toma: la dosis de título, debajo las fechas en que vale y la
+// duración («24/10/2026 – 22/11/2026 · 30 días») y, si tiene, una tercera línea en gris con sus momentos («Desayuno, Cena»).
 const scheduleDates = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}`;
-const scheduleRow = (all, p) => `<h2><ion-text color="medium">${esc(p.dose)}</ion-text></h2><p><ion-text color="primary">${esc(scheduleDates(all, p))}</ion-text></p>${p.timings.length ? `<p><ion-text color="secondary">${esc(p.timings.map(label).join(', '))}</ion-text></p>` : ''}`;
+const scheduleRow = (all, p) => `<h2 class="medium">${esc(p.dose)}</h2>${doseLine(scheduleDates(all, p))}${p.timings.length ? `<p>${esc(p.timings.map(label).join(', '))}</p>` : ''}`;
 // Momentos de una pauta: una casilla por momento visible, con sus horas de subtítulo; los ocultos conservan su valor.
 const timingBoxes = timings => visibleTimings().map(ti => `<ion-item><ion-checkbox name="timing-${ti.id}" ${timings.includes(ti.id) ? 'checked' : ''}><ion-label><h2>${esc(label(ti.id))}</h2><p>${hours(ti) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay momentos visibles.');
 const readTimings = old => timingIds().filter(id => timingOf(id).visible ? scheduleField(`timing-${id}`).checked : old.includes(id));
@@ -1159,7 +1159,7 @@ function drawCharts() {
 // Sugerencias: las propone el propio modelo con una petición aparte (sin herramientas) que recibe todos los datos, la
 // hora del día, la conversación y lo que sabe hacer. Se guardan en este navegador y se piden la primera vez (si no
 // hay ninguna guardada; también al cargar la app, en segundo plano), al terminar cada respuesta (se vacían al enviar la pregunta y las nuevas siguen, la mitad, el
-// hilo de lo respondido y, la otra mitad, van libres), al pulsar «Otras» o tras «Limpiar». Si el servicio falla o tarda más de 25 s, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
+// hilo de lo respondido y, la otra mitad, van libres), al pulsar «Más» o tras «Limpiar». Si el servicio falla o tarda más de 25 s, se eligen al azar de un fondo hecho en la app con los datos (suggestionPool).
 const SUGGEST_KEY = 'dosify-sugerencias';
 let suggested = (() => { try { const v = JSON.parse(localStorage.getItem(SUGGEST_KEY)); return Array.isArray(v?.list) ? v.list.filter(q => typeof q === 'string') : []; } catch { return []; } })();
 let suggestLoading = null; // promesa de la petición en curso
@@ -1193,7 +1193,7 @@ function suggestionPool() {
     // Cambios con formulario
     ...(some ? [`Quiero cambiar los momentos de la pauta de ${some.name}.`, `Añade una pauta nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
     ...(products.length ? ['Hazme una tabla con mis productos: dosis de hoy, momentos, coste y fin del envase.', 'Revisa mis productos y dime si ves algo raro o incompleto.', 'Quiero añadir un producto nuevo.'] : ['Ayúdame a crear mi primer producto.', 'Crea un producto de ejemplo para ver cómo funciona.']),
-    // Otras
+    // Más
     ...(state.timings.some(ti => ti.visible && (ti.start === '' || ti.end === '')) ? ['Quiero poner horas a mis momentos.'] : []),
     '¿Qué puedes hacer por mí?',
   ];
@@ -1235,7 +1235,7 @@ async function askSuggestions(count, exclude) {
 }
 // Mientras se piden sugerencias nuevas no se muestran las antiguas: solo la fila de carga.
 const suggestionList = qs => `
-  <ion-list-header><ion-label>Sugerencias</ion-label>${qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Otras</ion-button>' : ''}</ion-list-header>
+  <ion-list-header><ion-label>Sugerencias</ion-label>${qs ? '<ion-button id="suggest-more" fill="clear" size="small"><ion-icon slot="start" name="shuffle-outline"></ion-icon>Más</ion-button>' : ''}</ion-list-header>
   <ion-list inset="true">${(qs ?? []).map(q => `<ion-item button="true" detail="false" data-suggest="${esc(q)}"><ion-icon slot="start" name="sparkles-outline" color="teal"></ion-icon><ion-label class="ion-text-wrap" color="teal">${esc(q)}</ion-label></ion-item>`).join('')
     }${suggestLoading || !qs ? '<ion-item lines="none"><ion-spinner slot="start" name="dots" color="medium"></ion-spinner><ion-label color="medium">Proponiendo sugerencias…</ion-label></ion-item>' : ''}</ion-list>`;
 
