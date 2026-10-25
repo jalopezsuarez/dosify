@@ -366,11 +366,11 @@ const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-
 
 // Product row: name (with the container end on the right), today's schedule (dose and timings), the notes
 // in grey and the costs.
-// Dot before the name in the product list: primary if the product was saved since Products was opened this time, light
-// grey otherwise. The snapshot is taken each time Products opens, so going back home resets it.
+// Dot before the name in the product list, only if the product was saved since Products was opened this time. The
+// snapshot is taken each time Products opens, so going back home resets it.
 let updatedAtOpen = new Map();
 const snapshotUpdated = () => { updatedAtOpen = new Map(state.products.map(m => [m.id, m.updated])); };
-const changedDot = m => `<span class="dot${updatedAtOpen.get(m.id) === m.updated ? '' : ' changed'}"></span>`;
+const changedDot = m => updatedAtOpen.get(m.id) === m.updated ? '' : '<span class="dot"></span>';
 const productRow = m => { const off = paused(m), cost = off ? '' : costLine(m); return `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap"${off ? ' color="medium"' : ''}>
