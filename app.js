@@ -134,6 +134,7 @@ const commit = () => { save(); render(); };
 const timingOf = id => state.timings.find(ti => ti.id === id);
 const productOf = id => state.products.find(m => m.id === id);
 const visibleTimings = () => state.timings.filter(ti => ti.visible);
+const visibleOf = ids => ids.filter(id => timingOf(id).visible);
 const hours = ti => ti.start !== '' && ti.end !== '' ? `${ti.start}–${ti.end} h` : ti.start !== '' ? `desde las ${ti.start} h` : ti.end !== '' ? `hasta las ${ti.end} h` : '';
 const label = id => { const ti = timingOf(id); return ti.name || hours(ti) || 'Sin nombre'; };
 // Does hour h fall in the timing? Supports timings crossing midnight (e.g. 22–6).
@@ -229,7 +230,7 @@ const dayTimings = day => visibleTimings().filter(ti => { const r = dayRows(ti.i
 function renderTimingTabs() {
   const timings = dayTimings(selectedDay());
   const html = timings.map(ti => `<ion-segment-button value="${ti.id}"><ion-label>${esc(label(ti.id))}</ion-label></ion-segment-button>`).join('');
-  if (html !== timingTabsHtml) $('#timing').innerHTML = timingTabsHtml = html;
+  if (html !== timingTabsHtml) $('#timing').innerHTML = timingTabsHtml = html; // only when it changes: keeps the selection, no flicker
   if (!timings.some(ti => ti.id === $('#timing').value)) $('#timing').value = timingNow(timings);
 }
 
@@ -259,6 +260,7 @@ const doseItem = (m, timing, record, sorting) => `
 const doseRow = (m, timing, record) => `<ion-list inset="true">${doseItem(m, timing, record)}</ion-list>`;
 
 // Header button of a section (Pending, Taken).
+// Icon button of a list header.
 const headerButton = (id, icon, title) => `<ion-button id="${id}" fill="clear" aria-label="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
 
 // «Pendiente»: its button toggles sort mode; the order set applies to that timing on any day.
@@ -278,7 +280,7 @@ const chooseSort = () => sheet('Ordenar tomas', Object.entries(SORTS).map(([key,
   { text: o.label, role: key === sortMode ? 'selected' : undefined, handler: () => { sortMode = key; renderHome(); } })));
 // Position in product order; records of deleted products go last.
 const productIndex = id => { const i = state.products.findIndex(m => m.id === id); return i < 0 ? Infinity : i; };
-const byProducts = (a, b) => (productIndex(a.id) - productIndex(b.id)) || 0;
+const byProducts = (a, b) => (productIndex(a.id) - productIndex(b.id)) || 0; // NaN when both are deleted
 const sortTaken = (rows, timing) => [...rows].sort(
   sortMode === 'records' ? (a, b) => (pos(a, timing) - pos(b, timing)) || byProducts(a, b)
   : sortMode === 'products' ? byProducts
@@ -343,6 +345,7 @@ async function renderHome() {
 // ---------- Products ----------
 
 const manager = $('#manager');
+const EMPTY_PRODUCT = { name: '', notes: '', refs: '', memo: '', cost: '', units: '', schedules: [] };
 // New product with its timestamps. Saving one (editor or assistant) stamps «updated» even with nothing changed, and its
 // records from today on (all of them with `all`) copy the product again, the dose re-read from the schedule.
 const newProduct = values => { const now = new Date().toISOString(); return { id: newId(), ...values, created: now, updated: now }; };
@@ -359,7 +362,7 @@ const updatedLabel = m => m ? `<ion-label><p>Últimos cambios</p><h2>${dateTime(
 const paused = m => !scheduleOn(m, today()) && !m.schedules.some(p => p.start > today());
 // Schedule line in the list: the dose and the visible timings, dot separated («1 cápsula ·
 // Desayuno · Almuerzo»), of today's schedule (or the last one); without schedules, «Sin pauta».
-const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-1); return p ? [p.dose, ...p.timings.filter(id => timingOf(id).visible).map(label)].map(esc).join(' · ') : 'Sin pauta'; };
+const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-1); return p ? [p.dose, ...visibleOf(p.timings).map(label)].map(esc).join(' · ') : 'Sin pauta'; };
 
 // Product row: name (with the container end on the right), today's schedule (dose and timings), the notes
 // in grey and the costs.
@@ -368,25 +371,17 @@ const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-
 let updatedAtOpen = new Map();
 const snapshotUpdated = () => { updatedAtOpen = new Map(state.products.map(m => [m.id, m.updated])); };
 const changedDot = m => `<span class="dot${updatedAtOpen.get(m.id) === m.updated ? '' : ' changed'}"></span>`;
-const productRow = m => paused(m) ? `
+const productRow = m => { const off = paused(m), cost = off ? '' : costLine(m); return `
   <ion-item button="true" detail="false" data-id="${m.id}">
-    <ion-label class="ion-text-wrap" color="medium">
+    <ion-label class="ion-text-wrap"${off ? ' color="medium"' : ''}>
+      ${off ? '' : endNote(m.id)}
       <h2 class="medium">${changedDot(m)}${esc(m.name)}</h2>
-      <p>${scheduleText(m)}</p>
+      <p>${off ? scheduleText(m) : `<ion-text color="dark">${scheduleText(m)}</ion-text>`}</p>
       ${notesLine(m)}
+      ${cost ? `<p><ion-text color="teal" class="medium">${cost}</ion-text></p>` : ''}
     </ion-label>
-    <ion-reorder slot="end"></ion-reorder>
-  </ion-item>` : `
-  <ion-item button="true" detail="false" data-id="${m.id}">
-    <ion-label class="ion-text-wrap">
-      ${endNote(m.id)}
-      <h2 class="medium">${changedDot(m)}${esc(m.name)}</h2>
-      <p><ion-text color="dark">${scheduleText(m)}</ion-text></p>
-      ${notesLine(m)}
-      ${costLine(m) ? `<p><ion-text color="teal" class="medium">${costLine(m)}</ion-text></p>` : ''}
-    </ion-label>
-    <ion-reorder slot="end"></ion-reorder>
-  </ion-item>`;
+    ${off ? '' : '<ion-reorder slot="end"></ion-reorder>'}
+  </ion-item>`; };
 
 // ---------- Figures: every calculation about a product, in one place ----------
 
@@ -394,7 +389,7 @@ const monthDays = () => { const d = new Date(); return new Date(d.getFullYear(),
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
 const dosesSum = records => records.reduce((n, e) => n + amount(e.dose), 0);
 // Doses per day: the amount of today's dose for each visible timing of today's schedule.
-const perDayUnits = m => amount(doseOn(m, today())) * timingsOn(m, today()).filter(id => timingOf(id).visible).length;
+const perDayUnits = m => amount(doseOn(m, today())) * visibleOf(timingsOn(m, today())).length;
 const SOON_DAYS = 7, SHOP_DAYS = 14;
 // What is known about a product from its schedules, cost, container and records (null when it cannot be computed):
 // · costPerDay = cost / units × daily; costPerMonth = costPerDay × days of the current month.
@@ -413,8 +408,9 @@ function figures(m) {
     const left = m.units - dosesTaken % m.units - pendingToday;
     end = addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
   }
+  const days = end ? daysLeft(end) : null;
   return { paused: paused(m), doseToday: doseOn(m, today()), daily, costPerDay, costPerMonth: costPerDay === null ? null : costPerDay * monthDays(),
-    end, daysLeft: end ? daysLeft(end) : null, soon: !!end && daysLeft(end) < SOON_DAYS,
+    end, daysLeft: days, soon: days !== null && days < SOON_DAYS,
     records: records.length, dosesTaken, costTaken: unitCost === null ? null : dosesTaken * unitCost, firstDay: records.map(e => e.day).sort()[0] ?? '' };
 }
 // Figures of the active products together: cost of the containers, per day and per month, and what runs out within
@@ -459,7 +455,7 @@ function renderCosts() {
     <ion-list inset="true">
       ${priced.length ? row(`${euros(containers, 0)} en total`, `${priced.length} de ${products.length} productos con coste`)
       + row(`${euros(costPerMonth)} al mes`, `${euros(costPerDay)} al día · ${full.length} de ${products.length} productos con coste y dosis por envase`) : ''}
-      ${row('Próximas compras', shop.length ? `${shop.length} ${shop.length === 1 ? 'producto se acaba' : 'productos se acaban'} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"',
+      ${row('Próximas compras', shop.length ? `${count(shop.length, 'producto se acaba', 'productos se acaban')} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"',
         `<ion-icon slot="start" name="cart-outline" color="${shop.length ? 'primary' : 'medium'}"></ion-icon>`)}
     </ion-list>` : '';
 }
@@ -481,7 +477,7 @@ function openShopping() {
       </ion-item>`).join('')}
     </ion-list>
     ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.m.cost, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
-    : `<ion-list inset="true">${empty(`Nada se acaba en los próximos ${SHOP_DAYS} días.`)}</ion-list>`;
+    : emptyList(`Nada se acaba en los próximos ${SHOP_DAYS} días.`);
   shoppingModal.present();
 }
 
@@ -494,20 +490,9 @@ function renderProducts() {
   $('#list').innerHTML = activeProducts.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
   $('#paused-row').classList.toggle('ion-hide', !pausedProducts.length);
   $('#paused-count').textContent = pausedProducts.length;
-  $('#paused-list').innerHTML = pausedProducts.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos pausados.');
+  $('#paused-list').innerHTML = pausedProducts.map(productRow).join('') || empty('No hay productos pausados.');
 }
 
-// Timings: visibility checkbox on the left; tapping the row opens its editor.
-const timingRow = ti => `
-  <ion-item detail="false" data-timing="${ti.id}">
-    <ion-checkbox slot="start" aria-label="Visible" data-timing="${ti.id}" ${ti.visible ? 'checked' : ''}></ion-checkbox>
-    <ion-label ${ti.visible ? '' : 'color="medium"'}>
-      <h2 class="medium">${esc(label(ti.id))}</h2>
-      <p>${hours(ti) || 'Sin horas'}</p>
-    </ion-label>
-  </ion-item>`;
-
-const renderTimingRows = () => { $('#timings').innerHTML = state.timings.map(timingRow).join(''); };
 
 // ---------- CSV ----------
 
@@ -613,7 +598,8 @@ const pdfText = t => [...t].map(c => WINANSI[c] ?? (c.charCodeAt(0) > 255 ? '?' 
 function pdfPages(month, rows) {
   // Template measures (908 px wide) converted to A4 points.
   const k = A4.w / 908, X = px => px * k, Y = px => A4.h - px * k;
-  const cols = [67, 153, 247, 545, 647, 835];
+  const cols = [67, 153, 247, 545, 647, 835], left = X(cols[0]), right = X(cols.at(-1));
+  const line = (x1, y1, x2, y2) => `${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`;
   const head = ['FECHA', 'HORA', 'PRODUCTO', 'DOSIS', 'INDICACIONES'];
   const rowH = 38.4, top = 126, headH = 38;
   const perPage = Math.floor((A4.h / k - 56 - top - headH) / rowH);
@@ -622,13 +608,12 @@ function pdfPages(month, rows) {
     const c = [];
     const put = (font, size, x, y, t, gray = 0.13) => c.push(`BT /${font} ${size} Tf ${gray} g ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfText(t)}) Tj ET`);
     // Title and month
-    const title = 26;
-    put('F2', title, X(67), Y(85), 'DOSIFY');
+    put('F2', 26, left, Y(85), 'DOSIFY');
     put('F1', 8.5, X(610), Y(75), 'MES');
     put('F1', 10, X(684), Y(73), month);
-    c.push(`0.55 G 0.6 w [0.8 1.2] 0 d ${X(678).toFixed(2)} ${Y(77).toFixed(2)} m ${X(835).toFixed(2)} ${Y(77).toFixed(2)} l S [] 0 d`);
+    c.push(`0.55 G 0.6 w [0.8 1.2] 0 d ${line(X(678), Y(77), right, Y(77))} [] 0 d`);
     // Grey table header
-    c.push(`0.85 g ${X(67).toFixed(2)} ${Y(top + headH).toFixed(2)} ${(X(835) - X(67)).toFixed(2)} ${(headH * k).toFixed(2)} re f`);
+    c.push(`0.85 g ${left.toFixed(2)} ${Y(top + headH).toFixed(2)} ${(right - left).toFixed(2)} ${(headH * k).toFixed(2)} re f`);
     head.forEach((h, i) => { const mid = (X(cols[i]) + X(cols[i + 1])) / 2; put('F1', 8.5, mid - textWidth(h, 8.5) / 2, Y(top + headH / 2) - 3, h); });
     // Rows of the page
     const pageRows = rows.slice(p * perPage, (p + 1) * perPage);
@@ -636,15 +621,15 @@ function pdfPages(month, rows) {
       // Each cell, up to two lines vertically centred in the row.
       const mid = Y(top + headH + rowH * n + rowH / 2) - 3, lead = 9.5;
       r.forEach((v, i) => {
-        const left = X(cols[i]), w = X(cols[i + 1]) - left, lines = wrap(v, 8.5, w - 8);
-        lines.forEach((t, j) => put('F1', 8.5, i < 2 ? left + (w - textWidth(t, 8.5)) / 2 : left + 4, mid + ((lines.length - 1) / 2 - j) * lead, t));
+        const x = X(cols[i]), w = X(cols[i + 1]) - x, cell = wrap(v, 8.5, w - 8);
+        cell.forEach((t, j) => put('F1', 8.5, i < 2 ? x + (w - textWidth(t, 8.5)) / 2 : x + 4, mid + ((cell.length - 1) / 2 - j) * lead, t));
       });
     });
     // Grid
     const bottom = top + headH + rowH * perPage;
     c.push('0.45 G 0.6 w');
-    for (let n = 0; n <= perPage + 1; n++) { const y = n === 0 ? top : top + headH + rowH * (n - 1); c.push(`${X(67).toFixed(2)} ${Y(y).toFixed(2)} m ${X(835).toFixed(2)} ${Y(y).toFixed(2)} l S`); }
-    for (const x of cols) c.push(`${X(x).toFixed(2)} ${Y(top).toFixed(2)} m ${X(x).toFixed(2)} ${Y(bottom).toFixed(2)} l S`);
+    for (let n = 0; n <= perPage + 1; n++) { const y = n === 0 ? top : top + headH + rowH * (n - 1); c.push(line(left, Y(y), right, Y(y))); }
+    for (const x of cols) c.push(line(X(x), Y(top), X(x), Y(bottom)));
     pages.push(c.join('\n'));
   }
   return pages;
@@ -687,28 +672,29 @@ function renderPdfMonths() {
   if (!months.includes(pdfMonth.value)) pdfMonth.value = months[0];
   pdfMonth.disabled = $('#export-pdf').disabled = !months.length;
 }
-const exportPdfMonth = () => exportPDF(pdfMonth.value);
 
 // ---------- Product editor ----------
 
 // When an editor closes (save or cancel), the Products list returns to where it was when it opened.
 let managerY = 0;
-const managerScroller = () => $('#manager ion-content').getScrollElement();
+const managerContent = $('#manager ion-content');
+const managerScroller = () => managerContent.getScrollElement();
 const rememberScroll = async () => { managerY = (await managerScroller()).scrollTop; };
-const restoreScroll = async () => { const sc = await managerScroller(); sc.scrollTop = managerY; requestAnimationFrame(() => { sc.scrollTop = managerY; }); };
+const restoreScroll = async () => setScroll(await managerScroller(), managerY);
 
 const editor = $('#editor');
 const field = name => $(`[name="${name}"]`, editor);
 let editing = null;
 
+// Marks the bad fields red (Ionic) and focuses the first one; true if any.
+const flagInvalid = (get, names, bad) => { for (const f of names) get(f).classList.toggle('ion-invalid', bad.includes(f)); for (const f of bad) get(f).classList.add('ion-touched'); if (bad.length) get(bad[0]).setFocus(); return bad.length > 0; };
 function openEditor(product = {}) {
   editing = product.id ?? null;
   TEXT.forEach(f => field(f).value = product[f] ?? '');
   for (const f of ['cost', 'units']) { field(f).value = product[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
   schedules = structuredClone(product.schedules ?? []);
   renderSchedules();
-  for (const id of ['#delete', '#delete-header']) $(id).classList.toggle('ion-hide', !editing);
-  $('#stats-section').classList.toggle('ion-hide', !editing);
+  for (const id of ['#delete', '#delete-header', '#stats-section']) $(id).classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
   rememberScroll();
@@ -716,14 +702,12 @@ function openEditor(product = {}) {
 }
 
 function saveEditor() {
-  const old = state.products.find(m => m.id === editing);
-  const product = Object.fromEntries(TEXT.map(f => [f, String(field(f).value ?? '').trim()]));
+  const old = productOf(editing);
+  const product = Object.fromEntries(TEXT.map(f => [f, str(field(f).value).trim()]));
   if (!product.name) return field('name').setFocus();
-  // Cost and doses per container: integers (doses at least 1) or empty; an invalid value is marked red.
+  // Cost and doses per container: integers (doses at least 1) or empty.
   product.cost = int(field('cost').value); product.units = int(field('units').value, 1);
-  for (const f of ['cost', 'units']) field(f).classList.toggle('ion-invalid', product[f] === null);
-  const bad = ['cost', 'units'].find(f => product[f] === null);
-  if (bad) return field(bad).classList.add('ion-touched'), field(bad).setFocus();
+  if (flagInvalid(field, ['cost', 'units'], failing([['cost', product.cost !== null], ['units', product.units !== null]]))) return;
   product.schedules = cleanSchedules(schedules);
   const done = () => { commit(); editor.dismiss(); };
   if (!old) return state.products.push(newProduct(product)), done();
@@ -750,11 +734,11 @@ const scheduleUntil = (all, p) => { const next = all.find(q => q.start > p.start
 
 // Schedule row (editor list and product view), like the home rows: the dose as title, below the dates it applies and the
 // duration («24/10 – 22/11 · 30 días») and, if any, a third grey line with its timings («Desayuno, Cena»).
-const scheduleDates = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}`;
+const scheduleDates = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${count(p.days, 'día', 'días')}`;
 const scheduleRow = (all, p) => `<h2 class="medium">${esc(p.dose)}</h2>${doseLine(scheduleDates(all, p))}${p.timings.length ? `<p>${esc(p.timings.map(label).join(', '))}</p>` : ''}`;
 // Timings of a schedule: a checkbox per visible timing, with its hours as subtitle; hidden ones keep their value.
 const timingBoxes = timings => visibleTimings().map(ti => `<ion-item><ion-checkbox name="timing-${ti.id}" ${timings.includes(ti.id) ? 'checked' : ''}><ion-label><h2>${esc(label(ti.id))}</h2><p>${hours(ti) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay momentos visibles.');
-const readTimings = old => timingIds().filter(id => timingOf(id).visible ? scheduleField(`timing-${id}`).checked : old.includes(id));
+const readTimings = old => timingIds().filter(id => timingOf(id).visible ? scheduleField(`timing-${id}`).checked : old.includes(id)); // hidden ones keep their value
 function renderSchedules() {
   schedules = cleanSchedules(schedules);
   $('#schedule-list').innerHTML = schedules.map((p, i) => `<ion-item button="true" data-schedule="${i}"><ion-label class="ion-text-wrap">${scheduleRow(schedules, p)}</ion-label></ion-item>`).join('')
@@ -762,9 +746,10 @@ function renderSchedules() {
 }
 
 // A new schedule proposes the last one's dose and timings, and today.
+const nextSchedule = list => ({ dose: list.at(-1)?.dose ?? '', start: today(), days: '', timings: list.at(-1)?.timings ?? [] });
 function openSchedule(i) {
   editingSchedule = i;
-  const p = schedules[i] ?? { dose: schedules.at(-1)?.dose ?? '', start: today(), days: '', timings: schedules.at(-1)?.timings ?? [] };
+  const p = schedules[i] ?? nextSchedule(schedules);
   for (const f of ['dose', 'start', 'days']) { scheduleField(f).value = p[f]; scheduleField(f).classList.remove('ion-invalid', 'ion-touched'); }
   $('#schedule-timings').innerHTML = timingBoxes(p.timings);
   $('#schedule-timings-error').classList.add('ion-hide');
@@ -775,12 +760,9 @@ function openSchedule(i) {
 // A dose starting with a number, a start date, a duration of at least 1 day and at least one timing; whatever
 // is missing is marked red.
 function saveSchedule() {
-  const p = { dose: String(scheduleField('dose').value ?? '').trim(), start: date(scheduleField('start').value ?? ''), days: int(scheduleField('days').value, 1), timings: readTimings(schedules[editingSchedule]?.timings ?? []) };
-  const bad = [['dose', amount(p.dose)], ['start', p.start], ['days', p.days]].filter(([, ok]) => !ok).map(([f]) => f);
-  for (const f of ['dose', 'start', 'days']) scheduleField(f).classList.toggle('ion-invalid', bad.includes(f));
+  const p = { dose: str(scheduleField('dose').value).trim(), start: date(str(scheduleField('start').value)), days: int(scheduleField('days').value, 1), timings: readTimings(schedules[editingSchedule]?.timings ?? []) };
   $('#schedule-timings-error').classList.toggle('ion-hide', p.timings.length > 0);
-  if (bad.length) return bad.forEach(f => scheduleField(f).classList.add('ion-touched')), scheduleField(bad[0]).setFocus();
-  if (!p.timings.length) return;
+  if (flagInvalid(scheduleField, ['dose', 'start', 'days'], failing([['dose', amount(p.dose)], ['start', p.start], ['days', p.days]])) || !p.timings.length) return;
   if (editingSchedule === null) schedules.push(p); else schedules[editingSchedule] = p;
   renderSchedules();
   scheduleEditor.dismiss();
@@ -789,7 +771,7 @@ function saveSchedule() {
 // ---------- Product history ----------
 
 // How many records a product has («1 toma», «12 tomas»), for the «Registro» row of the editor and the product view.
-const recordsLabel = n => `${n} ${n === 1 ? 'toma' : 'tomas'}`;
+const recordsLabel = n => count(n, 'toma', 'tomas');
 const recordCount = id => recordsLabel(recordsOfProduct(id).length);
 
 // All records of the product: summary (since when, how many, doses and estimated cost) and, below, grouped by the
@@ -797,7 +779,7 @@ const recordCount = id => recordsLabel(recordsOfProduct(id).length);
 const historyModal = $('#history');
 function openHistory(id) {
   const taken = recordsOfProduct(id).sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at));
-  const m = productOf(id) ?? { id, name: taken[0]?.name ?? '', schedules: [], cost: '', units: '' }; // deleted product: only its records
+  const m = productOf(id) ?? { ...EMPTY_PRODUCT, id, name: taken[0]?.name ?? '' }; // deleted product: only its records
   const f = figures(m), item = (k, v) => `<ion-item><ion-label>${k}</ion-label><ion-note slot="end">${v}</ion-note></ion-item>`;
   const summary = [
     ['Desde', f.firstDay ? shortDate(f.firstDay) : '—'],
@@ -817,7 +799,7 @@ function openHistory(id) {
     ${[...groups.values()].map(g => `
       <ion-list-header><ion-label>${g.title} (${g.rows.length})</ion-label></ion-list-header>
       <ion-list inset="true">${g.rows.map(e => `<ion-item><ion-label><h2>${shortDate(e.day)} · ${esc(e.dose)}</h2><p>${time(e.at)} · ${esc(label(e.timing))}</p></ion-label></ion-item>`).join('')}</ion-list>`).join('')
-    || '<ion-list inset="true">' + empty('Sin tomas registradas.') + '</ion-list>'}`;
+    || emptyList('Sin tomas registradas.')}`;
   historyModal.present();
 }
 
@@ -830,11 +812,11 @@ function openHistory(id) {
 const viewModal = $('#view');
 let viewing = null;
 // Read-only row: small title and value («—» when empty); html = the value is already HTML, links = make links clickable.
-const readLabel = (name, value, html, links) => `<ion-label class="ion-text-wrap"><p>${name}</p><h2>${(html ? value : links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label>`;
+const readLabel = (name, value, html, links) => `<ion-label class="ion-text-wrap"><p>${name}</p><h2>${(html ? value : links ? linkify(value ?? '') : lines(value ?? '')) || '—'}</h2></ion-label>`;
 const readRow = (name, value, links) => `<ion-item>${readLabel(name, value, false, links)}</ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 function openView(id, record) {
-  const m = productOf(id), p = m ?? { name: record.name, notes: record.notes, refs: '', memo: '', cost: '', units: '', schedules: [] };
+  const m = productOf(id), p = m ?? { ...EMPTY_PRODUCT, name: record.name, notes: record.notes };
   viewing = id;
   $('#view-title').textContent = p.name;
   $('#view-edit').classList.toggle('ion-hide', !m);
@@ -844,11 +826,23 @@ function openView(id, record) {
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}${purchaseRow(m)}</ion-list>`
     + (record ? readSection('Toma', readRow('Día', longDate(record.day)) + readRow('Hora', time(record.at)) + readRow('Momento', label(record.timing)) + readRow('Dosis', record.dose)) : '')
     + readSection('Estadísticas', `<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item><ion-item>${updatedLabel(m)}</ion-item>`)
-    + (m ? '' : `<ion-list inset="true">${empty('El producto se borró: se muestra lo que guarda la toma.')}</ion-list>`);
+    + (m ? '' : emptyList('El producto se borró: se muestra lo que guarda la toma.'));
   viewModal.present();
 }
 
-// ---------- Timing editor ----------
+// ---------- Timings list and editor ----------
+
+// Timings: visibility checkbox on the left; tapping the row opens its editor.
+const timingRow = ti => `
+  <ion-item detail="false" data-timing="${ti.id}">
+    <ion-checkbox slot="start" aria-label="Visible" data-timing="${ti.id}" ${ti.visible ? 'checked' : ''}></ion-checkbox>
+    <ion-label ${ti.visible ? '' : 'color="medium"'}>
+      <h2 class="medium">${esc(label(ti.id))}</h2>
+      <p>${hours(ti) || 'Sin horas'}</p>
+    </ion-label>
+  </ion-item>`;
+
+const renderTimingRows = () => { $('#timings').innerHTML = state.timings.map(timingRow).join(''); };
 
 const timingEditor = $('#timing-editor');
 const timingField = name => $(`[name="${name}"]`, timingEditor);
@@ -866,12 +860,9 @@ function openTimingEditor(id) {
 // Hours are optional; if given, whole numbers from 0 to 24. An invalid hour is marked red (Ionic) and focused.
 function saveTimingEditor() {
   const [start, end] = ['start', 'end'].map(f => hour(timingField(f).value));
-  for (const [f, v] of [['start', start], ['end', end]]) timingField(f).classList.toggle('ion-invalid', v === null);
-  const bad = ['start', 'end'].find((f, i) => [start, end][i] === null);
-  if (bad) return ['start', 'end'].forEach(f => timingField(f).classList.add('ion-touched')), timingField(bad).setFocus();
-  Object.assign(timingOf(editingTiming), { name: String(timingField('name').value ?? '').trim(), start, end });
-  save();
-  render();
+  if (flagInvalid(timingField, ['start', 'end'], failing([['start', start !== null], ['end', end !== null]]))) return;
+  Object.assign(timingOf(editingTiming), { name: str(timingField('name').value).trim(), start, end });
+  commit();
   timingEditor.dismiss();
 }
 
@@ -912,7 +903,7 @@ function systemPrompt() {
   const t = totals(), overall = { productos_activos: t.products.length, coste_envases: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
     proximas_compras: t.shopping.map(x => ({ id: x.m.id, nombre: x.m.name, fin_del_envase: x.end, dias_hasta_fin: x.daysLeft })) };
   return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
-Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now.toISOString())}.
+Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now)}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
@@ -1086,7 +1077,7 @@ const runAction = (name, a) => {
 const FORMS = {
   ui: {
     draft: uiDraft, title: d => d.title, button: d => d.confirm, blocks: uiBlocks,
-    brief: d => { const n = uiElements(d).filter(e => e.type !== 'text').length; return `${n} ${n === 1 ? 'elemento' : 'elementos'}`; },
+    brief: d => count(uiElements(d).filter(e => e.type !== 'text').length, 'elemento', 'elementos'),
     validate: d => uiElements(d).filter(e => (e.type === 'input' || e.type === 'textarea') && e.required && !str(d.values[e.key]).trim()).map(e => `@${e.key}`),
     apply: d => {
       const runs = [], run = (name, a) => { if (a) runs.push(runAction(name, { tool: a.tool, args: fill(a.args, d.values) })); };
@@ -1101,7 +1092,7 @@ const FORMS = {
     },
   },
   create_product: {
-    draft: a => productDraft({ name: '', notes: '', refs: '', memo: '', cost: '', units: '', schedules: [] }, a),
+    draft: a => productDraft(EMPTY_PRODUCT, a),
     title: () => 'Nuevo producto', brief: productBrief, fields: productFields, validate: productValidate,
     apply: d => { const v = productValues(d); state.products.push(newProduct(v)); return `Producto «${v.name}» creado`; },
   },
@@ -1162,7 +1153,7 @@ function describe(name, d) {
     const v = productValues(d);
     return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
       v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
-      v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${p.days} ${p.days === 1 ? 'día' : 'días'} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
+      v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${count(p.days, 'día', 'días')} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
   }
   if (name === 'add_record' || name === 'remove_record') return `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
   if (name === 'edit_records') return `${recordsLabel(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`;
@@ -1405,9 +1396,9 @@ function renderChat() {
   const ready = aiReady();
   charts.forEach(c => c.destroy()); charts = [];
   chatBody.innerHTML = (chatView.length ? chatBlocks() + allRow()
-    : `<ion-list inset="true">${empty(ready ? 'Pregunta sobre tus productos, tomas, consumos o costes. También puedo crear o cambiar datos: te lo propongo en un formulario que revisas y guardas.' : 'Configura el asistente en Productos › Asistente (URL base, API key y modelo).')}</ion-list>`)
+    : emptyList(ready ? 'Pregunta sobre tus productos, tomas, consumos o costes. También puedo crear o cambiar datos: te lo propongo en un formulario que revisas y guardas.' : 'Configura el asistente en Productos › Asistente (URL base, API key y modelo).'))
     + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
-      : awaiting ? `<ion-list inset="true">${empty('Guarda o descarta las propuestas para continuar; si envías otro mensaje, se descartan.')}</ion-list>`
+      : awaiting ? emptyList('Guarda o descarta las propuestas para continuar; si envías otro mensaje, se descartan.')
       : ready ? suggestionList(suggestions(chatView.length ? 3 : 4)) : '');
   $('#chat-send').disabled = chatBusy || !ready;
   drawCharts();
@@ -1453,7 +1444,7 @@ const MESSAGE_ACTIONS = {
   copy: v => copyText(v.text),
   // The «Texto» screen opens with all the text already selected.
   select: v => {
-    $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" id="text-content">${esc(v.text).replace(/\n/g, '<br>')}</ion-label></ion-item></ion-list>`;
+    $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" id="text-content">${lines(v.text)}</ion-label></ion-item></ion-list>`;
     textModal.present().then(() => { const range = document.createRange(); range.selectNodeContents($('#text-content')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); });
   },
   edit: v => { chatInput.value = v.text; chatInput.setFocus(); },
@@ -1518,7 +1509,7 @@ function render() {
   renderTimingTabs();
   renderDays();
   renderHome();
-  keepScroll($('#manager ion-content'), () => { renderProducts(); renderCosts(); renderTimingRows(); renderPdfMonths(); });
+  keepScroll(managerContent, () => { renderProducts(); renderCosts(); renderTimingRows(); renderPdfMonths(); });
 }
 
 $('#day').addEventListener('ionChange', () => { renderTimingTabs(); renderHome(); });
@@ -1547,7 +1538,7 @@ $('#home').addEventListener('click', e => {
 // On drop, complete() leaves the row where it is on screen: only the order is saved, no re-render nor scroll.
 $('#home').addEventListener('ionReorderEnd', e => {
   const timing = selectedTiming();
-  reorderPending(timing, move([...e.target.children].map(el => state.products.find(m => m.id === el.dataset.id)), e.detail));
+  reorderPending(timing, move([...e.target.children].map(el => productOf(el.dataset.id)), e.detail));
   e.detail.complete();
 });
 
@@ -1612,7 +1603,7 @@ for (const f of ['start', 'end']) timingField(f).addEventListener('ionInput', ()
 $('#import').onclick = () => $('#file').click();
 $('#file').onchange = e => { importCSV(e.target.files[0]); e.target.value = ''; };
 $('#export').onclick = () => download('dosify.csv', exportCSV());
-$('#export-pdf').onclick = exportPdfMonth;
+$('#export-pdf').onclick = () => exportPDF(pdfMonth.value);
 $('#clear-records').onclick = () => ask('¿Borrar todas las tomas registradas?', () => { state.records = []; commit(); });
 
 $('#cancel').onclick = () => editor.dismiss();
