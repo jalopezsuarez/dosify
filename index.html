@@ -102,7 +102,7 @@
       <ion-segment id="day" scrollable="true"></ion-segment>
     </ion-toolbar>
     <ion-toolbar>
-      <ion-segment id="moment"></ion-segment>
+      <ion-segment id="timing"></ion-segment>
     </ion-toolbar>
   </ion-header>
   <ion-content id="toma" color="light"></ion-content>
@@ -130,7 +130,7 @@
       </ion-list>
       <div id="costs"></div>
       <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
-      <ion-list inset="true" id="moments"></ion-list>
+      <ion-list inset="true" id="timings"></ion-list>
       <ion-list-header><ion-label>Datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item button id="import"><ion-icon slot="start" name="cloud-upload-outline"></ion-icon><ion-label>Cargar CSV (momentos, productos y tomas)</ion-label></ion-item>
@@ -149,7 +149,7 @@
       </ion-list>
       <ion-list-header><ion-label>Zona de peligro</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item button detail="false" id="clear-log"><ion-label color="danger" class="ion-text-center">Borrar registro de tomas</ion-label></ion-item>
+        <ion-item button detail="false" id="clear-records"><ion-label color="danger" class="ion-text-center">Borrar registro de tomas</ion-label></ion-item>
       </ion-list>
       <input type="file" id="file" accept=".csv,text/csv" hidden>
     </ion-content>
@@ -170,7 +170,7 @@
         <ion-item><ion-input name="notes" label="Indicaciones" label-placement="stacked" placeholder="Con comida"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Pautas</ion-label></ion-list-header>
-      <ion-list inset="true" id="plan-list"></ion-list>
+      <ion-list inset="true" id="schedule-list"></ion-list>
       <ion-list-header><ion-label>Otros datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Médico, enlaces…" auto-grow="true"></ion-textarea></ion-item>
@@ -180,10 +180,10 @@
         <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
         <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
       </ion-list>
-      <div id="record-section">
+      <div id="history-section">
         <ion-list-header><ion-label>Registro</ion-label></ion-list-header>
         <ion-list inset="true">
-          <ion-item button="true" id="open-record"><ion-label>Ver registro</ion-label><ion-note slot="end" id="record-count"></ion-note></ion-item>
+          <ion-item button="true" id="open-history"><ion-label>Ver registro</ion-label><ion-note slot="end" id="history-count"></ion-note></ion-item>
         </ion-list>
       </div>
       <ion-list-header id="delete-header"><ion-label>Zona de peligro</ion-label></ion-list-header>
@@ -244,14 +244,14 @@
     </ion-content>
   </ion-modal>
 
-  <ion-modal id="record">
+  <ion-modal id="history">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="record-close">Cerrar</ion-button></ion-buttons>
-        <ion-title id="record-title">Registro</ion-title>
+        <ion-buttons slot="start"><ion-button id="history-close">Cerrar</ion-button></ion-buttons>
+        <ion-title id="history-title">Registro</ion-title>
       </ion-toolbar>
     </ion-header>
-    <ion-content id="record-body" color="light"></ion-content>
+    <ion-content id="history-body" color="light"></ion-content>
   </ion-modal>
 
   <ion-modal id="view">
@@ -265,12 +265,12 @@
     <ion-content id="view-body" color="light"></ion-content>
   </ion-modal>
 
-  <ion-modal id="plan-editor">
+  <ion-modal id="schedule-editor">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="plan-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-buttons slot="start"><ion-button id="schedule-cancel">Cancelar</ion-button></ion-buttons>
         <ion-title>Pauta</ion-title>
-        <ion-buttons slot="end"><ion-button id="plan-save" strong="true">Guardar</ion-button></ion-buttons>
+        <ion-buttons slot="end"><ion-button id="schedule-save" strong="true">Guardar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">
@@ -281,20 +281,20 @@
         <ion-item><ion-input name="days" type="number" min="1" inputmode="numeric" label="Duración (días)" label-placement="stacked" placeholder="7"></ion-input></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Momentos</ion-label></ion-list-header>
-      <ion-list inset="true" id="plan-moments"></ion-list>
-      <ion-list inset="true" id="plan-moments-error" class="ion-hide"><ion-item lines="none"><ion-label color="danger" class="ion-text-center">Marca al menos un momento</ion-label></ion-item></ion-list>
-      <ion-list inset="true" id="plan-delete">
+      <ion-list inset="true" id="schedule-timings"></ion-list>
+      <ion-list inset="true" id="schedule-timings-error" class="ion-hide"><ion-item lines="none"><ion-label color="danger" class="ion-text-center">Marca al menos un momento</ion-label></ion-item></ion-list>
+      <ion-list inset="true" id="schedule-delete">
         <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar pauta</ion-label></ion-item>
       </ion-list>
     </ion-content>
   </ion-modal>
 
-  <ion-modal id="moment-editor">
+  <ion-modal id="timing-editor">
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-button id="moment-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-buttons slot="start"><ion-button id="timing-cancel">Cancelar</ion-button></ion-buttons>
         <ion-title>Momento</ion-title>
-        <ion-buttons slot="end"><ion-button id="moment-save" strong="true">Guardar</ion-button></ion-buttons>
+        <ion-buttons slot="end"><ion-button id="timing-save" strong="true">Guardar</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light">

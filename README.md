@@ -77,8 +77,8 @@ Los datos salen del dispositivo hacia el servicio configurado; la app no tiene s
 Tres listas en el `localStorage`:
 
 - **Momentos**, en su orden (no se reordenan): `id` (aleatorio, como todos), `name`, `start` y `end` (horas), `visible` y `order` (los `id` de producto en el orden de tomas de ese momento). Si no hay ninguno válido, se crean los de por defecto (Desayuno 6–12, Almuerzo 12–18, Cena 18–24 y Demanda sin horas) con ids nuevos; salen de una lista en el código, así que para tener más por defecto basta con añadirlos allí; todo lo demás (pestañas, chips, editor, orden, CSV, asistente) los recorre.
-- **Productos**, en el orden de productos: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase), enteros o vacíos, y `plans`, sus pautas: `{ dose, start, days, moments }` (la dosis empieza por la cantidad de cada toma; `moments`, los `id` de los momentos en que se toma con esa pauta, al menos uno), ordenadas por fecha de inicio. El producto no tiene momentos propios: los que valen un día son los de la pauta de ese día (o, si ninguna vale, los de la última); sin pautas, ninguno.
-- **Tomas**: `at` (cuándo se marcó), `day` (el día de la toma), `id` (del producto), `moment` (`id` del momento) y `name`, `dose` y `notes`: el producto tal como se tomó. Así el registro (la toma, el PDF, el CSV) muestra lo que se tomó aunque el producto cambie, cambie de momento o se borre.
+- **Productos**, en el orden de productos: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase), enteros o vacíos, y `schedules`, sus pautas: `{ dose, start, days, timings }` (la dosis empieza por la cantidad de cada toma; `timings`, los `id` de los momentos en que se toma con esa pauta, al menos uno), ordenadas por fecha de inicio. El producto no tiene momentos propios: los que valen un día son los de la pauta de ese día (o, si ninguna vale, los de la última); sin pautas, ninguno.
+- **Tomas**: `at` (cuándo se marcó), `day` (el día de la toma), `id` (del producto), `timing` (`id` del momento) y `name`, `dose` y `notes`: el producto tal como se tomó. Así el registro (la toma, el PDF, el CSV) muestra lo que se tomó aunque el producto cambie, cambie de momento o se borre.
 
 El nombre que se ve de cada momento es el configurado, así que renombrarlos no cambia ningún dato. Cada día de la toma muestra como pendientes los productos que valen ese día en ese momento (los días que cubre su pauta y en los momentos de esta; sin pautas, ninguno) y como tomadas sus tomas.
 
@@ -95,25 +95,25 @@ No hay compatibilidad con formatos anteriores. Al abrir la app y al cargar un CS
 Un solo fichero con todo: momentos, productos con sus pautas y tomas. Separador `;`, una cabecera y 17 columnas compartidas; cada columna es un campo de los datos, con su mismo nombre y significado (solo `at` junta `day` y la hora), y cada tipo de fila usa las suyas y deja las demás vacías.
 
 ```
-type;id;name;notes;refs;memo;cost;units;dose;start;end;days;moments;moment;visible;order;at
-moment;a1f3c9e2;Desayuno;;;;;;;6;12;;;;true;7b2e9d41 c4d8a0f6;
-moment;5e7d2b8c;Almuerzo;;;;;;;12;18;;;;true;;
-moment;9c0a4f17;Cena;;;;;;;18;24;;;;true;;
-moment;d2e6b3a9;Demanda;;;;;;;;;;;;true;;
+type;id;name;notes;refs;memo;cost;units;dose;start;end;days;timings;timing;visible;order;at
+timing;a1f3c9e2;Desayuno;;;;;;;6;12;;;;true;7b2e9d41 c4d8a0f6;
+timing;5e7d2b8c;Almuerzo;;;;;;;12;18;;;;true;;
+timing;9c0a4f17;Cena;;;;;;;18;24;;;;true;;
+timing;d2e6b3a9;Demanda;;;;;;;;;;;;true;;
 product;c4d8a0f6;Paracetamol;Si dolor;;;3;20;;;;;;;;;
-plan;c4d8a0f6;;;;;;;1 comprimido de 500 mg;2026-10-15;;30;a1f3c9e2 5e7d2b8c 9c0a4f17;;;;
+schedule;c4d8a0f6;;;;;;;1 comprimido de 500 mg;2026-10-15;;30;a1f3c9e2 5e7d2b8c 9c0a4f17;;;;
 product;7b2e9d41;Omeprazol;En ayunas;Dr. Ruiz;Comprar en farmacia;;;;;;;;;;;
-plan;7b2e9d41;;;;;;;40 mg;2026-10-10;;7;a1f3c9e2;;;;
-plan;7b2e9d41;;;;;;;20 mg;2026-10-17;;30;a1f3c9e2;;;;
-intake;c4d8a0f6;Paracetamol;Si dolor;;;;;1 comprimido de 500 mg;;;;;a1f3c9e2;;;2026-10-17 08:12
-intake;7b2e9d41;Omeprazol;En ayunas;;;;;40 mg;;;;;a1f3c9e2;;;2026-10-16 08:05
-intake;7b2e9d41;Omeprazol;En ayunas;;;;;20 mg;;;;;a1f3c9e2;;;2026-10-17 08:03
+schedule;7b2e9d41;;;;;;;40 mg;2026-10-10;;7;a1f3c9e2;;;;
+schedule;7b2e9d41;;;;;;;20 mg;2026-10-17;;30;a1f3c9e2;;;;
+record;c4d8a0f6;Paracetamol;Si dolor;;;;;1 comprimido de 500 mg;;;;;a1f3c9e2;;;2026-10-17 08:12
+record;7b2e9d41;Omeprazol;En ayunas;;;;;40 mg;;;;;a1f3c9e2;;;2026-10-16 08:05
+record;7b2e9d41;Omeprazol;En ayunas;;;;;20 mg;;;;;a1f3c9e2;;;2026-10-17 08:03
 ```
 
-- `moment`: `id`, `name` (puede ir vacío), `start` y `end` (horas enteras de 0 a 24, opcionales), `visible` (`true`/`false`) y `order` (los `id` de producto en el orden de tomas, separados por espacios). Van en su orden.
+- `timing`: `id`, `name` (puede ir vacío), `start` y `end` (horas enteras de 0 a 24, opcionales), `visible` (`true`/`false`) y `order` (los `id` de producto en el orden de tomas, separados por espacios). Van en su orden.
 - `product`: `id`, `name`, `notes` (indicaciones), `refs` (referencias), `memo` (notas), `cost` (€ por envase) y `units` (dosis por envase). El orden de estas filas es el orden de productos.
-- `plan`: tras su producto, `id` del producto, `dose`, `start` (fecha de inicio, `AAAA-MM-DD`), `days` (duración) y `moments` (los `id` de los momentos en que se toma con esa pauta, separados por espacios); las cuatro son obligatorias (al menos un momento), y si falta alguna o no vale, la pauta se descarta.
-- `intake`: `id` del producto, `moment` (el de la toma), `at` (`AAAA-MM-DD HH:MM`, hora local; de ahí sale `day`) y el producto tal como se tomó: `name`, `dose` y `notes`. En el ejemplo, el Omeprazol tiene dos pautas: 40 mg desde el 10 y 20 mg desde el 17; cada toma conserva la dosis con que se tomó.
+- `schedule`: tras su producto, `id` del producto, `dose`, `start` (fecha de inicio, `AAAA-MM-DD`), `days` (duración) y `timings` (los `id` de los momentos en que se toma con esa pauta, separados por espacios); las cuatro son obligatorias (al menos un momento), y si falta alguna o no vale, la pauta se descarta.
+- `record`: `id` del producto, `timing` (el de la toma), `at` (`AAAA-MM-DD HH:MM`, hora local; de ahí sale `day`) y el producto tal como se tomó: `name`, `dose` y `notes`. En el ejemplo, el Omeprazol tiene dos pautas: 40 mg desde el 10 y 20 mg desde el 17; cada toma conserva la dosis con que se tomó.
 - Los `id` son aleatorios (8 caracteres), los mismos que en los datos; al cargar, los de los momentos tienen que coincidir con los que usan las pautas y las tomas. Un producto sin `id` recibe uno nuevo.
 - Al cargar, las columnas se buscan por su nombre en la cabecera, así que su orden da igual. No hay compatibilidad con formatos anteriores: lo que falte o no cuadre toma su valor por defecto (sin filas de momentos válidas, los de por defecto; números, fechas u horas mal escritos, vacíos) y las filas que no se entienden se ignoran.
 - Cargar un CSV reemplaza los momentos, los productos y las tomas actuales (siempre pide confirmación). «Borrar registro de tomas» elimina solo las tomas.
