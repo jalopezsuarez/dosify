@@ -689,8 +689,8 @@ const planUntil = (plans, p) => { const next = plans.find(q => q.start > p.start
 
 // Fechas, duración e intervalos de una programación («24/10/2026 – 22/11/2026 · 30 días · Desayuno, Cena»).
 const planLine = (plans, p) => `${shortDate(p.start)} – ${shortDate(planUntil(plans, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'} · ${p.slots.map(label).join(', ') || 'sin intervalos'}`;
-// Intervalos de una programación: una casilla por intervalo visible; los ocultos conservan su valor.
-const slotBoxes = slots => visibleIntervals().map(iv => `<ion-item><ion-checkbox name="ps-${iv.id}" ${slots.includes(iv.id) ? 'checked' : ''}>${esc(label(iv.id))}</ion-checkbox></ion-item>`).join('') || empty('No hay intervalos visibles.');
+// Intervalos de una programación: una casilla por intervalo visible, con sus horas de subtítulo; los ocultos conservan su valor.
+const slotBoxes = slots => visibleIntervals().map(iv => `<ion-item><ion-checkbox name="ps-${iv.id}" ${slots.includes(iv.id) ? 'checked' : ''}><ion-label><h2>${esc(label(iv.id))}</h2><p>${hours(iv) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay intervalos visibles.');
 const readSlots = old => IDS.filter(id => interval(id).visible ? planField(`ps-${id}`).checked : old.includes(id));
 function renderPlan() {
   plan = cleanPlan(plan);
