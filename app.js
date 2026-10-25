@@ -476,20 +476,15 @@ function download(name, data, type = 'text/csv') {
 // · schedule: id del producto, dose, start (fecha de inicio), days (duración) y timings (ids separados por espacios).
 // · record: id del producto, timing (el de la toma), at («AAAA-MM-DD HH:MM», hora local) y el producto como se tomó: name, dose y notes.
 // Cada columna es un campo de los datos con el mismo nombre; «day» de la toma va dentro de «at».
-// Se exporta por tipos, en este orden: los momentos en su orden y, del más antiguo al más nuevo, los productos (por la
-// fecha de inicio de su primera pauta; sin pautas, al final, en el orden de productos), las pautas (por fecha de inicio
-// y duración) y las tomas (por día y hora). Al cargar, el orden de las filas «product» pasa a ser el orden de productos.
+// Se exporta por tipos: los momentos y los productos en su orden, las pautas por fecha de inicio y las tomas por día y hora.
 const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'order', 'at'];
 const csvRow = (type, o) => HEAD.map(h => h === 'type' ? type : o[h] ?? '');
 
-// Fecha de inicio de la primera pauta de un producto (las pautas van ordenadas por fecha); sin pautas, la última.
-const firstStart = m => m.schedules[0]?.start ?? '9999';
 const exportCSV = () => csv([
   HEAD,
   ...state.timings.map(ti => csvRow('timing', { id: ti.id, name: ti.name, start: ti.start, end: ti.end, visible: ti.visible, order: ti.order.join(' ') })),
-  ...[...state.products].sort((a, b) => firstStart(a).localeCompare(firstStart(b)) || byProducts(a, b))
-    .map(m => csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units })),
-  ...state.products.flatMap(m => m.schedules.map(p => ({ id: m.id, ...p }))).sort((a, b) => a.start.localeCompare(b.start) || (a.days - b.days) || byProducts(a, b))
+  ...state.products.map(m => csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units })),
+  ...state.products.flatMap(m => m.schedules.map(p => ({ id: m.id, ...p }))).sort((a, b) => a.start.localeCompare(b.start))
     .map(p => csvRow('schedule', { id: p.id, dose: p.dose, start: p.start, days: p.days, timings: p.timings.join(' ') })),
   ...[...state.records].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
     .map(e => csvRow('record', { id: e.id ?? '', name: e.name, dose: e.dose, notes: e.notes, timing: e.timing, at: `${e.day} ${time(e.at)}` })),
