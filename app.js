@@ -291,8 +291,9 @@ async function renderToma() {
 // ---------- Pautas ----------
 
 const manager = $('#manager');
-// Una pauta con programaciones está terminada si ya acabaron todas (ni vigente ni futura): sale en gris, sin costes.
-const finished = m => m.plan.length > 0 && !planOn(m, today()) && !m.plan.some(p => p.start > today());
+// Una pauta está finalizada si no tiene programación vigente ni futura (también si no tiene ninguna): va en la lista
+// de finalizadas, en gris, sin costes.
+const finished = m => !planOn(m, today()) && !m.plan.some(p => p.start > today());
 // Línea de la programación en la lista: la dosis y los intervalos visibles, separados por puntos («1 cápsula ·
 // Desayuno · Almuerzo»), de la programación de hoy (o de la última); sin programaciones, «Sin programación».
 const planText = m => { const p = planOn(m, today()) ?? m.plan.at(-1); return p ? [p.dose, ...p.slots.filter(id => interval(id).visible).map(label)].map(esc).join(' · ') : 'Sin programación'; };
