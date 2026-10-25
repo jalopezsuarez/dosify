@@ -688,14 +688,16 @@ const shortDate = key => fromKey(key).toLocaleDateString('es');
 // Hasta qué día vale una pauta: su último día o, si la siguiente empieza antes, la víspera de esta.
 const scheduleUntil = (all, p) => { const next = all.find(q => q.start > p.start); return next && next.start <= scheduleEnd(p) ? addDays(next.start, -1) : scheduleEnd(p); };
 
-// Fechas, duración y momentos de una pauta («24/10/2026 – 22/11/2026 · 30 días · Desayuno, Cena»).
-const scheduleLine = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'} · ${p.timings.map(label).join(', ') || 'sin momentos'}`;
+// Fila de una pauta (lista del editor y ficha): la dosis en gris, debajo las fechas en que vale y la duración en el color
+// principal («24/10/2026 – 22/11/2026 · 30 días») y, si tiene, una tercera línea con sus momentos («Desayuno, Cena»).
+const scheduleDates = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}`;
+const scheduleRow = (all, p) => `<h2><ion-text color="medium">${esc(p.dose)}</ion-text></h2><p><ion-text color="primary">${esc(scheduleDates(all, p))}</ion-text></p>${p.timings.length ? `<p><ion-text color="secondary">${esc(p.timings.map(label).join(', '))}</ion-text></p>` : ''}`;
 // Momentos de una pauta: una casilla por momento visible, con sus horas de subtítulo; los ocultos conservan su valor.
 const timingBoxes = timings => visibleTimings().map(ti => `<ion-item><ion-checkbox name="timing-${ti.id}" ${timings.includes(ti.id) ? 'checked' : ''}><ion-label><h2>${esc(label(ti.id))}</h2><p>${hours(ti) || 'Sin horas'}</p></ion-label></ion-checkbox></ion-item>`).join('') || empty('No hay momentos visibles.');
 const readTimings = old => timingIds().filter(id => timingOf(id).visible ? scheduleField(`timing-${id}`).checked : old.includes(id));
 function renderSchedules() {
   schedules = cleanSchedules(schedules);
-  $('#schedule-list').innerHTML = schedules.map((p, i) => `<ion-item button="true" data-schedule="${i}"><ion-label><h2>${esc(p.dose)}</h2><p>${esc(scheduleLine(schedules, p))}</p></ion-label></ion-item>`).join('')
+  $('#schedule-list').innerHTML = schedules.map((p, i) => `<ion-item button="true" data-schedule="${i}"><ion-label class="ion-text-wrap">${scheduleRow(schedules, p)}</ion-label></ion-item>`).join('')
     + `<ion-item button="true" detail="false" data-schedule="new"><ion-icon slot="start" name="add-outline" color="primary"></ion-icon><ion-label color="primary">Añadir pauta</ion-label></ion-item>`;
 }
 
@@ -773,7 +775,7 @@ function openView(id, entry) {
   $('#view-title').textContent = p.name;
   $('#view-edit').classList.toggle('ion-hide', !m);
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
-    + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap"><h2>${esc(x.dose)}</h2><p>${esc(scheduleLine(p.schedules, x))}</p></ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
+    + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
     + (entry ? readSection('Toma', readRow('Día', longDate(entry.day)) + readRow('Hora', time(entry.at)) + readRow('Momento', label(entry.timing)) + readRow('Dosis', entry.dose)) : '')
