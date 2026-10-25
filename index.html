@@ -23,7 +23,7 @@
       --ion-color-primary-shade: #60b7db;
       --ion-color-primary-tint: #7cd5fa;
     }
-    /* Custom «teal» color (#78b7af) for the info icon, the costs and, in the assistant, your messages and the suggestions, per Ionic's «Adding colors» */
+    /* Custom colors per Ionic's «Adding colors»: «teal» (#78b7af: info icon, costs and, in the assistant, your messages and the suggestions) and «rose» (#e47969: container with under 7 days left) */
     :root {
       --ion-color-teal: #78b7af;
       --ion-color-teal-rgb: 120, 183, 175;
@@ -46,9 +46,6 @@
       --ion-color-shade: var(--ion-color-rose-shade) !important;
       --ion-color-tint: var(--ion-color-rose-tint) !important;
     }
-    /* Medium weight for titles (Ionic has no font-weight utility) */
-    :root .medium { font-weight: 500; }
-    /* Hides the scrollbar of the day picker (Ionic's own rule does not apply) */
     .ion-color-teal {
       --ion-color-base: var(--ion-color-teal) !important;
       --ion-color-base-rgb: var(--ion-color-teal-rgb) !important;
@@ -57,6 +54,9 @@
       --ion-color-shade: var(--ion-color-teal-shade) !important;
       --ion-color-tint: var(--ion-color-teal-tint) !important;
     }
+    /* Medium weight for titles (Ionic has no font-weight utility) */
+    :root .medium { font-weight: 500; }
+    /* Hides the scrollbar of the day picker (Ionic's own rule does not apply) */
     #day { scrollbar-width: none; }
     #day::-webkit-scrollbar { display: none; }
     /* On mobile Ionic prevents text selection app-wide; the assistant's «Texto» screen allows it */
@@ -138,7 +138,7 @@
       </ion-list>
       <ion-list-header><ion-label>Exportar</ion-label></ion-list-header>
       <ion-list inset="true">
-        <ion-item><ion-select id="pdf-month" label="Seleccionar mes" interface="action-sheet" cancel-text="Cancelar"></ion-select></ion-item>
+        <ion-item><ion-select id="pdf-month" label="Seleccionar mes" placeholder="Sin tomas" interface="action-sheet" cancel-text="Cancelar"></ion-select></ion-item>
         <ion-item button id="export-pdf"><ion-icon slot="start" name="document-text-outline"></ion-icon><ion-label>Exportar PDF</ion-label></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Asistente</ion-label></ion-list-header>

@@ -39,35 +39,35 @@ const hour = v => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\
 
 // Cleans stored or imported data: whatever is missing or wrong takes its default and records that cannot be
 // understood are dropped. No compatibility with older formats.
-const text = v => typeof v === 'string' ? v : '';
+const asText = v => typeof v === 'string' ? v : '';
 const date = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
-const list = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+const asList = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
 // Integer ≥ min or '' (empty); null if something else was written.
 const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d+$/.test(t) && Number(t) >= min ? Number(t) : null; };
 // Amount of each dose: the number the dose starts with («1 comprimido», «0,5 ml»); 0 if it does not start with one.
 const amount = dose => Number(String(dose).match(/^\s*(\d+(?:[.,]\d+)?)/)?.[1].replace(',', '.')) || 0;
 // Valid schedules (numeric dose, date, duration and at least one existing timing), ordered by start date and,
 // on equal dates, by duration; incomplete ones are dropped.
-const cleanSchedules = (v, ids = timingIds()) => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, timings: ids.filter(id => list(p.timings).includes(id)) } : null)
+const cleanSchedules = (v, ids = timingIds()) => (Array.isArray(v) ? v : []).map(p => p && typeof p === 'object' ? { dose: p.dose, start: p.start, days: p.days, timings: ids.filter(id => asList(p.timings).includes(id)) } : null)
   .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.timings.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   // Timings: the stored ones with an id, in order (name, hours and visibility defaulted if missing); if none
   // is left, the defaults with new ids.
-  const saved = arr(raw?.timings).filter(ti => text(ti.id)).map(ti => ({ id: ti.id, name: text(ti.name), start: hour(ti.start) ?? '', end: hour(ti.end) ?? '',
-    visible: typeof ti.visible === 'boolean' ? ti.visible : true, order: list(ti.order) }));
+  const saved = arr(raw?.timings).filter(ti => asText(ti.id)).map(ti => ({ id: ti.id, name: asText(ti.name), start: hour(ti.start) ?? '', end: hour(ti.end) ?? '',
+    visible: typeof ti.visible === 'boolean' ? ti.visible : true, order: asList(ti.order) }));
   const timings = saved.length ? saved : defaultTimings();
   const ids = timings.map(ti => ti.id);
   // Products: dropped without a name; a new id if missing; only valid schedules with existing timings.
-  const products = arr(raw?.products).filter(m => text(m.name)).map(m => ({
-    id: text(m.id) || newId(), name: m.name, notes: text(m.notes), refs: text(m.refs), memo: text(m.memo),
+  const products = arr(raw?.products).filter(m => asText(m.name)).map(m => ({
+    id: asText(m.id) || newId(), name: m.name, notes: asText(m.notes), refs: asText(m.refs), memo: asText(m.memo),
     cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', schedules: cleanSchedules(m.schedules, ids),
   }));
   for (const ti of timings) ti.order = ti.order.filter(id => products.some(m => m.id === id));
-  // Records: need a valid day, an existing timing and a valid date; the rest are dropped.
+  // Records: need a valid day, an existing timing and a valid date; the rest are dropped. Newest first, at most RECORDS_MAX.
   const records = arr(raw?.records).filter(e => date(e.day) && ids.includes(e.timing) && !isNaN(new Date(e.at)))
-    .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: text(e.id) || null, timing: e.timing, name: text(e.name), dose: text(e.dose), notes: text(e.notes) }))
-    .sort((a, b) => b.at.localeCompare(a.at));
+    .map(e => ({ at: new Date(e.at).toISOString(), day: e.day, id: asText(e.id) || null, timing: e.timing, name: asText(e.name), dose: asText(e.dose), notes: asText(e.notes) }))
+    .sort((a, b) => b.at.localeCompare(a.at)).slice(0, RECORDS_MAX);
   return { timings, products, records };
 }
 const stored = (() => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } })();
@@ -92,6 +92,8 @@ function timingNow(list = visibleTimings()) {
 }
 const selectedTiming = () => $('#timing').value;
 
+// ---------- Schedules and doses of a day ----------
+
 const addDays = (key, n) => { const d = fromKey(key); d.setDate(d.getDate() + n); return dayKey(d); };
 const selectedDay = () => $('#day').value || today();
 // Record order of a timing: its «order» list; products not in it go after, in product order.
@@ -111,9 +113,9 @@ const doses = (timing, day = selectedDay()) => byTiming(state.products.filter(m 
 // Each record stores the product's name, dose and notes as taken; so the history shows what was taken even if
 // the product changes or is deleted.
 const SNAP = ['name', 'dose', 'notes'];
-const EDITED = ['name', 'notes']; // what the product editor may change in stored records
+const EDITED = ['name', 'notes']; // changes the product editor asks about before touching earlier records (the dose is re-read from the schedule)
 const snap = m => Object.fromEntries(SNAP.map(k => [k, m[k]]));
-const snapOn = (m, day) => ({ ...snap(m), dose: doseOn(m, day) }); // the product as taken on that day
+const snapOn = (m, day, dose = '') => ({ ...snap(m), dose: doseOn(m, day) || dose }); // the product as taken on that day (no schedule: the given dose)
 const takenAs = e => ({ id: e.id, ...snap(e) });
 // Rows of a day and timing: pending (current products without a record) and taken (their records, including products no
 // longer in the timing or deleted).
@@ -130,7 +132,6 @@ function toggle(id, timing, checked) {
   const day = selectedDay();
   if (checked) {
     state.records.unshift({ at: new Date().toISOString(), day, id, timing, ...snapOn(productOf(id), day) });
-    state.records.length = Math.min(state.records.length, RECORDS_MAX);
   } else {
     state.records = state.records.filter(e => !(e.day === day && String(e.id) === id && e.timing === timing));
   }
@@ -138,12 +139,12 @@ function toggle(id, timing, checked) {
   render();
 }
 
-const ring = (done, total, label, size = 44, font = 11, color = 'primary') => `
+const ring = (done, total, caption, size = 44, font = 11, color = 'primary') => `
   <ion-text color="${color}">
     <svg width="${size}" height="${size}" viewBox="0 0 44 44">
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"></circle>
       <circle cx="22" cy="22" r="15.915" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="${total ? done / total * 100 : 0} 100" transform="rotate(-90 22 22)"></circle>
-      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="currentColor">${label}</text>
+      <text x="22" y="22" text-anchor="middle" dominant-baseline="central" font-size="${font}" font-weight="bold" fill="currentColor">${caption}</text>
     </svg>
   </ion-text>`;
 
@@ -183,7 +184,7 @@ const brief = text => { const t = text.split('\n').slice(0, 2).join(' '); return
 const doseLine = text => text ? `<p><ion-text color="dark">${esc(text)}</ion-text></p>` : '';
 const notesLine = m => m.notes ? `<p>${esc(brief(m.notes))}</p>` : '';
 
-// The (i) of a row opens the product sheet (read only); its color warns of the container end, or is grey if the
+// The (i) of a row opens the product view (read only); its color warns of the container end, or is grey if the
 // product was deleted.
 const viewButton = id => `
       <ion-button slot="end" fill="clear" data-view="${id}" aria-label="Ver producto">
@@ -204,7 +205,7 @@ const doseItem = (m, timing, record, sorting) => `
 const doseRow = (m, timing, record) => `<ion-list inset="true">${doseItem(m, timing, record)}</ion-list>`;
 
 // Header button of a section (Pending, Taken).
-const headerButton = (id, icon, label) => `<ion-button id="${id}" fill="clear" aria-label="${label}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
+const headerButton = (id, icon, title) => `<ion-button id="${id}" fill="clear" aria-label="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
 
 // «Pendiente»: its button toggles sort mode; the order set applies to that timing on any day.
 let sortingPending = false;
@@ -241,7 +242,7 @@ const sortTaken = (rows, timing) => [...rows].sort(
 // Moves an item from position «from» to «to» (ionReorderEnd detail; «to» is missing if it did not move).
 const move = (list, { from, to = from }) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l; };
 
-// Sorting «Pendiente» moves those products among the slots they occupy in the timing (taken ones do not move)
+// Sorting «Pendiente» moves those products among the positions they occupy in the timing (taken ones do not move)
 // and stores the timing's full order.
 function reorderPending(timing, moved) {
   const all = byTiming(state.products.filter(m => timingsOn(m, selectedDay()).includes(timing)), timing);
@@ -349,6 +350,8 @@ function runsOut(m) {
   return addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
 }
 const dayMonth = key => `${Number(key.slice(8))}/${key.slice(5, 7)}`; // «5/01», no year
+const shortDate = key => fromKey(key).toLocaleDateString('es'); // «5/1/2026»
+const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const dayMonthYear = key => key.slice(0, 4) === today().slice(0, 4) ? dayMonth(key) : `${dayMonth(key)}/${key.slice(0, 4)}`; // year only when not the current one
 // Container running out warning: under 7 days. Turns the home (i) and the product's end date rose.
 const daysLeft = end => Math.round((fromKey(end) - fromKey(today())) / 864e5);
@@ -388,7 +391,7 @@ function renderCosts() {
     </ion-list>` : '';
 }
 
-// Upcoming purchases list: name, price if any, days left, expected date and the (i) with the product sheet
+// Upcoming purchases list: name, price if any, days left, expected date and the (i) with the product view
 // (as on the home screen); the total at the end.
 const shoppingModal = $('#shopping');
 function openShopping() {
@@ -413,12 +416,12 @@ function openShopping() {
 // its own list. They are edited from there and, with a new schedule, return to the active ones.
 const pausedModal = $('#paused');
 function renderProducts() {
-  const active = state.products.filter(m => !paused(m)), stopped = state.products.filter(paused);
-  $('#list-count').textContent = active.length;
-  $('#list').innerHTML = active.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
-  $('#paused-row').classList.toggle('ion-hide', !stopped.length);
-  $('#paused-count').textContent = stopped.length;
-  $('#paused-list').innerHTML = stopped.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos pausados.');
+  const activeProducts = state.products.filter(m => !paused(m)), pausedProducts = state.products.filter(paused);
+  $('#list-count').textContent = activeProducts.length;
+  $('#list').innerHTML = activeProducts.map(productRow).join('') || empty('Sin productos. Pulsa «Añadir» para crear uno.');
+  $('#paused-row').classList.toggle('ion-hide', !pausedProducts.length);
+  $('#paused-count').textContent = pausedProducts.length;
+  $('#paused-list').innerHTML = pausedProducts.map(productRow).join('').replaceAll('<ion-reorder slot="end"></ion-reorder>', '') || empty('No hay productos pausados.');
 }
 
 // Timings: visibility checkbox on the left; tapping the row opens its editor.
@@ -534,8 +537,9 @@ function wrap(text, size, max, lines = 2) {
   if (out.length) out[out.length - 1] = fitText(out.at(-1), size, max);
   return out;
 }
-// PDF text in WinAnsi (latin-1): \ ( ) are escaped and anything outside latin-1 becomes «?».
-const pdfText = t => [...t].map(c => c === '…' ? '\\205' : c.charCodeAt(0) > 255 ? '?' : c.replace(/[\\()]/g, '\\$&')).join('');
+// PDF text in WinAnsi: \ ( ) are escaped, the common characters above latin-1 use their WinAnsi codes and the rest become «?».
+const WINANSI = { '…': '\\205', '€': '\\200', '–': '\\226', '—': '\\227', '‘': '\\221', '’': '\\222', '“': '\\223', '”': '\\224' };
+const pdfText = t => [...t].map(c => WINANSI[c] ?? (c.charCodeAt(0) > 255 ? '?' : c.replace(/[\\()]/g, '\\$&'))).join('');
 
 function pdfPages(month, rows) {
   // Template measures (908 px wide) converted to A4 points.
@@ -603,9 +607,7 @@ const monthName = (y, m) => { const t = new Date(y, m, 1).toLocaleDateString('es
 // Records of the month by date and time: date, time, and the product as taken: name, dose and notes.
 function exportPDF(y, m) {
   const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
-  const rows = state.records.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => {
-    return [e.day.slice(8) + '/' + e.day.slice(5, 7), time(e.at), e.name, e.dose, e.notes];
-  });
+  const rows = state.records.filter(e => e.day.startsWith(prefix)).sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at)).map(e => [dayMonth(e.day), time(e.at), e.name, e.dose, e.notes]);
   download(`dosify-${prefix}.pdf`, pdfFile(pdfPages(monthName(y, m), rows)), 'application/pdf');
 }
 
@@ -618,7 +620,6 @@ function renderPdfMonths() {
   pdfMonth.innerHTML = months.map(k => `<ion-select-option value="${k}">${monthName(Number(k.slice(0, 4)), Number(k.slice(5)) - 1)}</ion-select-option>`).join('');
   if (!months.includes(pdfMonth.value)) pdfMonth.value = months[0];
   pdfMonth.disabled = $('#export-pdf').disabled = !months.length;
-  pdfMonth.placeholder = 'Sin tomas';
 }
 const exportPdfMonth = () => exportPDF(Number(pdfMonth.value.slice(0, 4)), Number(pdfMonth.value.slice(5)) - 1);
 
@@ -663,7 +664,7 @@ function saveEditor() {
   // (name, notes) and there are earlier records, the user chooses whether those change too. The dose lives in the schedule.
   const apply = all => {
     Object.assign(old, product);
-    for (const e of state.records) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snapOn(old, e.day));
+    for (const e of state.records) if (e.id === old.id && (all || e.day >= today())) Object.assign(e, snapOn(old, e.day, e.dose));
     done();
   };
   const changed = EDITED.some(k => product[k] !== old[k]);
@@ -680,12 +681,11 @@ function saveEditor() {
 let schedules = [], editingSchedule = null;
 const scheduleEditor = $('#schedule-editor');
 const scheduleField = name => $(`[name="${name}"]`, scheduleEditor);
-const shortDate = key => fromKey(key).toLocaleDateString('es');
 
 // Until which day a schedule applies: its last day or, if the next one starts earlier, the day before that.
 const scheduleUntil = (all, p) => { const next = all.find(q => q.start > p.start); return next && next.start <= scheduleEnd(p) ? addDays(next.start, -1) : scheduleEnd(p); };
 
-// Schedule row (editor list and sheet), like the home rows: the dose as title, below the dates it applies and the
+// Schedule row (editor list and product view), like the home rows: the dose as title, below the dates it applies and the
 // duration («24/10/2026 – 22/11/2026 · 30 días») and, if any, a third grey line with its timings («Desayuno, Cena»).
 const scheduleDates = (all, p) => `${shortDate(p.start)} – ${shortDate(scheduleUntil(all, p))} · ${p.days} ${p.days === 1 ? 'día' : 'días'}`;
 const scheduleRow = (all, p) => `<h2 class="medium">${esc(p.dose)}</h2>${doseLine(scheduleDates(all, p))}${p.timings.length ? `<p>${esc(p.timings.map(label).join(', '))}</p>` : ''}`;
@@ -725,7 +725,7 @@ function saveSchedule() {
 
 // ---------- Product history ----------
 
-// How many records a product has («1 toma», «12 tomas»), for the «Registro» row of the editor and the sheet.
+// How many records a product has («1 toma», «12 tomas»), for the «Registro» row of the editor and the product view.
 const recordsLabel = n => `${n} ${n === 1 ? 'toma' : 'tomas'}`;
 const recordCount = id => recordsLabel(state.records.filter(e => e.id === id).length);
 
@@ -759,17 +759,16 @@ function openHistory(id) {
   historyModal.present();
 }
 
-// ---------- Product sheet ----------
+// ---------- Product view (ficha) ----------
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
 // Otros datos and Estadísticas; from a taken dose, also the Toma section (day, time, timing and dose as it was
 // taken). For a deleted product it shows what the record stores (name, notes and the dose) and «—» elsewhere.
-// «Editar», only if the product exists, closes the sheet and opens the editor.
+// «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
 let viewing = null;
 const readRow = (name, value, links) => `<ion-item><ion-label class="ion-text-wrap"><p>${name}</p><h2>${(links ? linkify(value ?? '') : esc(value ?? '').replace(/\n/g, '<br>')) || '—'}</h2></ion-label></ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
-const longDate = key => fromKey(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 function openView(id, record) {
   const m = productOf(id), p = m ?? { name: record.name, notes: record.notes, refs: '', memo: '', cost: '', units: '', schedules: [] };
   viewing = id;
@@ -820,7 +819,7 @@ function saveTimingEditor() {
 const AI_KEY = 'dosify-assistant';
 // No defaults: until all three fields are filled in, the assistant cannot be used.
 const AI_FIELDS = ['url', 'key', 'model'];
-const ai = (() => { let v = {}; try { v = JSON.parse(localStorage.getItem(AI_KEY)) ?? {}; } catch {} return Object.fromEntries(AI_FIELDS.map(k => [k, text(v[k]).trim()])); })();
+const ai = (() => { let v = {}; try { v = JSON.parse(localStorage.getItem(AI_KEY)) ?? {}; } catch {} return Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])); })();
 const aiField = name => $(`#assistant-settings [name="${name}"]`);
 // Saved while typing (not only on blur, which on iOS may not fire when closing Products) and the fields are
 // filled with the stored values each time Products opens.
@@ -857,7 +856,7 @@ Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, r
 Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, o corregir tomas ya guardadas (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
 }
 
-// Tools: what the assistant can change. Each call becomes a proposal: an editable card in the chat
+// Tools: what the assistant can do. Each call becomes a proposal: an editable card in the chat
 // (fields, timing chips, schedule rows) that the user saves or discards.
 const stringProp = description => ({ type: 'string', description });
 const productProps = () => ({
@@ -918,7 +917,7 @@ const chipToggle = (kind, value, text, on) => `<ion-chip data-chip="${kind}" dat
 const chipAction = (kind, text, icon) => `<ion-chip data-chip="${kind}" outline="true" color="primary"><ion-icon name="${icon}"></ion-icon><ion-label>${text}</ion-label></ion-chip>`;
 const productDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
   cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
-  schedules: (Array.isArray(a.schedules) ? a.schedules : base.schedules).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), timings: timingIds().filter(id => list(p.timings).includes(id)) })) });
+  schedules: (Array.isArray(a.schedules) ? a.schedules : base.schedules).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), timings: timingIds().filter(id => asList(p.timings).includes(id)) })) });
 // A schedule without timings is invalid (marked on its row: «Marca al menos un momento»).
 const productValidate = d => [
   ...(d.name.trim() ? [] : ['name']), ...(int(d.cost) === null ? ['cost'] : []), ...(int(d.units, 1) === null ? ['units'] : []),
@@ -971,7 +970,7 @@ function uiDraft(a) {
       if (e.type === 'check' || e.type === 'toggle') values[e.key] = el.checked === true || el.value === true;
       else if (e.type === 'radio') values[e.key] = has(str(el.value)) ? str(el.value) : e.options[0]?.value ?? '';
       else if (e.type === 'select') values[e.key] = has(str(el.value)) ? str(el.value) : '';
-      else if (e.type === 'chips') values[e.key] = e.multiple ? list(el.value).filter(has) : has(str(el.value)) ? str(el.value) : '';
+      else if (e.type === 'chips') values[e.key] = e.multiple ? asList(el.value).filter(has) : has(str(el.value)) ? str(el.value) : '';
       else if (e.type === 'input' || e.type === 'textarea') values[e.key] = str(el.value);
       return e;
     }) })).filter(sec => sec.elements.length);
@@ -1007,19 +1006,19 @@ const uiValue = (e, d) => {
 // {{key}} in action arguments: the element's value (as is if it is the whole text; otherwise inside it).
 const fill = (args, values) => JSON.parse(JSON.stringify(args), (k, v) => typeof v !== 'string' ? v
   : /^\{\{[^{}]+\}\}$/.test(v) ? values[v.slice(2, -2)] ?? '' : v.replace(/\{\{([^{}]+)\}\}/g, (_, key) => str(values[key])));
-const runAction = (label, a) => {
+const runAction = (name, a) => {
   const f = FORMS[a.tool], d = f.draft(a.args);
-  if (!d) return `${label}: no se ha podido (no existe)`;
-  if (f.validate(d).length) return `${label}: no se ha podido (faltan datos o no valen)`;
-  return `${label}: ${f.apply(d) ?? 'no se ha podido'}`;
+  if (!d) return `${name}: no se ha podido (no existe)`;
+  if (f.validate(d).length) return `${name}: no se ha podido (faltan datos o no valen)`;
+  return `${name}: ${f.apply(d) ?? 'no se ha podido'}`;
 };
 const FORMS = {
   ui: {
-    draft: uiDraft, title: d => esc(d.title), button: d => d.confirm, blocks: uiBlocks,
+    draft: uiDraft, title: d => d.title, button: d => d.confirm, blocks: uiBlocks,
     brief: d => { const n = uiElements(d).filter(e => e.type !== 'text').length; return `${n} ${n === 1 ? 'elemento' : 'elementos'}`; },
     validate: d => uiElements(d).filter(e => (e.type === 'input' || e.type === 'textarea') && e.required && !str(d.values[e.key]).trim()).map(e => `@${e.key}`),
     apply: d => {
-      const runs = [], run = (label, a) => { if (a) runs.push(runAction(label, { tool: a.tool, args: fill(a.args, d.values) })); };
+      const runs = [], run = (name, a) => { if (a) runs.push(runAction(name, { tool: a.tool, args: fill(a.args, d.values) })); };
       for (const e of uiElements(d)) {
         const v = d.values[e.key], chosen = e.options.filter(o => e.type === 'chips' && e.multiple ? v.includes(o.value) : v === o.value);
         if ((e.type === 'check' || e.type === 'toggle') && v) run(e.label, e.action);
@@ -1037,11 +1036,11 @@ const FORMS = {
   },
   edit_product: {
     draft: a => { const m = productOf(a.id); return m && { id: m.id, ...productDraft(m, a) }; },
-    title: d => `Cambiar el producto «${esc(productOf(d.id)?.name ?? d.name)}»`, brief: productBrief, fields: productFields, validate: productValidate,
+    title: d => `Cambiar el producto «${productOf(d.id)?.name ?? d.name}»`, brief: productBrief, fields: productFields, validate: productValidate,
     apply: d => {
       const m = productOf(d.id); if (!m) return null;
       Object.assign(m, productValues(d));
-      for (const e of state.records) if (e.id === m.id && e.day >= today()) Object.assign(e, snapOn(m, e.day));
+      for (const e of state.records) if (e.id === m.id && e.day >= today()) Object.assign(e, snapOn(m, e.day, e.dose));
       return `Producto «${m.name}» cambiado`;
     },
   },
@@ -1073,7 +1072,7 @@ const FORMS = {
   },
   edit_timing: {
     draft: a => { const ti = timingOf(a.id); return ti && { id: ti.id, name: str(a.name ?? ti.name), start: str(a.start ?? ti.start), end: str(a.end ?? ti.end), visible: typeof a.visible === 'boolean' ? a.visible : ti.visible }; },
-    title: d => `Cambiar el momento «${esc(label(d.id))}»`,
+    title: d => `Cambiar el momento «${label(d.id)}»`,
     brief: d => `${d.name.trim() || 'Sin nombre'} · ${d.start !== '' || d.end !== '' ? `${d.start || '?'}–${d.end || '?'} h` : 'sin horas'} · ${d.visible ? 'visible' : 'oculto'}`,
     fields: d => `
   <ion-item><ion-input data-field="name" label="Nombre" label-placement="stacked" placeholder="Sin nombre" value="${esc(d.name)}"></ion-input></ion-item>
@@ -1087,21 +1086,21 @@ const FORMS = {
 // Pending proposals of this turn: the assistant loop waits for the user to save or discard them.
 const resolvers = new Map();
 let chatEpoch = 0, awaiting = false;
-const pending = () => chatView.filter(v => v.who === 'proposal' && v.status === 'pending');
+const pendingProposals = () => chatView.filter(v => v.who === 'proposal' && v.status === 'pending');
 // The assistant is answered in text, never JSON, so it does not echo it to the user.
 const pushToolResult = (callId, content) => { if (!chat.some(m => m.role === 'tool' && m.tool_call_id === callId)) chat.push({ role: 'tool', tool_call_id: callId, content }); };
 // A proposal's final data, described as text for the assistant.
-function describe(tool, d) {
-  if (tool === 'create_product' || tool === 'edit_product') {
+function describe(name, d) {
+  if (name === 'create_product' || name === 'edit_product') {
     const v = productValues(d);
     return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
       v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
       v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${p.days} ${p.days === 1 ? 'día' : 'días'} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
   }
-  if (tool === 'add_record' || tool === 'remove_record') return `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
-  if (tool === 'edit_records') return `${recordsLabel(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`;
-  if (tool === 'edit_timing') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
-  if (tool === 'ui') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
+  if (name === 'add_record' || name === 'remove_record') return `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
+  if (name === 'edit_records') return `${recordsLabel(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`;
+  if (name === 'edit_timing') return `nombre «${d.name.trim()}», ${d.start !== '' || d.end !== '' ? `de ${d.start || '?'} a ${d.end || '?'} h` : 'sin horas'}, ${d.visible ? 'visible' : 'oculto'}`;
+  if (name === 'ui') return uiElements(d).filter(e => e.type !== 'text').map(e => `${e.label || e.key}: ${uiValue(e, d)}`).join('; ') || 'sin elementos';
   return d.name;
 }
 function decide(v, saved) {
@@ -1113,7 +1112,7 @@ function decide(v, saved) {
     v.status = 'saved'; v.text = summary ?? 'No se ha podido aplicar';
     pushToolResult(v.id, summary ? `Has guardado la propuesta. ${summary}. Datos finales (con los cambios que hayas hecho): ${describe(v.tool, v.draft)}.` : 'No se ha podido aplicar: ya no existe.');
   } else {
-    v.status = 'discarded'; v.text = `${form.title(v.draft).replace(/<[^>]+>/g, '')}: descartada`;
+    v.status = 'discarded'; v.text = `${form.title(v.draft)}: propuesta descartada`;
     pushToolResult(v.id, 'Has descartado la propuesta; no se ha cambiado nada.');
   }
   resolvers.get(v.id)?.(); resolvers.delete(v.id);
@@ -1126,15 +1125,17 @@ const SCHEDULE_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha',
 function trySave(v, card) {
   if (v.status !== 'pending') return false;
   const bad = FORMS[v.tool].validate(v.draft);
+  for (const f of bad) if (f.startsWith('timings:')) v.draft.schedules[Number(f.split(':')[1])].bad = true;
+  if (card && bad.some(f => f.startsWith('timings:'))) { const parent = card.parentElement, key = card.dataset.proposal; refreshCard(card, v); card = parent.querySelector(`[data-proposal="${key}"]`); }
   for (const f of bad) {
     const [field, row] = f.split(':');
-    if (field === 'timings') { v.draft.schedules[Number(row)].bad = true; continue; }
+    if (field === 'timings') continue;
     const el = !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-schedule-field="${field}"][data-row="${row}"]`);
     if (!el) continue;
     el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : SCHEDULE_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
   }
-  if (bad.length) { if (card && bad.some(f => f.startsWith('timings:'))) refreshCard(card, v); return false; }
+  if (bad.length) return false;
   decide(v, true);
   return true;
 }
@@ -1153,7 +1154,7 @@ const loadLibs = () => libs ??= Promise.all([import(MARKED), import(CHARTJS)]).t
     heading(token) { return `<h2 class="medium">${this.parser.parseInline(token.tokens)}</h2>`; },
     paragraph(token) { return `<div class="md-p">${this.parser.parseInline(token.tokens)}</div>`; }, // a <p> inside ion-label renders grey and small
     image: ({ text }) => esc(text),
-    link(token) { const label = this.parser.parseInline(token.tokens); return /^https?:\/\//.test(token.href) ? `<a href="${esc(token.href)}" target="_blank" rel="noopener">${label}</a>` : label; },
+    link(token) { const inner = this.parser.parseInline(token.tokens); return /^https?:\/\//.test(token.href) ? `<a href="${esc(token.href)}" target="_blank" rel="noopener">${inner}</a>` : inner; },
     code: ({ text, lang }) => lang === 'chart' ? `<div class="md-chart"><canvas data-chart="${esc(text)}"></canvas></div>` : false,
   } });
   Chart = c.default;
@@ -1226,7 +1227,7 @@ function suggestionPool() {
     '¿Qué puedes hacer por mí?',
   ];
 }
-const localSuggestions = count => { const asked = new Set(chat.filter(m => m.role === 'user').map(m => m.content)); return [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count); };
+const localSuggestions = (count, exclude = []) => { const asked = new Set([...chat.filter(m => m.role === 'user').map(m => m.content), ...exclude]); return [...new Set(suggestionPool())].filter(q => !asked.has(q)).sort(() => Math.random() - 0.5).slice(0, count); };
 // Stored ones are shown as is; if none, they are requested (and only the loading row shows meanwhile).
 function suggestions(count) {
   if (!suggested.length && !suggestLoading) requestSuggestions(count, []);
@@ -1237,7 +1238,7 @@ function suggestions(count) {
 let suggestRequest = 0;
 function requestSuggestions(count, exclude) {
   const id = ++suggestRequest;
-  suggestLoading = askSuggestions(count, exclude).catch(() => localSuggestions(count)).then(list => {
+  suggestLoading = askSuggestions(count, exclude).catch(() => localSuggestions(count, exclude)).then(list => {
     if (id !== suggestRequest) return;
     suggestLoading = null;
     suggested = list;
@@ -1250,10 +1251,10 @@ async function askSuggestions(count, exclude) {
   const recent = chat.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-6).map(m => ({ role: m.role, content: m.content }));
   const asked = chat.filter(m => m.role === 'user').map(m => m.content);
   const linked = recent.some(m => m.role === 'assistant') ? ` La mitad de ellas (${Math.ceil(count / 2)}) deben seguir el hilo de tu última respuesta y de la conversación: profundizar, detallar o actuar sobre lo que acabas de decir (por ejemplo, si has mostrado una tabla, pedir una gráfica, un detalle o un cambio sobre esos mismos datos); la otra mitad, libres: otras cosas útiles ahora mismo con sus datos.` : '';
-  const ask = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de productos, momentos, envases, costes, historial) y útiles según la hora del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
+  const question = `Propón ${count} sugerencias de lo que quien usa la app podría pedirte ahora mismo, escritas como las escribiría esa persona, en primera persona y de tú («¿Qué me falta por tomar hoy?», «Hazme una lista con check para marcar las tomas de la mañana»), breves (menos de 90 caracteres), variadas, concretas con sus datos (nombres de productos, momentos, envases, costes, historial) y útiles según la hora del día y la conversación.${linked} Combina tipos: consultas con tablas o gráficas, interacciones que lleven a una interfaz (marcar tomas, elegir, rellenar o editar con formulario) y cambios de datos. No propongas nada que no se pueda hacer con los datos o las herramientas, ni lo ya preguntado${asked.length ? ` (${asked.slice(-8).map(q => `«${q}»`).join(', ')})` : ''}${exclude.length ? `, ni estas: ${exclude.map(q => `«${q}»`).join(', ')}` : ''}. Responde solo con un array JSON de ${count} strings, sin nada más.`;
   const res = await fetch(`${ai.url.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.key}` }, signal: AbortSignal.timeout(25000),
-    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: ask }] }),
+    body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...recent, { role: 'user', content: question }] }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
   const text = String((await res.json()).choices?.[0]?.message?.content ?? ''), json = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1);
@@ -1274,7 +1275,7 @@ const proposalCard = (v, i) => {
   const form = FORMS[v.tool];
   if (v.status !== 'pending') return actionLine(v.status === 'saved', v.text);
   return `<div data-proposal="${i}">
-    <ion-list-header><ion-label>${form.title(v.draft)}</ion-label></ion-list-header>
+    <ion-list-header><ion-label>${esc(form.title(v.draft))}</ion-label></ion-list-header>
     ${form.blocks ? form.blocks(v.draft) : `<ion-list inset="true">${form.fields(v.draft)}</ion-list>`}
     <div class="proposal-actions">
       <ion-button fill="outline" color="medium" data-act="discard">Descartar</ion-button>
@@ -1294,7 +1295,7 @@ const block = (v, i) => ({
 const proposalRow = (v, i) => {
   const form = FORMS[v.tool];
   if (v.status !== 'pending') return `<ion-item><ion-icon slot="start" name="${v.status === 'saved' ? 'checkmark-circle' : 'close-circle'}" color="${v.status === 'saved' ? 'success' : 'medium'}"></ion-icon><ion-label class="ion-text-wrap" color="medium">${esc(v.text)}</ion-label></ion-item>`;
-  return `<ion-item button="true" data-open="${i}"><ion-icon slot="start" name="${v.bad ? 'alert-circle-outline' : 'create-outline'}" color="${v.bad ? 'danger' : 'primary'}"></ion-icon><ion-label class="ion-text-wrap"><h2 class="medium">${form.title(v.draft)}</h2><p>${esc(form.brief(v.draft))}</p>${v.bad ? '<p><ion-text color="danger">Falta algún dato: ábrela para completarlo</ion-text></p>' : ''}</ion-label></ion-item>`;
+  return `<ion-item button="true" data-open="${i}"><ion-icon slot="start" name="${v.bad ? 'alert-circle-outline' : 'create-outline'}" color="${v.bad ? 'danger' : 'primary'}"></ion-icon><ion-label class="ion-text-wrap"><h2 class="medium">${esc(form.title(v.draft))}</h2><p>${esc(form.brief(v.draft))}</p>${v.bad ? '<p><ion-text color="danger">Falta algún dato: ábrela para completarlo</ion-text></p>' : ''}</ion-label></ion-item>`;
 };
 const proposalList = idx => `
   <ion-list-header><ion-label>Propuestas (${idx.length})</ion-label></ion-list-header>
@@ -1308,7 +1309,7 @@ function chatBlocks() {
       for (; i < chatView.length && chatView[i].who === 'proposal'; i++) idx.push(i);
       i--;
       // A list only when several are pending; otherwise each one as a card or a line.
-      out.push(idx.filter(i => chatView[i].status === 'pending').length > 1 ? proposalList(idx) : idx.map(i => block(chatView[i], i)).join(''));
+      out.push(idx.filter(j => chatView[j].status === 'pending').length > 1 ? proposalList(idx) : idx.map(j => block(chatView[j], j)).join(''));
     } else out.push(block(chatView[i], i));
   }
   return out.join('');
@@ -1325,14 +1326,14 @@ const editBlock = (v, i) => `<div data-proposal="${i}" data-edit="">
 function openProposalEditor(i) {
   const v = chatView[i], form = FORMS[v.tool];
   proposalEdit = { i, v: { ...v, draft: structuredClone(v.draft) } };
-  $('#proposal-title').innerHTML = form.title(v.draft);
+  $('#proposal-title').textContent = form.title(v.draft);
   Object.assign($('#proposal-save'), { textContent: form.danger ?? form.button?.(v.draft) ?? 'Guardar', color: form.danger ? 'danger' : '' });
   $('#proposal-body').innerHTML = editBlock(proposalEdit.v, i);
   proposalEditor.present();
 }
 
 // With several pending proposals, a row to save or discard them all.
-const allRow = () => pending().length > 1 ? `<div class="proposal-actions"><ion-button fill="outline" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button data-act="save-all">Guardar todas (${pending().length})</ion-button></div>` : '';
+const allRow = () => pendingProposals().length > 1 ? `<div class="proposal-actions"><ion-button fill="outline" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button data-act="save-all">Guardar todas (${pendingProposals().length})</ion-button></div>` : '';
 function renderChat() {
   saveChat();
   const ready = aiReady();
@@ -1393,10 +1394,10 @@ const MESSAGE_ACTIONS = {
 };
 $('#text-close').onclick = () => textModal.dismiss();
 
-// Sends the question and serves the tools the assistant asks for until it replies with text.
 // The assistant can only be used with base URL, API key and model.
 const aiReady = () => !!(ai.url && ai.key && ai.model);
 
+// Sends the question and serves the tools the assistant asks for until it replies with text.
 async function sendChat() {
   const question = String(chatInput.value ?? '').trim();
   if (!question || chatBusy || !aiReady()) return;
@@ -1404,7 +1405,7 @@ async function sendChat() {
   // Pending proposals (from this turn or another session) count as discarded before going on, and the loop
   // waiting for them, if any, is cancelled: bumping the epoch makes it end without asking for another reply.
   chatEpoch++; awaiting = false;
-  for (const v of pending()) decide(v, false);
+  for (const v of pendingProposals()) decide(v, false);
   resolvers.clear();
   repairChat();
   chat.push({ role: 'user', content: question });
@@ -1464,7 +1465,7 @@ $('#home').addEventListener('ionChange', e => {
   const { checked } = e.detail;
   sheet(rowName(id), [{ text: checked ? 'Marcar como tomado' : 'Marcar como pendiente', handler: () => toggle(id, timing, checked) }], renderHome);
 });
-// The (i) of a row opens the product sheet; from home, with that day and timing's record if already taken.
+// The (i) of a row opens the product view; from home, with that day and timing's record if already taken.
 const viewFrom = (e, fromHome) => {
   const id = e.target.closest('[data-view]')?.dataset.view;
   if (id) openView(id, fromHome ? state.records.find(x => x.day === selectedDay() && x.timing === selectedTiming() && String(x.id) === id) : undefined);
@@ -1563,8 +1564,8 @@ $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().
 $('#chat-close').onclick = () => chatModal.dismiss();
 $('#chat-new').onclick = () => { chatEpoch++; suggested = []; suggestRequest++; suggestLoading = null; for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
 $('#chat-send').onclick = sendChat;
-// Interaction with proposals: fields (written to the draft), chips (timings, schedules, visible)
-// and buttons (save, discard, all).
+// Interaction with the chat: suggestions and «Más», message icons, proposal rows (open the edit view), proposal fields
+// (written to the draft), chips (timings, schedules, visible, ui elements) and buttons (ui buttons, save, discard, all).
 const proposalOf = el => { const card = el.closest('[data-proposal]'); return card && { card, v: 'edit' in card.dataset ? proposalEdit.v : chatView[Number(card.dataset.proposal)] }; };
 const refreshCard = (card, v) => { card.outerHTML = ('edit' in card.dataset ? editBlock : proposalCard)(v, Number(card.dataset.proposal)); };
 // UI elements: checkboxes, toggles, radios and selects write their value to the draft.
@@ -1591,8 +1592,8 @@ for (const root of [chatBody, $('#proposal-body')]) root.addEventListener('click
   const open = e.target.closest('[data-open]')?.dataset.open;
   if (open) return openProposalEditor(Number(open));
   const act = e.target.closest('[data-act]')?.dataset.act;
-  if (act === 'save-all') { for (const v of pending()) { const card = chatBody.querySelector(`[data-proposal="${chatView.indexOf(v)}"]`); v.bad = !trySave(v, card); } return renderChat(); }
-  if (act === 'discard-all') { for (const v of pending()) decide(v, false); return renderChat(); }
+  if (act === 'save-all') { for (const v of pendingProposals()) { const card = chatBody.querySelector(`[data-proposal="${chatView.indexOf(v)}"]`); v.bad = !trySave(v, card); } return renderChat(); }
+  if (act === 'discard-all') { for (const v of pendingProposals()) decide(v, false); return renderChat(); }
   const p = proposalOf(e.target); if (!p) return;
   // UI button: applies at once (in the edit view, through its «Guardar», which commits the copy).
   const uiButton = e.target.closest('[data-ui-button]')?.dataset.uiButton;
