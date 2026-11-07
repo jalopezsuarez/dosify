@@ -6,10 +6,10 @@ const KEY = 'dosify';
 //   visible, order: [product ids in record order] }. If none is valid, those of DEFAULT_TIMINGS (to have
 //   more by default just add another one there) with new ids.
 // · products: in product order: { id, name, notes (directions), refs (references), memo (free notes),
-//   cost (€ per container) and units (doses per container), integers or '', created and updated (ISO: when it was
-//   created and when it was last saved), and schedules: [{ dose (starts with the
-//   amount of each dose), start, days, timings: [ids of the timings it is taken at; at least one] }]. Without
-//   schedules a product does not show on the home screen.
+//   created and updated (ISO: when it was created and when it was last saved), schedules: [{ dose (starts with the
+//   amount of each dose), start, days, timings: [ids of the timings it is taken at; at least one] }] and containers,
+//   the ones bought: [{ bought (date), cost (€, integer or ''), units (doses, integer ≥ 1), adjust (doses, + or −) }].
+//   Without schedules a product does not show on the home screen.
 // · records: doses taken: { at, day, id (product), timing (timing id), name, dose, notes (the product as it was taken) }
 const DEFAULT_TIMINGS = [
   { name: 'Desayuno', start: 6, end: 12 },
@@ -92,6 +92,8 @@ const date = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
 const stamp = v => { const t = new Date(v ?? ''); return isNaN(t) ? '' : t.toISOString(); }; // ISO timestamp or ''
 const asList = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
 // Names of the failing checks: [['field', ok], …] → ['field', …].
+// Whole number, + or −; '' is 0; null if something else was written.
+const signed = v => { const t = str(v).trim(); return t === '' ? 0 : /^[-+]?\d+$/.test(t) ? Number(t) : null; };
 const failing = checks => checks.filter(([, ok]) => !ok).map(([f]) => f);
 // Integer ≥ min or '' (empty); null if something else was written.
 const int = (v, min = 0) => { const t = String(v ?? '').trim(); return t === '' ? '' : /^\d+$/.test(t) && Number(t) >= min ? Number(t) : null; };
@@ -103,6 +105,10 @@ const cleanSchedules = (v, ids = timingIds()) => (Array.isArray(v) ? v : []).map
   .filter(p => p && amount(p.dose) && date(p.start) && Number.isInteger(p.days) && p.days >= 1 && p.timings.length).sort((a, b) => a.start.localeCompare(b.start) || a.days - b.days);
 // Cleans stored or imported data: whatever is missing or wrong takes its default and records that cannot be
 // understood are dropped. No compatibility with older formats.
+// Valid containers (purchase date and doses; cost and adjustment default to none), ordered by purchase date.
+const cleanContainers = v => (Array.isArray(v) ? v : []).filter(c => c && typeof c === 'object')
+  .map(c => ({ bought: date(c.bought), cost: int(c.cost) ?? '', units: int(c.units, 1), adjust: signed(c.adjust) ?? 0 }))
+  .filter(c => c.bought && c.units).sort((a, b) => a.bought.localeCompare(b.bought));
 function clean(raw) {
   const arr = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
   // Timings: the stored ones with an id, in order (name, hours and visibility defaulted if missing); if none
@@ -111,12 +117,12 @@ function clean(raw) {
     visible: typeof ti.visible === 'boolean' ? ti.visible : true, order: asList(ti.order) }));
   const timings = saved.length ? saved : defaultTimings();
   const ids = timings.map(ti => ti.id);
-  // Products: dropped without a name; a new id if missing; only valid schedules with existing timings; created and
-  // updated default to now and to created.
+  // Products: dropped without a name; a new id if missing; only valid schedules with existing timings and valid
+  // containers; created and updated default to now and to created.
   const now = new Date().toISOString();
   const products = arr(raw?.products).filter(m => asText(m.name)).map(m => { const created = stamp(m.created) || now; return {
     id: asText(m.id) || newId(), name: m.name, notes: asText(m.notes), refs: asText(m.refs), memo: asText(m.memo),
-    cost: int(m.cost) ?? '', units: int(m.units, 1) ?? '', created, updated: stamp(m.updated) || created, schedules: cleanSchedules(m.schedules, ids),
+    created, updated: stamp(m.updated) || created, schedules: cleanSchedules(m.schedules, ids), containers: cleanContainers(m.containers),
   }; });
   for (const ti of timings) ti.order = ti.order.filter(id => products.some(m => m.id === id));
   // Records: need a valid day, an existing timing and a valid date; the rest are dropped. Newest first, at most RECORDS_MAX.
@@ -345,7 +351,7 @@ async function renderHome() {
 // ---------- Products ----------
 
 const manager = $('#manager');
-const EMPTY_PRODUCT = { name: '', notes: '', refs: '', memo: '', cost: '', units: '', schedules: [] };
+const EMPTY_PRODUCT = { name: '', notes: '', refs: '', memo: '', schedules: [], containers: [] };
 // New product with its timestamps. Saving one (editor or assistant) stamps «updated» even with nothing changed, and its
 // records from today on (all of them with `all`) copy the product again, the dose re-read from the schedule.
 const newProduct = values => { const now = new Date().toISOString(); return { id: newId(), ...values, created: now, updated: now }; };
@@ -391,35 +397,38 @@ const dosesSum = records => records.reduce((n, e) => n + amount(e.dose), 0);
 // Doses per day: the amount of today's dose for each visible timing of today's schedule.
 const perDayUnits = m => amount(doseOn(m, today())) * visibleOf(timingsOn(m, today())).length;
 const SOON_DAYS = 7, SHOP_DAYS = 14;
-// What is known about a product from its schedules, cost, container and records (null when it cannot be computed):
-// · costPerDay = cost / units × daily; costPerMonth = costPerDay × days of the current month.
-// · end: when the current container runs out. All recorded doses are summed and, each time they complete a container,
-//   a new one starts: what is left of the current one is the remainder. Today's pending doses are subtracted and the
-//   rest is spread over the doses per day. If it does not cover today, it ends today. soon: under SOON_DAYS days.
-// · records, dosesTaken, costTaken (doses taken × cost / units) and firstDay: its history.
+// Doses left of a product's containers: what they hold (doses + adjustment of each) minus the doses taken since the
+// first purchase; null without containers.
+const dosesLeft = (containers, records) => containers.length
+  ? containers.reduce((n, c) => n + c.units + c.adjust, 0) - dosesSum(records.filter(e => e.day >= containers[0].bought)) : null;
+// What is known about a product from its schedules, containers and records (null when it cannot be computed):
+// · left: doses left (dosesLeft). end: the day they run out: today's pending doses are subtracted and the rest is
+//   spread over the doses per day; if it does not cover today, it ends today. soon: under SOON_DAYS days.
+// · price: cost of the last container bought with a cost; costPerDay = price / its doses × daily; costPerMonth =
+//   costPerDay × days of the current month. spent: what all its containers cost.
+// · records, dosesTaken and firstDay: its history.
 // The product list, Costes, Próximas compras, the product view, the history and the assistant all read from here.
 function figures(m) {
-  const records = recordsOfProduct(m.id), dosesTaken = dosesSum(records), daily = perDayUnits(m);
-  const unitCost = m.cost !== '' && m.units !== '' ? m.cost / m.units : null;
-  const costPerDay = unitCost !== null && daily ? unitCost * daily : null;
+  const records = recordsOfProduct(m.id), daily = perDayUnits(m), left = dosesLeft(m.containers, records);
+  const last = m.containers.findLast(c => c.cost !== ''), priced = m.containers.filter(c => c.cost !== '');
+  const costPerDay = last && daily ? last.cost / last.units * daily : null;
   let end = '';
-  if (m.units !== '' && daily) {
-    const pendingToday = Math.max(0, daily - dosesSum(records.filter(e => e.day === today())));
-    const left = m.units - dosesTaken % m.units - pendingToday;
-    end = addDays(today(), left < 0 ? 0 : Math.floor(left / daily));
+  if (left !== null && daily) {
+    const rest = left - Math.max(0, daily - dosesSum(records.filter(e => e.day === today())));
+    end = addDays(today(), rest < 0 ? 0 : Math.floor(rest / daily));
   }
   const days = end ? daysLeft(end) : null;
-  return { paused: paused(m), doseToday: doseOn(m, today()), daily, costPerDay, costPerMonth: costPerDay === null ? null : costPerDay * monthDays(),
-    end, daysLeft: days, soon: days !== null && days < SOON_DAYS,
-    records: records.length, dosesTaken, costTaken: unitCost === null ? null : dosesTaken * unitCost, firstDay: records.map(e => e.day).sort()[0] ?? '' };
+  return { paused: paused(m), doseToday: doseOn(m, today()), daily, left, price: last?.cost ?? null, spent: priced.length ? priced.reduce((n, c) => n + c.cost, 0) : null,
+    costPerDay, costPerMonth: costPerDay === null ? null : costPerDay * monthDays(), end, daysLeft: days, soon: days !== null && days < SOON_DAYS,
+    records: records.length, dosesTaken: dosesSum(records), firstDay: records.map(e => e.day).sort()[0] ?? '' };
 }
-// Figures of the active products together: cost of the containers, per day and per month, and what runs out within
-// SHOP_DAYS days (most urgent first).
+// Figures of the active products together: the price of a container of each (the last one bought), the cost per day
+// and per month, and what runs out within SHOP_DAYS days (most urgent first).
 function totals() {
-  const products = state.products.filter(m => !paused(m)), priced = products.filter(m => m.cost !== ''), full = priced.filter(m => m.units !== '');
-  const costPerDay = full.reduce((sum, m) => sum + (figures(m).costPerDay ?? 0), 0);
-  const shopping = products.map(m => ({ m, ...figures(m) })).filter(x => x.end && x.daysLeft <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
-  return { products, priced, full, containers: priced.reduce((sum, m) => sum + m.cost, 0), costPerDay, costPerMonth: costPerDay * monthDays(), shopping };
+  const products = state.products.filter(m => !paused(m)), all = products.map(m => ({ m, ...figures(m) }));
+  const priced = all.filter(x => x.price !== null), full = all.filter(x => x.costPerDay !== null), costPerDay = full.reduce((sum, x) => sum + x.costPerDay, 0);
+  const shopping = all.filter(x => x.end && x.daysLeft <= SHOP_DAYS).sort((a, b) => a.end.localeCompare(b.end));
+  return { products, priced, full, containers: priced.reduce((sum, x) => sum + x.price, 0), costPerDay, costPerMonth: costPerDay * monthDays(), shopping };
 }
 
 // ---------- Figures shown ----------
@@ -440,7 +449,7 @@ const endNote = id => {
 // Cost line of a product row: «30 €/ud · 15 €/mes · 1 €/día», with whatever can be computed.
 function costLine(m) {
   const f = figures(m), parts = [];
-  if (m.cost !== '') parts.push(per(m.cost, 'ud'));
+  if (f.price !== null) parts.push(per(f.price, 'ud'));
   if (f.costPerDay !== null) parts.push(per(f.costPerMonth, 'mes'), per(f.costPerDay, 'día'));
   return parts.join(' · ');
 }
@@ -448,13 +457,13 @@ function costLine(m) {
 function renderCosts() {
   const { products, priced, full, containers, costPerDay, costPerMonth, shopping: shop } = totals();
   const row = (title, text, extra = '', icon = '') => `<ion-item${extra}>${icon}<ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
-  // Overall costs: total of the containers and, with doses per container, per day and per month (days of the current month);
-  // at the end, the upcoming purchases row (shown even without costs if something runs out).
+  // Overall costs: a container of each at its last price and, with today's schedule, per day and per month (days of the
+  // current month); at the end, the upcoming purchases row (shown even without costs if something runs out).
   $('#costs').innerHTML = priced.length || shop.length ? `
     <ion-list-header><ion-label>Costes</ion-label></ion-list-header>
     <ion-list inset="true">
-      ${priced.length ? row(`${euros(containers, 0)} en total`, `${priced.length} de ${products.length} productos con coste`)
-      + row(`${euros(costPerMonth)} al mes`, `${euros(costPerDay)} al día · ${full.length} de ${products.length} productos con coste y dosis por envase`) : ''}
+      ${priced.length ? row(`${euros(containers, 0)} en total`, `un envase de ${priced.length} de ${products.length} productos, al último precio`)
+      + row(`${euros(costPerMonth)} al mes`, `${euros(costPerDay)} al día · ${full.length} de ${products.length} productos con precio y pauta`) : ''}
       ${row('Próximas compras', shop.length ? `${count(shop.length, 'producto se acaba', 'productos se acaban')} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"',
         `<ion-icon slot="start" name="cart-outline" color="${shop.length ? 'primary' : 'medium'}"></ion-icon>`)}
     </ion-list>` : '';
@@ -464,19 +473,19 @@ function renderCosts() {
 // (as on the home screen); the total at the end.
 const shoppingModal = $('#shopping');
 function openShopping() {
-  const shop = totals().shopping, priced = shop.filter(x => x.m.cost !== '');
+  const shop = totals().shopping, priced = shop.filter(x => x.price !== null);
   $('#shopping-body').innerHTML = shop.length ? `
     <ion-list inset="true">
-      ${shop.map(({ m }) => `
+      ${shop.map(({ m, price }) => `
       <ion-item>
         <ion-label>
           <h2 class="medium">${esc(m.name)}</h2>
           <p>${purchaseText(m)}</p>
         </ion-label>
-        ${m.cost !== '' ? `<ion-note slot="end">${euros(m.cost, 0)}</ion-note>` : ''}${viewButton(m.id)}
+        ${price !== null ? `<ion-note slot="end">${euros(price, 0)}</ion-note>` : ''}${viewButton(m.id)}
       </ion-item>`).join('')}
     </ion-list>
-    ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.m.cost, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
+    ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.price, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
     : emptyList(`Nada se acaba en los próximos ${SHOP_DAYS} días.`);
   shoppingModal.present();
 }
@@ -528,21 +537,25 @@ function download(name, data, type = 'text/csv') {
 
 // One CSV with shared columns named after the data fields; each row type uses its own:
 // · timing: id, name, start and end (hours), visible (true/false) and order (space-separated product ids), in order.
-// · product: id, name, notes, refs, memo, cost (€ per container), units (doses per container), created and updated («YYYY-MM-DD HH:MM», local time).
+// · product: id, name, notes, refs, memo, created and updated («YYYY-MM-DD HH:MM», local time).
 // · schedule: product id, dose, start (start date), days (duration) and timings (space-separated ids).
+// · container: product id, bought (purchase date), cost (€), units (doses) and adjust (doses, + or −).
 // · record: product id, timing, at («YYYY-MM-DD HH:MM», local time) and the product as taken: name, dose and notes.
 // Each column is a data field with the same name; the record's «day» is inside «at».
-// Exported by type: timings and products in their order, schedules by start date and records by day and time.
-const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'cost', 'units', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'order', 'at', 'created', 'updated'];
+// Exported by type: timings and products in their order, schedules by start date, containers by purchase date and
+// records by day and time.
+const HEAD = ['type', 'id', 'name', 'notes', 'refs', 'memo', 'bought', 'cost', 'units', 'adjust', 'dose', 'start', 'end', 'days', 'timings', 'timing', 'visible', 'order', 'at', 'created', 'updated'];
 const csvStamp = iso => `${dayKey(new Date(iso))} ${hhmm(iso)}`; // «YYYY-MM-DD HH:MM», local time
 const csvRow = (type, o) => HEAD.map(h => h === 'type' ? type : o[h] ?? '');
 
 const exportCSV = () => csv([
   HEAD,
   ...state.timings.map(ti => csvRow('timing', { id: ti.id, name: ti.name, start: ti.start, end: ti.end, visible: ti.visible, order: ti.order.join(' ') })),
-  ...state.products.map(m => csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, cost: m.cost, units: m.units, created: csvStamp(m.created), updated: csvStamp(m.updated) })),
+  ...state.products.map(m => csvRow('product', { id: m.id, name: m.name, notes: m.notes, refs: m.refs, memo: m.memo, created: csvStamp(m.created), updated: csvStamp(m.updated) })),
   ...state.products.flatMap(m => m.schedules.map(p => ({ id: m.id, ...p }))).sort((a, b) => a.start.localeCompare(b.start))
     .map(p => csvRow('schedule', { id: p.id, dose: p.dose, start: p.start, days: p.days, timings: p.timings.join(' ') })),
+  ...state.products.flatMap(m => m.containers.map(c => ({ id: m.id, ...c }))).sort((a, b) => a.bought.localeCompare(b.bought))
+    .map(c => csvRow('container', { id: c.id, bought: c.bought, cost: c.cost, units: c.units, adjust: c.adjust || '' })),
   ...[...state.records].sort((a, b) => a.day.localeCompare(b.day) || a.at.localeCompare(b.at))
     .map(e => csvRow('record', { id: e.id, name: e.name, dose: e.dose, notes: e.notes, timing: e.timing, at: `${e.day} ${hhmm(e.at)}` })),
 ]);
@@ -556,7 +569,8 @@ async function importCSV(file) {
   for (const r of rows) {
     const c = Object.fromEntries(HEAD.map(h => [h, r[head.indexOf(h)] ?? '']));
     if (c.type === 'timing') raw.timings.push({ id: c.id, name: c.name, start: c.start, end: c.end, visible: c.visible === '' ? true : yes(c.visible), order: words(c.order) });
-    if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, cost: c.cost, units: c.units, created: c.created.replace(' ', 'T'), updated: c.updated.replace(' ', 'T'), schedules: [] });
+    if (c.type === 'product') raw.products.push({ id: c.id, name: c.name, notes: c.notes, refs: c.refs, memo: c.memo, created: c.created.replace(' ', 'T'), updated: c.updated.replace(' ', 'T'), schedules: [], containers: [] });
+    if (c.type === 'container') raw.products.find(m => m.id === c.id)?.containers.push({ bought: c.bought, cost: c.cost, units: c.units, adjust: c.adjust });
     if (c.type === 'schedule') raw.products.find(m => m.id === c.id)?.schedules.push({ dose: c.dose, start: c.start, days: int(c.days, 1), timings: words(c.timings) });
     if (c.type === 'record') { const [day, hhmm = '00:00'] = c.at.split(' '); raw.records.push({ at: `${day}T${hhmm}`, day, id: c.id, timing: c.timing, name: c.name, dose: c.dose, notes: c.notes }); }
   }
@@ -691,9 +705,10 @@ const flagInvalid = (get, names, bad) => { for (const f of names) get(f).classLi
 function openEditor(product = {}) {
   editing = product.id ?? null;
   TEXT.forEach(f => field(f).value = product[f] ?? '');
-  for (const f of ['cost', 'units']) { field(f).value = product[f] ?? ''; field(f).classList.remove('ion-invalid', 'ion-touched'); }
   schedules = structuredClone(product.schedules ?? []);
+  containers = structuredClone(product.containers ?? []);
   renderSchedules();
+  renderContainers();
   for (const id of ['#delete', '#delete-header', '#stats-section']) $(id).classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
@@ -705,10 +720,8 @@ function saveEditor() {
   const old = productOf(editing);
   const product = Object.fromEntries(TEXT.map(f => [f, str(field(f).value).trim()]));
   if (!product.name) return field('name').setFocus();
-  // Cost and doses per container: integers (doses at least 1) or empty.
-  product.cost = int(field('cost').value); product.units = int(field('units').value, 1);
-  if (flagInvalid(field, ['cost', 'units'], failing([['cost', product.cost !== null], ['units', product.units !== null]]))) return;
   product.schedules = cleanSchedules(schedules);
+  product.containers = cleanContainers(containers);
   const done = () => { commit(); editor.dismiss(); };
   if (!old) return state.products.push(newProduct(product)), done();
   // If what the history shows (name, notes) changes and there are earlier records, the user chooses whether those
@@ -768,6 +781,45 @@ function saveSchedule() {
   scheduleEditor.dismiss();
 }
 
+// ---------- Containers (inside the product editor) ----------
+
+// The containers bought, edited on a copy saved with the product, like the schedules: purchase date, cost (optional),
+// doses and an adjustment in doses (+ or −) to make the doses left match the real ones. Below the list, the doses
+// left with the containers being edited.
+let containers = [], editingContainer = null;
+const containerEditor = $('#container-editor');
+const containerField = name => $(`[name="${name}"]`, containerEditor);
+const signedText = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
+// Container row (editor list and product view): its doses as title, below when it was bought and its cost
+// («12/10 · 30 €») and, if any, a grey third line with the adjustment («Reajuste: −3 dosis»).
+const containerRow = c => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}${c.adjust ? `<p>Reajuste: ${signedText(c.adjust)} dosis</p>` : ''}`;
+const leftRow = left => `<ion-item>${readLabel('Dosis restantes', left === null ? '' : left.toLocaleString('es'))}</ion-item>`;
+function renderContainers() {
+  containers = cleanContainers(containers);
+  $('#container-list').innerHTML = containers.map((c, i) => `<ion-item button="true" data-container="${i}"><ion-label class="ion-text-wrap">${containerRow(c)}</ion-label></ion-item>`).join('')
+    + `<ion-item button="true" detail="false" data-container="new"><ion-icon slot="start" name="add-outline" color="primary"></ion-icon><ion-label color="primary">Añadir envase</ion-label></ion-item>`;
+  $('#container-left').innerHTML = leftRow(dosesLeft(containers, editing ? recordsOfProduct(editing) : []));
+}
+
+// A new container proposes today and the last one's cost and doses.
+const nextContainer = list => ({ bought: today(), cost: list.at(-1)?.cost ?? '', units: list.at(-1)?.units ?? '', adjust: '' });
+function openContainer(i) {
+  editingContainer = i;
+  const c = containers[i] ?? nextContainer(containers);
+  for (const f of ['bought', 'cost', 'units', 'adjust']) { containerField(f).value = c[f] || ''; containerField(f).classList.remove('ion-invalid', 'ion-touched'); }
+  $('#container-delete').classList.toggle('ion-hide', i === null);
+  containerEditor.present();
+}
+
+// A purchase date and the doses (at least 1) are needed; the cost is optional and the adjustment a whole number.
+function saveContainer() {
+  const c = { bought: date(str(containerField('bought').value)), cost: int(containerField('cost').value), units: int(containerField('units').value, 1), adjust: signed(containerField('adjust').value) };
+  if (flagInvalid(containerField, ['bought', 'cost', 'units', 'adjust'], failing([['bought', c.bought], ['cost', c.cost !== null], ['units', c.units], ['adjust', c.adjust !== null]]))) return;
+  if (editingContainer === null) containers.push(c); else containers[editingContainer] = c;
+  renderContainers();
+  containerEditor.dismiss();
+}
+
 // ---------- Product history ----------
 
 // A record as a row: «25/10 · 15 gramos» and, below, «9:30 · Desayuno».
@@ -777,7 +829,7 @@ const recordLabel = e => `<ion-label><h2>${shortDate(e.day)} · ${esc(e.dose)}</
 const recordsLabel = n => count(n, 'toma', 'tomas');
 const recordCount = id => recordsLabel(recordsOfProduct(id).length);
 
-// All records of the product: summary (since when, how many, doses and estimated cost) and, below, grouped by the
+// All records of the product: summary (since when, how many, doses and what its containers cost) and, below, grouped by the
 // schedule that applied each day (newest first; those without one under «Sin pauta»).
 const historyModal = $('#history');
 function openHistory(id) {
@@ -788,7 +840,7 @@ function openHistory(id) {
     ['Desde', f.firstDay ? shortDate(f.firstDay) : '—'],
     ['Tomas', f.records],
     ['Dosis tomadas', f.dosesTaken.toLocaleString('es')],
-    ...(f.costTaken !== null ? [['Coste estimado', euros(f.costTaken)]] : []),
+    ...(f.spent !== null ? [['Gastado en envases', euros(f.spent, 0)]] : []),
   ];
   const groups = new Map();
   for (const e of taken) {
@@ -809,8 +861,8 @@ function openHistory(id) {
 // ---------- Product view (ficha) ----------
 
 // Read only, mirror of the editor, whether the product exists or not: Producto, Pautas (with each one's timings),
-// Otros datos (ending with the estimated next purchase, on its own) and Estadísticas, one block each: «Registro» and
-// «Último cambio». For a deleted product it shows what the record it was opened from stores (name and notes) and «—»
+// Envases (the containers, then the doses left and the estimated next purchase, each on its own), Otros datos and
+// Estadísticas, one block each: «Registro» and «Último cambio». For a deleted product it shows what the record it was opened from stores (name and notes) and «—»
 // elsewhere.
 // «Editar», only if the product exists, closes the view and opens the editor.
 const viewModal = $('#view');
@@ -826,9 +878,10 @@ function openView(id, record) {
   $('#view-edit').classList.toggle('ion-hide', !m);
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
-    + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
-    + `<ion-list inset="true">${readRow('Coste del envase', p.cost === '' ? '' : euros(p.cost, 0))}${readRow('Dosis por envase', p.units === '' ? '' : p.units.toLocaleString('es'))}</ion-list>`
+    + readSection('Envases', p.containers.map(c => `<ion-item><ion-label class="ion-text-wrap">${containerRow(c)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin envases.' : '—'))
+    + `<ion-list inset="true">${leftRow(m ? figures(m).left : null)}</ion-list>`
     + `<ion-list inset="true">${purchaseRow(m)}</ion-list>`
+    + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + '<ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>'
     + [`<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
       `<ion-item>${updatedLabel(m)}</ion-item>`].map(row => `<ion-list inset="true">${row}</ion-list>`).join('')
@@ -907,25 +960,25 @@ function systemPrompt() {
   const cents = n => n === null ? null : Math.round(n * 100) / 100;
   const summary = state.products.map(m => { const f = figures(m); return { id: m.id, nombre: m.name, dosis_hoy: f.doseToday, pausado: f.paused,
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, recordOf(m.id, id, today()) ? 'tomada' : 'pendiente'])) : {},
-    dosis_al_dia: f.daily, coste_envase: m.cost === '' ? null : m.cost, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth),
-    fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
-    tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken, coste_consumido: cents(f.costTaken) }; });
-  const t = totals(), overall = { productos_activos: t.products.length, coste_envases: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
+    dosis_al_dia: f.daily, envases: m.containers.length, dosis_restantes: f.left, fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
+    precio_ultimo_envase: f.price, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth), gastado_en_envases: f.spent,
+    tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken }; });
+  const t = totals(), overall = { productos_activos: t.products.length, precio_ultimos_envases: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
     proximas_compras: t.shopping.map(x => ({ id: x.m.id, nombre: x.m.name, fin_del_envase: x.end, dias_hasta_fin: x.daysLeft })) };
   return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now)}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
-- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, cost = € por envase, units = dosis por envase, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }). Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
+- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }, containers = envases comprados { bought = fecha de compra AAAA-MM-DD, cost = € (o vacío), units = dosis del envase, adjust = reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes con las reales }). Cuando compre un envase, añádelo a containers con edit_product (conservando los que ya tiene); si las dosis restantes no cuadran con las que tiene de verdad, propón un reajuste en el último envase. Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
-Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; coste del envase, al día = coste ÷ dosis por envase × dosis al día, y al mes = al día × días del mes actual, en euros; fin del envase actual con reinicio automático al gastar cada envase, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; tomas registradas, primera toma, dosis tomadas y coste consumido = dosis tomadas × coste ÷ dosis por envase; null es que no se puede calcular):
+Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases; dosis restantes = dosis de todos los envases más sus reajustes, menos las dosis tomadas desde la primera compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del último envase con coste, al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
 ${JSON.stringify(summary)}
-Totales de los productos activos (coste de los envases, al día y al mes, y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
+Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del último comprado; coste al día y al mes; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
 ${JSON.stringify(overall)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
-Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «cambia el coste y las dosis por envase de X» → inputs number con key coste y dosis, y en actions edit_product con id, cost "{{coste}}" y units "{{dosis}}"; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
+Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado un envase de X» → input date con key compra (hoy) e inputs number con key coste y dosis, y en actions edit_product con id y containers: los que ya tiene más { bought "{{compra}}", cost "{{coste}}", units "{{dosis}}" }; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
 Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, o corregir tomas ya guardadas (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
 }
 
@@ -939,9 +992,10 @@ const timingProp = description => ({ type: 'string', enum: timingIds(), descript
 const INPUT_TYPES = ['text', 'number', 'date', 'time'];
 const productProps = () => ({
   name: stringProp('Nombre'), notes: stringProp('Indicaciones'), refs: stringProp('Referencias'), memo: stringProp('Notas'),
-  cost: intProp('€ por envase'), units: intProp('Dosis por envase'),
   schedules: { type: 'array', description: 'Pautas (sustituyen a las que haya); sin ellas el producto no sale en la toma', items: { type: 'object', required: ['dose', 'start', 'days', 'timings'],
     properties: { dose: stringProp('Dosis; empieza por un número'), start: stringProp('Fecha de inicio AAAA-MM-DD'), days: intProp('Duración en días'), timings: { type: 'array', items: { type: 'string', enum: timingIds() }, description: 'Ids de los momentos en que se toma con esta pauta (al menos uno)' } } } },
+  containers: { type: 'array', description: 'Envases comprados (sustituyen a los que haya)', items: { type: 'object', required: ['bought', 'units'],
+    properties: { bought: stringProp('Fecha de compra AAAA-MM-DD'), cost: intProp('Coste del envase en €'), units: intProp('Dosis del envase'), adjust: intProp('Reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes') } } },
 });
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
 const ACTIONS = ['create_product', 'edit_product', 'delete_product', 'add_record', 'remove_record', 'edit_records', 'edit_timing'];
@@ -987,23 +1041,27 @@ const productFields = d => `
   <ion-item><ion-input data-field="notes" label="Indicaciones" label-placement="stacked" value="${esc(d.notes)}"></ion-input></ion-item>
   <ion-item><ion-textarea data-field="refs" label="Referencias" label-placement="stacked" auto-grow="true" value="${esc(d.refs)}"></ion-textarea></ion-item>
   <ion-item><ion-textarea data-field="memo" label="Notas" label-placement="stacked" auto-grow="true" value="${esc(d.memo)}"></ion-textarea></ion-item>
-  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input></ion-item>
-  <ion-item><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar" value="${esc(d.units)}"></ion-input></ion-item>
   ${d.schedules.map((p, i) => `
-  <ion-item><ion-input data-schedule-field="dose" data-row="${i}" label="Pauta ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-schedule" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
-  <ion-item><ion-input data-schedule-field="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-schedule-field="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
+  <ion-item><ion-input data-list="schedules" data-row-field="dose" data-row="${i}" label="Pauta ${i + 1}: dosis" label-placement="stacked" placeholder="1 comprimido" value="${esc(p.dose)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-schedule" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
+  <ion-item><ion-input data-list="schedules" data-row-field="start" data-row="${i}" type="date" label="Inicio" label-placement="stacked" value="${esc(p.start)}"></ion-input><ion-input data-list="schedules" data-row-field="days" data-row="${i}" type="number" inputmode="numeric" label="Duración (días)" label-placement="stacked" value="${esc(p.days)}"></ion-input></ion-item>
   <ion-item lines="none"><ion-label><p>Momentos de la pauta ${i + 1}</p><p>${visibleTimings().map(ti => chipToggle('schedule-timing', ti.id, label(ti.id), p.timings.includes(ti.id), `data-row="${i}"`)).join('')}</p>${p.bad ? '<p><ion-text color="danger">Marca al menos un momento</ion-text></p>' : ''}</ion-label></ion-item>`).join('')}
-  <ion-item lines="none"><ion-label><p>${chipAction('add-schedule', 'Añadir pauta', 'add-outline')}</p></ion-label></ion-item>`;
+  <ion-item lines="none"><ion-label><p>${chipAction('add-schedule', 'Añadir pauta', 'add-outline')}</p></ion-label></ion-item>
+  ${d.containers.map((c, i) => `
+  <ion-item><ion-input data-list="containers" data-row-field="bought" data-row="${i}" type="date" label="Envase ${i + 1}: compra" label-placement="stacked" value="${esc(c.bought)}"></ion-input><ion-chip slot="end" outline="true" color="medium" data-chip="remove-container" data-row="${i}"><ion-icon name="close-outline"></ion-icon><ion-label>Quitar</ion-label></ion-chip></ion-item>
+  <ion-item><ion-input data-list="containers" data-row-field="cost" data-row="${i}" type="number" inputmode="numeric" label="Coste (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(c.cost)}"></ion-input><ion-input data-list="containers" data-row-field="units" data-row="${i}" type="number" inputmode="numeric" label="Dosis" label-placement="stacked" value="${esc(c.units)}"></ion-input><ion-input data-list="containers" data-row-field="adjust" data-row="${i}" type="number" label="Reajuste" label-placement="stacked" placeholder="0" value="${esc(c.adjust)}"></ion-input></ion-item>`).join('')}
+  <ion-item lines="none"><ion-label><p>${chipAction('add-container', 'Añadir envase', 'add-outline')}</p></ion-label></ion-item>`;
 const productDraft = (base, a) => ({ name: str(a.name ?? base.name), notes: str(a.notes ?? base.notes), refs: str(a.refs ?? base.refs), memo: str(a.memo ?? base.memo),
-  cost: str(a.cost ?? base.cost), units: str(a.units ?? base.units),
-  schedules: (Array.isArray(a.schedules) ? a.schedules : base.schedules).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), timings: timingIds().filter(id => asList(p.timings).includes(id)) })) });
+  schedules: (Array.isArray(a.schedules) ? a.schedules : base.schedules).filter(p => p && typeof p === 'object').map(p => ({ dose: str(p.dose), start: str(p.start), days: str(p.days), timings: timingIds().filter(id => asList(p.timings).includes(id)) })),
+  containers: (Array.isArray(a.containers) ? a.containers : base.containers).filter(c => c && typeof c === 'object').map(c => ({ bought: str(c.bought), cost: str(c.cost), units: str(c.units), adjust: c.adjust ? str(c.adjust) : '' })) });
 // A schedule without timings is invalid (marked on its row: «Marca al menos un momento»).
 const productValidate = d => [
-  ...failing([['name', d.name.trim()], ['cost', int(d.cost) !== null], ['units', int(d.units, 1) !== null]]),
+  ...failing([['name', d.name.trim()]]),
   ...d.schedules.flatMap((p, i) => failing([['dose', amount(p.dose)], ['start', date(p.start)], ['days', int(p.days, 1)], ['timings', p.timings.length]]).map(f => `${f}:${i}`)),
+  ...d.containers.flatMap((c, i) => failing([['bought', date(c.bought)], ['cost', int(c.cost) !== null], ['units', int(c.units, 1)], ['adjust', signed(c.adjust) !== null]]).map(f => `${f}:${i}`)),
 ];
-const productValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(), cost: int(d.cost), units: int(d.units, 1),
-  schedules: d.schedules.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), timings: p.timings })) });
+const productValues = d => ({ name: d.name.trim(), notes: d.notes.trim(), refs: d.refs.trim(), memo: d.memo.trim(),
+  schedules: d.schedules.map(p => ({ dose: p.dose.trim(), start: p.start, days: int(p.days, 1), timings: p.timings })),
+  containers: d.containers.map(c => ({ bought: c.bought, cost: int(c.cost), units: int(c.units, 1), adjust: signed(c.adjust) })) });
 // Timing chips of a record: the visible ones and, if hidden, the chosen one (so it is always shown selected).
 const timingChips = d => [...new Set([...visibleTimings().map(ti => ti.id), d.timing])].filter(timingOf).map(id => chipToggle('pick-timing', id, label(id), d.timing === id)).join('');
 const recordFields = (d, withTime) => `
@@ -1016,7 +1074,7 @@ const recordValidate = d => failing([['day', date(d.day)], ['time', d.time === '
 const productDescribe = d => {
   const v = productValues(d);
   return [`nombre «${v.name}»`, v.notes && `indicaciones «${v.notes}»`, v.refs && `referencias «${v.refs}»`, v.memo && `notas «${v.memo}»`,
-    v.cost !== '' && `${v.cost} € por envase`, v.units !== '' && `${v.units} dosis por envase`,
+    v.containers.length ? `envases: ${v.containers.map(c => `${c.units} dosis comprado el ${shortDate(c.bought)}${c.cost !== '' ? ` por ${c.cost} €` : ''}${c.adjust ? ` (reajuste ${signedText(c.adjust)})` : ''}`).join('; ')}` : 'sin envases',
     v.schedules.length ? `pautas: ${v.schedules.map(p => `${p.dose} desde el ${shortDate(p.start)} durante ${count(p.days, 'día', 'días')} en ${p.timings.map(label).join(', ')}`).join('; ')}` : 'sin pautas (no sale en la toma)'].filter(Boolean).join(', ');
 };
 const recordDescribe = d => `${d.name} en ${label(d.timing)} el ${shortDate(d.day)}${d.time ? ` a las ${d.time}` : ''}`;
@@ -1199,10 +1257,11 @@ function decide(v, saved) {
 // Saves a proposal if its data is valid; otherwise marks the failing fields red with their message below. The message
 // (errorText) is set only then and cleared on typing: with it fixed, Ionic draws a section below the field with
 // its own border even when the message is hidden, and the field shows two lines.
-const FIELD_ERRORS = { name: 'Pon un nombre', cost: 'Número entero, o vacío', units: 'Número entero, o vacío', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24', from: 'Pon el día', to: 'Día igual o posterior a «Desde»', dose: 'Empieza por un número, o vacía' };
-const SCHEDULE_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero' };
-// The input of a failing check in a card: «@key» of a ui element, «field» or «field:row» of a schedule.
-const badField = (card, f) => { const [field, row] = f.split(':'); return !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-schedule-field="${field}"][data-row="${row}"]`); };
+const FIELD_ERRORS = { name: 'Pon un nombre', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24', from: 'Pon el día', to: 'Día igual o posterior a «Desde»', dose: 'Empieza por un número, o vacía' };
+// Errors of the schedule and container rows (their field names do not overlap).
+const ROW_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero', bought: 'Pon la fecha', cost: 'Número entero, o vacío', units: 'Número entero', adjust: 'Número entero, + o −' };
+// The input of a failing check in a card: «@key» of a ui element, «field» or «field:row» of a schedule or container.
+const badField = (card, f) => { const [field, row] = f.split(':'); return !card ? null : f.startsWith('@') ? card.querySelector(`[data-ui="${f.slice(1)}"]`) : row === undefined ? card.querySelector(`[data-field="${field}"]`) : card.querySelector(`[data-row-field="${field}"][data-row="${row}"]`); };
 function trySave(v, card) {
   if (v.status !== 'pending') return false;
   const bad = FORMS[v.tool].validate(v.draft);
@@ -1211,7 +1270,7 @@ function trySave(v, card) {
   for (const f of bad.filter(f => !f.startsWith('timings:'))) {
     const [field, row] = f.split(':'), el = badField(card, f);
     if (!el) continue;
-    el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : SCHEDULE_ERRORS)[field] ?? 'Revisa este dato';
+    el.errorText = f.startsWith('@') ? 'Obligatorio' : (row === undefined ? FIELD_ERRORS : ROW_ERRORS)[field] ?? 'Revisa este dato';
     el.classList.add('ion-invalid', 'ion-touched');
   }
   if (bad.length) return false;
@@ -1279,7 +1338,7 @@ function suggestionPool() {
   const products = state.products.filter(m => !paused(m)), day = today(), h = new Date().getHours();
   const timing = timingNow(), timingName = timing ? label(timing) : 'ahora';
   const pendingNow = dayRows(timing, day).pending;
-  const recorded = products.filter(m => recordsOfProduct(m.id).length), priced = products.filter(m => m.cost !== ''), ending = products.filter(m => m.schedules.length && scheduleEnd(m.schedules.at(-1)) <= addDays(day, 7));
+  const recorded = products.filter(m => recordsOfProduct(m.id).length), priced = products.filter(m => figures(m).price !== null), ending = products.filter(m => m.schedules.length && scheduleEnd(m.schedules.at(-1)) <= addDays(day, 7));
   const week = state.records.filter(e => e.day >= addDays(day, -7)).length, pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const some = products.length ? pick(products) : null, withRecords = recorded.length ? pick(recorded) : null;
   return [
@@ -1287,9 +1346,9 @@ function suggestionPool() {
     ...(pendingNow.length ? [`Hazme una lista con check para marcar lo que me toca en ${timingName}.`, `¿Qué me queda por tomar en ${timingName}?`] : []),
     ...(products.length ? ['¿Qué me falta por tomar hoy?', h >= 20 ? '¿Me queda algo pendiente de hoy antes de dormir?' : h < 12 ? '¿Qué tengo que tomar a lo largo del día de hoy?' : '¿Qué me queda por tomar en lo que falta de día?'] : []),
     // Containers and purchases
-    ...products.filter(m => figures(m).end).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan del envase?`),
+    ...products.filter(m => figures(m).end).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan?`),
     ...(products.some(m => figures(m).end) ? [`¿Qué tengo que comprar en los próximos ${SHOP_DAYS} días? Hazme la lista con precios.`, '¿Qué envase se me acaba antes?'] : []),
-    ...(products.some(m => m.units === '' || m.cost === '') ? ['Hazme un formulario para completar el coste y las dosis por envase de los productos que no lo tienen.'] : []),
+    ...(products.some(m => !m.containers.length) ? ['Hazme un formulario para registrar el envase que tengo de los productos que no tienen ninguno.'] : []),
     // Costs
     ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por producto.', '¿Qué producto me sale más caro al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por producto.'] : []),
     ...(priced.length && state.records.length ? ['¿Cuánto me he gastado este mes según las tomas registradas?'] : []),
@@ -1302,7 +1361,7 @@ function suggestionPool() {
     ...(ending.length ? [`¿Qué productos terminan esta semana y cuándo?`] : []),
     ...(state.products.some(paused) ? ['¿Qué productos tengo pausados y por qué?'] : []),
     // Changes through a form
-    ...(some ? [`Quiero cambiar los momentos de la pauta de ${some.name}.`, `Añade una pauta nueva a ${some.name}.`, `Quiero cambiar el coste y las dosis por envase de ${some.name}.`] : []),
+    ...(some ? [`Quiero cambiar los momentos de la pauta de ${some.name}.`, `Añade una pauta nueva a ${some.name}.`, `He comprado un envase de ${some.name}.`] : []),
     ...(products.length ? ['Hazme una tabla con mis productos: dosis de hoy, momentos, coste y fin del envase.', 'Revisa mis productos y dime si ves algo raro o incompleto.', 'Quiero añadir un producto nuevo.'] : ['Ayúdame a crear mi primer producto.', 'Crea un producto de ejemplo para ver cómo funciona.']),
     // More
     ...(state.timings.some(ti => ti.visible && (ti.start === '' || ti.end === '')) ? ['Quiero poner horas a mis momentos.'] : []),
@@ -1541,7 +1600,7 @@ async function sendChat() {
 // ---------- Wiring ----------
 
 // Close buttons of every modal.
-for (const [btn, modal] of [['#text-close', textModal], ['#close', manager], ['#shopping-close', shoppingModal], ['#paused-close', pausedModal], ['#history-close', historyModal], ['#view-close', viewModal], ['#schedule-cancel', scheduleEditor], ['#timing-cancel', timingEditor], ['#cancel', editor], ['#chat-close', chatModal], ['#proposal-cancel', proposalEditor]]) $(btn).onclick = () => modal.dismiss();
+for (const [btn, modal] of [['#text-close', textModal], ['#close', manager], ['#shopping-close', shoppingModal], ['#paused-close', pausedModal], ['#history-close', historyModal], ['#view-close', viewModal], ['#schedule-cancel', scheduleEditor], ['#container-cancel', containerEditor], ['#timing-cancel', timingEditor], ['#cancel', editor], ['#chat-close', chatModal], ['#proposal-cancel', proposalEditor]]) $(btn).onclick = () => modal.dismiss();
 
 function render() {
   renderTimingTabs();
@@ -1626,6 +1685,12 @@ $('#schedule-list').addEventListener('click', e => {
   if (i) openSchedule(i === 'new' ? null : Number(i));
 });
 $('#schedule-save').onclick = saveSchedule;
+$('#container-list').addEventListener('click', e => {
+  const i = e.target.closest('[data-container]')?.dataset.container;
+  if (i) openContainer(i === 'new' ? null : Number(i));
+});
+$('#container-save').onclick = saveContainer;
+$('#container-delete').onclick = () => { containers.splice(editingContainer, 1); renderContainers(); containerEditor.dismiss(); };
 $('#schedule-delete').onclick = () => { schedules.splice(editingSchedule, 1); renderSchedules(); scheduleEditor.dismiss(); };
 timingEditor.addEventListener('ionModalDidDismiss', restoreScroll);
 $('#timing-save').onclick = saveTimingEditor;
@@ -1654,10 +1719,10 @@ for (const root of chatRoots) root.addEventListener('ionChange', e => {
 });
 for (const root of chatRoots) root.addEventListener('ionInput', e => {
   const p = proposalOf(e.target); if (!p) return;
-  const { field, scheduleField, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
+  const { field, list, rowField, row, ui } = e.target.dataset, value = String(e.target.value ?? '');
   if (ui !== undefined) p.v.draft.values[ui] = value;
   if (field) { p.v.draft[field] = value; const live = p.card.querySelector('[data-live]'); if (live && FORMS[p.v.tool].live) live.textContent = FORMS[p.v.tool].live(p.v.draft); }
-  if (scheduleField) p.v.draft.schedules[Number(row)][scheduleField] = value;
+  if (rowField) p.v.draft[list][Number(row)][rowField] = value;
   e.target.classList.remove('ion-invalid'); e.target.errorText = undefined;
   saveChat();
 });
@@ -1683,7 +1748,9 @@ for (const root of chatRoots) root.addEventListener('click', e => {
   if (kind === 'pick-timing') { d.timing = value; refreshCard(p.card, p.v); }
   if (kind === 'ui') { const k = chip.dataset.ui, multi = uiElements(d).find(x => x.key === k)?.multiple, cur = d.values[k]; d.values[k] = multi ? (cur.includes(value) ? cur.filter(x => x !== value) : [...cur, value]) : cur === value ? '' : value; refreshCard(p.card, p.v); }
   if (kind === 'visible') { d.visible = !d.visible; chip.outline = !d.visible; chip.color = d.visible ? 'primary' : 'medium'; }
-  if (kind === 'add-schedule') { d.schedules.push({ dose: d.schedules.at(-1)?.dose ?? '', start: today(), days: '', timings: d.schedules.at(-1)?.timings ?? [] }); refreshCard(p.card, p.v); }
+  if (kind === 'add-schedule') { d.schedules.push(nextSchedule(d.schedules)); refreshCard(p.card, p.v); }
+  if (kind === 'add-container') { d.containers.push(nextContainer(d.containers)); refreshCard(p.card, p.v); }
+  if (kind === 'remove-container') { d.containers.splice(Number(row), 1); refreshCard(p.card, p.v); }
   if (kind === 'schedule-timing') { const ps = d.schedules[Number(row)]; ps.timings = ps.timings.includes(value) ? ps.timings.filter(x => x !== value) : timingIds().filter(id => id === value || ps.timings.includes(id)); delete ps.bad; refreshCard(p.card, p.v); }
   if (kind === 'remove-schedule') { d.schedules.splice(Number(row), 1); refreshCard(p.card, p.v); }
   saveChat();

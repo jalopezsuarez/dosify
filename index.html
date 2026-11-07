@@ -173,14 +173,13 @@
       </ion-list>
       <ion-list-header><ion-label>Pautas</ion-label></ion-list-header>
       <ion-list inset="true" id="schedule-list"></ion-list>
+      <ion-list-header><ion-label>Envases</ion-label></ion-list-header>
+      <ion-list inset="true" id="container-list"></ion-list>
+      <ion-list inset="true" id="container-left"></ion-list>
       <ion-list-header><ion-label>Otros datos</ion-label></ion-list-header>
       <ion-list inset="true">
         <ion-item><ion-textarea name="refs" label="Referencias" label-placement="stacked" placeholder="Médico, enlaces…" auto-grow="true"></ion-textarea></ion-item>
         <ion-item><ion-textarea name="memo" label="Notas" label-placement="stacked" placeholder="Otras anotaciones" auto-grow="true"></ion-textarea></ion-item>
-      </ion-list>
-      <ion-list inset="true">
-        <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
-        <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="Sin indicar"></ion-input></ion-item>
       </ion-list>
       <div id="stats-section">
         <ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>
@@ -266,6 +265,31 @@
       </ion-toolbar>
     </ion-header>
     <ion-content id="view-body" color="light"></ion-content>
+  </ion-modal>
+
+  <ion-modal id="container-editor">
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start"><ion-button id="container-cancel">Cancelar</ion-button></ion-buttons>
+        <ion-title>Envase</ion-title>
+        <ion-buttons slot="end"><ion-button id="container-save" strong="true">Guardar</ion-button></ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content color="light">
+      <ion-list-header><ion-label>Envase</ion-label></ion-list-header>
+      <ion-list inset="true">
+        <ion-item><ion-input name="bought" type="date" label="Fecha de compra" label-placement="stacked"></ion-input></ion-item>
+        <ion-item><ion-input name="cost" type="number" min="0" inputmode="numeric" label="Coste del envase (€)" label-placement="stacked" placeholder="Sin coste"></ion-input></ion-item>
+        <ion-item><ion-input name="units" type="number" min="1" inputmode="numeric" label="Dosis por envase" label-placement="stacked" placeholder="60"></ion-input></ion-item>
+      </ion-list>
+      <ion-list-header><ion-label>Reajuste</ion-label></ion-list-header>
+      <ion-list inset="true">
+        <ion-item><ion-input name="adjust" type="number" label="Dosis de más (+) o de menos (−)" label-placement="stacked" placeholder="0"></ion-input></ion-item>
+      </ion-list>
+      <ion-list inset="true" id="container-delete">
+        <ion-item button detail="false"><ion-label color="danger" class="ion-text-center">Eliminar envase</ion-label></ion-item>
+      </ion-list>
+    </ion-content>
   </ion-modal>
 
   <ion-modal id="schedule-editor">
