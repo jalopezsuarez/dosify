@@ -401,13 +401,13 @@ const dosesSum = records => records.reduce((n, e) => n + amount(e.dose), 0);
 const perDayUnits = m => amount(doseOn(m, today())) * visibleOf(timingsOn(m, today())).length;
 const SOON_DAYS = 7, SHOP_DAYS = 14;
 // The container in use is always the one bought last: buying a new one closes the earlier ones. Doses left = its doses +
-// its adjustment − the doses taken since it was bought (it can go below 0). each: doses left per container (only the
-// one in use has them); current: its index. Without containers, null.
+// its adjustment − the doses taken since it was bought (it can go below 0). each: doses left per container (the earlier
+// ones, 0); current: its index. Without containers, null.
 function stockOf(containers, records) {
   if (!containers.length) return { each: [], current: null, left: null };
   const current = containers.length - 1, c = containers[current];
   const left = c.units + c.adjust - dosesSum(records.filter(e => e.day >= c.bought));
-  return { each: containers.map((_, i) => i === current ? left : null), current, left };
+  return { each: containers.map((_, i) => i === current ? left : 0), current, left };
 }
 // What is known about a product from its schedules, containers and records (null when it cannot be computed):
 // · left: doses left (stockOf). end: the day they run out: today's pending doses are subtracted and the rest is
@@ -800,11 +800,11 @@ const containerEditor = $('#container-editor');
 const containerField = name => $(`[name="${name}"]`, containerEditor);
 const signedText = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
 // Container row (editor list and product view): its doses as title, below when it was bought and its cost
-// («12/10 · 30 €») and a grey third line with its state and, if any, the adjustment («En curso · 23 restantes ·
-// reajuste −3»); stock is stockOf of the list and i the row.
-const stateOf = (i, current) => i === current ? 'En curso' : 'Gastado';
-const containerState = (stock, i) => i === stock.current ? `En curso · ${stock.each[i].toLocaleString('es')} restantes` : stateOf(i, stock.current);
-const containerRow = (c, stock, i) => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}<p>${[containerState(stock, i), c.adjust ? `reajuste ${signedText(c.adjust)}` : ''].filter(Boolean).join(' · ')}</p>`;
+// («12/10 · 30 €») and a grey third line with how much is consumed, the doses left and, if any, the adjustment
+// («50% consumido · 158 restantes · −57 reajustadas»); stock is stockOf of the list and i the row.
+const consumed = (c, left) => { const holds = c.units + c.adjust; return holds > 0 ? Math.min(100, Math.max(0, Math.round((holds - left) / holds * 100))) : 100; };
+const containerUse = (c, left) => [`${consumed(c, left)}% consumido`, `${left.toLocaleString('es')} restantes`, c.adjust ? `${signedText(c.adjust)} reajustadas` : ''].filter(Boolean).join(' · ');
+const containerRow = (c, stock, i) => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}<p>${containerUse(c, stock.each[i])}</p>`;
 const containerRows = (list, stock, button) => list.map((c, i) => `<ion-item ${button ? `button="true" data-container="${i}"` : ''}><ion-label class="ion-text-wrap">${containerRow(c, stock, i)}</ion-label></ion-item>`).join('');
 function renderContainers() {
   containers = cleanContainers(containers);
@@ -972,7 +972,7 @@ function systemPrompt() {
   const cents = n => n === null ? null : Math.round(n * 100) / 100;
   const summary = state.products.map(m => { const f = figures(m); return { id: m.id, nombre: m.name, dosis_hoy: f.doseToday, pausado: f.paused,
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, recordOf(m.id, id, today()) ? 'tomada' : 'pendiente'])) : {},
-    dosis_al_dia: f.daily, envases: m.containers.map((c, i) => ({ comprado: c.bought, coste: c.cost === '' ? null : c.cost, dosis: c.units, reajuste: c.adjust, estado: stateOf(i, f.current).toLowerCase(), quedan: f.each[i] })),
+    dosis_al_dia: f.daily, envases: m.containers.map((c, i) => ({ comprado: c.bought, coste: c.cost === '' ? null : c.cost, dosis: c.units, reajuste: c.adjust, consumido_pct: consumed(c, f.each[i]), quedan: f.each[i] })),
     dosis_restantes: f.left, fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
     precio_envase_en_curso: f.price, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth), gastado_en_envases: f.spent,
     tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken }; });
@@ -986,7 +986,7 @@ Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }, containers = envases comprados { bought = fecha de compra AAAA-MM-DD, cost = € (o vacío), units = dosis del envase, adjust = reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes con las reales }). El envase en curso es siempre el comprado más recientemente: al comprar uno nuevo, los anteriores se dan por terminados. Sin envases no se pueden anotar tomas de un producto: si pide marcar una, propón antes add_container. Cuando diga que ha comprado un envase, usa add_container; cuando diga cuántas dosis le quedan de verdad o que no le cuadran, usa adjust_stock (reajusta el envase en curso para que las dosis restantes sean esas); para cambiar o borrar envases ya registrados, edit_product con todos los envases que deben quedar. Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
-Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases, cada uno con fecha de compra, coste, dosis, reajuste, estado (gastado o en curso) y, el que está en curso, las dosis que le quedan; dosis restantes = dosis del envase en curso más su reajuste, menos las dosis tomadas desde su compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del envase en curso (el comprado más recientemente), al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
+Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases, cada uno con fecha de compra, coste, dosis, reajuste, porcentaje consumido y dosis que le quedan (solo el más reciente, el envase en curso, tiene dosis; los anteriores están consumidos); dosis restantes = dosis del envase en curso más su reajuste, menos las dosis tomadas desde su compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del envase en curso (el comprado más recientemente), al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
 ${JSON.stringify(summary)}
 Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del envase en curso; coste al día y al mes; lo gastado en envases de todos los productos; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
 ${JSON.stringify(overall)}
