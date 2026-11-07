@@ -800,10 +800,10 @@ const containerEditor = $('#container-editor');
 const containerField = name => $(`[name="${name}"]`, containerEditor);
 const signedText = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
 // Container row (editor list and product view): its doses as title, below when it was bought and its cost
-// («12/10 · 30 €») and a grey third line with its state and, if any, the adjustment («En curso · quedan 23 ·
+// («12/10 · 30 €») and a grey third line with its state and, if any, the adjustment («En curso · 23 restantes ·
 // reajuste −3»); stock is stockOf of the list and i the row.
 const stateOf = (i, current) => i === current ? 'En curso' : 'Gastado';
-const containerState = (stock, i) => i === stock.current ? `En curso · quedan ${stock.each[i].toLocaleString('es')}` : stateOf(i, stock.current);
+const containerState = (stock, i) => i === stock.current ? `En curso · ${stock.each[i].toLocaleString('es')} restantes` : stateOf(i, stock.current);
 const containerRow = (c, stock, i) => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}<p>${[containerState(stock, i), c.adjust ? `reajuste ${signedText(c.adjust)}` : ''].filter(Boolean).join(' · ')}</p>`;
 const containerRows = (list, stock, button) => list.map((c, i) => `<ion-item ${button ? `button="true" data-container="${i}"` : ''}><ion-label class="ion-text-wrap">${containerRow(c, stock, i)}</ion-label></ion-item>`).join('');
 function renderContainers() {
