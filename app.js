@@ -397,32 +397,38 @@ const dosesSum = records => records.reduce((n, e) => n + amount(e.dose), 0);
 // Doses per day: the amount of today's dose for each visible timing of today's schedule.
 const perDayUnits = m => amount(doseOn(m, today())) * visibleOf(timingsOn(m, today())).length;
 const SOON_DAYS = 7, SHOP_DAYS = 14;
-// Doses left of a product's containers: what they hold (doses + adjustment of each) minus the doses taken since the
-// first purchase; null without containers.
-const dosesLeft = (containers, records) => containers.length
-  ? containers.reduce((n, c) => n + c.units + c.adjust, 0) - dosesSum(records.filter(e => e.day >= containers[0].bought)) : null;
+// The doses taken since the first purchase empty the containers in purchase order (each holds its doses plus its
+// adjustment; the last one takes whatever goes beyond, so it can go below 0). each: doses left in each one; current:
+// the one in use, the first with doses left (or the last); left: all doses left. Without containers, null.
+function stockOf(containers, records) {
+  if (!containers.length) return { each: [], current: null, left: null };
+  let used = dosesSum(records.filter(e => e.day >= containers[0].bought));
+  const each = containers.map((c, i) => { const holds = c.units + c.adjust, take = i === containers.length - 1 ? used : Math.min(Math.max(holds, 0), used); used -= take; return holds - take; });
+  const first = each.findIndex(n => n > 0);
+  return { each, current: first < 0 ? each.length - 1 : first, left: each.reduce((n, x) => n + x, 0) };
+}
 // What is known about a product from its schedules, containers and records (null when it cannot be computed):
-// · left: doses left (dosesLeft). end: the day they run out: today's pending doses are subtracted and the rest is
+// · left: doses left (stockOf). end: the day they run out: today's pending doses are subtracted and the rest is
 //   spread over the doses per day; if it does not cover today, it ends today. soon: under SOON_DAYS days.
-// · price: cost of the last container bought with a cost; costPerDay = price / its doses × daily; costPerMonth =
-//   costPerDay × days of the current month. spent: what all its containers cost.
+// · price: cost of the container in use (stockOf); costPerDay = price / its doses × daily; costPerMonth = costPerDay
+//   × days of the current month. spent: what all its containers cost.
 // · records, dosesTaken and firstDay: its history.
 // The product list, Costes, Próximas compras, the product view, the history and the assistant all read from here.
 function figures(m) {
-  const records = recordsOfProduct(m.id), daily = perDayUnits(m), left = dosesLeft(m.containers, records);
-  const last = m.containers.findLast(c => c.cost !== ''), priced = m.containers.filter(c => c.cost !== '');
-  const costPerDay = last && daily ? last.cost / last.units * daily : null;
+  const records = recordsOfProduct(m.id), daily = perDayUnits(m), { left, current } = stockOf(m.containers, records);
+  const inUse = m.containers[current], price = inUse && inUse.cost !== '' ? inUse.cost : null, priced = m.containers.filter(c => c.cost !== '');
+  const costPerDay = price !== null && daily ? price / inUse.units * daily : null;
   let end = '';
   if (left !== null && daily) {
     const rest = left - Math.max(0, daily - dosesSum(records.filter(e => e.day === today())));
     end = addDays(today(), rest < 0 ? 0 : Math.floor(rest / daily));
   }
   const days = end ? daysLeft(end) : null;
-  return { paused: paused(m), doseToday: doseOn(m, today()), daily, left, price: last?.cost ?? null, spent: priced.length ? priced.reduce((n, c) => n + c.cost, 0) : null,
+  return { paused: paused(m), doseToday: doseOn(m, today()), daily, left, price, spent: priced.length ? priced.reduce((n, c) => n + c.cost, 0) : null,
     costPerDay, costPerMonth: costPerDay === null ? null : costPerDay * monthDays(), end, daysLeft: days, soon: days !== null && days < SOON_DAYS,
     records: records.length, dosesTaken: dosesSum(records), firstDay: records.map(e => e.day).sort()[0] ?? '' };
 }
-// Figures of the active products together: the price of a container of each (the last one bought), the cost per day
+// Figures of the active products together: the price of a container of each (the one in use), the cost per day
 // and per month, and what runs out within SHOP_DAYS days (most urgent first).
 function totals() {
   const products = state.products.filter(m => !paused(m)), all = products.map(m => ({ m, ...figures(m) }));
@@ -438,8 +444,8 @@ const per = (n, unit) => `${euros(n, Number.isInteger(n) ? 0 : 2).replace(/\s*�
 // Container end: rose when it runs out soon (the home (i), the product row and the purchase texts).
 const supplyColor = id => { const m = productOf(id); return m && figures(m).soon ? 'rose' : 'teal'; };
 // «12/04 · Dentro de 3 semanas», for Próximas compras and the product view; without units or schedule, nothing.
-const purchaseText = m => { const f = figures(m); return f.end ? `<ion-text ${f.soon ? 'color="rose"' : ''}>${shortDate(f.end)} · ${until(f.daysLeft)}</ion-text>` : ''; };
-const purchaseRow = m => `<ion-item>${readLabel('Próxima compra (estimada)', m ? purchaseText(m) : '', true)}</ion-item>`;
+const purchaseText = f => f.end ? `<ion-text ${f.soon ? 'color="rose"' : ''}>${shortDate(f.end)} · ${until(f.daysLeft)}</ion-text>` : '';
+const purchaseRow = f => `<ion-item>${readLabel('Próxima compra (estimada)', f ? purchaseText(f) : '', true)}</ion-item>`;
 // Container end («5/01», the same day as «Próxima compra (estimada)») on the right of the product row, level with the
 // name: grey; rose and medium weight if it runs out soon.
 const endNote = id => {
@@ -457,12 +463,12 @@ function costLine(m) {
 function renderCosts() {
   const { products, priced, full, containers, costPerDay, costPerMonth, shopping: shop } = totals();
   const row = (title, text, extra = '', icon = '') => `<ion-item${extra}>${icon}<ion-label><h2 class="medium">${title}</h2><p>${text}</p></ion-label></ion-item>`;
-  // Overall costs: a container of each at its last price and, with today's schedule, per day and per month (days of the
+  // Overall costs: a container of each at the price of the one in use and, with today's schedule, per day and per month (days of the
   // current month); at the end, the upcoming purchases row (shown even without costs if something runs out).
   $('#costs').innerHTML = priced.length || shop.length ? `
     <ion-list-header><ion-label>Costes</ion-label></ion-list-header>
     <ion-list inset="true">
-      ${priced.length ? row(`${euros(containers, 0)} en total`, `un envase de ${priced.length} de ${products.length} productos, al último precio`)
+      ${priced.length ? row(`${euros(containers, 0)} en total`, `un envase de ${priced.length} de ${products.length} productos, al precio del envase en curso`)
       + row(`${euros(costPerMonth)} al mes`, `${euros(costPerDay)} al día · ${full.length} de ${products.length} productos con precio y pauta`) : ''}
       ${row('Próximas compras', shop.length ? `${count(shop.length, 'producto se acaba', 'productos se acaban')} en ${SHOP_DAYS} días` : `Nada se acaba en ${SHOP_DAYS} días`, ' button="true" id="open-shopping"',
         `<ion-icon slot="start" name="cart-outline" color="${shop.length ? 'primary' : 'medium'}"></ion-icon>`)}
@@ -476,13 +482,13 @@ function openShopping() {
   const shop = totals().shopping, priced = shop.filter(x => x.price !== null);
   $('#shopping-body').innerHTML = shop.length ? `
     <ion-list inset="true">
-      ${shop.map(({ m, price }) => `
+      ${shop.map(x => `
       <ion-item>
         <ion-label>
-          <h2 class="medium">${esc(m.name)}</h2>
-          <p>${purchaseText(m)}</p>
+          <h2 class="medium">${esc(x.m.name)}</h2>
+          <p>${purchaseText(x)}</p>
         </ion-label>
-        ${price !== null ? `<ion-note slot="end">${euros(price, 0)}</ion-note>` : ''}${viewButton(m.id)}
+        ${x.price !== null ? `<ion-note slot="end">${euros(x.price, 0)}</ion-note>` : ''}${viewButton(x.m.id)}
       </ion-item>`).join('')}
     </ion-list>
     ${priced.length ? `<ion-list inset="true"><ion-item lines="none"><ion-label><h2 class="medium">Total</h2><p>${priced.length} de ${shop.length} con precio</p></ion-label><ion-note slot="end">${euros(priced.reduce((sum, x) => sum + x.price, 0), 0)}</ion-note></ion-item></ion-list>` : ''}`
@@ -708,7 +714,6 @@ function openEditor(product = {}) {
   schedules = structuredClone(product.schedules ?? []);
   containers = structuredClone(product.containers ?? []);
   renderSchedules();
-  renderContainers();
   for (const id of ['#delete', '#delete-header', '#stats-section']) $(id).classList.toggle('ion-hide', !editing);
   $('#history-count').textContent = editing ? recordCount(editing) : '';
   $('#updated').innerHTML = editing ? updatedLabel(productOf(editing)) : '';
@@ -756,6 +761,7 @@ function renderSchedules() {
   schedules = cleanSchedules(schedules);
   $('#schedule-list').innerHTML = schedules.map((p, i) => `<ion-item button="true" data-schedule="${i}"><ion-label class="ion-text-wrap">${scheduleRow(schedules, p)}</ion-label></ion-item>`).join('')
     + `<ion-item button="true" detail="false" data-schedule="new"><ion-icon slot="start" name="add-outline" color="primary"></ion-icon><ion-label color="primary">Añadir pauta</ion-label></ion-item>`;
+  renderContainers(); // the doses left and the next purchase depend on the schedules too
 }
 
 // A new schedule proposes the last one's dose and timings, and today.
@@ -785,20 +791,25 @@ function saveSchedule() {
 
 // The containers bought, edited on a copy saved with the product, like the schedules: purchase date, cost (optional),
 // doses and an adjustment in doses (+ or −) to make the doses left match the real ones. Below the list, the doses
-// left with the containers being edited.
+// left and the next purchase with the containers and schedules being edited.
 let containers = [], editingContainer = null;
 const containerEditor = $('#container-editor');
 const containerField = name => $(`[name="${name}"]`, containerEditor);
 const signedText = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
 // Container row (editor list and product view): its doses as title, below when it was bought and its cost
-// («12/10 · 30 €») and, if any, a grey third line with the adjustment («Reajuste: −3 dosis»).
-const containerRow = c => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}${c.adjust ? `<p>Reajuste: ${signedText(c.adjust)} dosis</p>` : ''}`;
+// («12/10 · 30 €») and a grey third line with its state and, if any, the adjustment («En curso · quedan 23 ·
+// reajuste −3»); stock is stockOf of the list and i the row.
+const containerState = (stock, i) => i < stock.current ? 'Gastado' : i > stock.current ? 'Sin empezar' : `En curso · quedan ${stock.each[i].toLocaleString('es')}`;
+const containerRow = (c, stock, i) => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}<p>${[containerState(stock, i), c.adjust ? `reajuste ${signedText(c.adjust)}` : ''].filter(Boolean).join(' · ')}</p>`;
+const containerRows = (list, stock, button) => list.map((c, i) => `<ion-item ${button ? `button="true" data-container="${i}"` : ''}><ion-label class="ion-text-wrap">${containerRow(c, stock, i)}</ion-label></ion-item>`).join('');
 const leftRow = left => `<ion-item>${readLabel('Dosis restantes', left === null ? '' : left.toLocaleString('es'))}</ion-item>`;
 function renderContainers() {
   containers = cleanContainers(containers);
-  $('#container-list').innerHTML = containers.map((c, i) => `<ion-item button="true" data-container="${i}"><ion-label class="ion-text-wrap">${containerRow(c)}</ion-label></ion-item>`).join('')
+  const f = figures({ ...EMPTY_PRODUCT, id: editing ?? '', schedules: cleanSchedules(schedules), containers });
+  $('#container-list').innerHTML = containerRows(containers, stockOf(containers, recordsOfProduct(editing ?? '')), true)
     + `<ion-item button="true" detail="false" data-container="new"><ion-icon slot="start" name="add-outline" color="primary"></ion-icon><ion-label color="primary">Añadir envase</ion-label></ion-item>`;
-  $('#container-left').innerHTML = leftRow(dosesLeft(containers, editing ? recordsOfProduct(editing) : []));
+  $('#container-left').innerHTML = leftRow(f.left);
+  $('#container-purchase').innerHTML = purchaseRow(f);
 }
 
 // A new container proposes today and the last one's cost and doses.
@@ -872,15 +883,15 @@ const readLabel = (name, value, html, links) => `<ion-label class="ion-text-wrap
 const readRow = (name, value, links) => `<ion-item>${readLabel(name, value, false, links)}</ion-item>`;
 const readSection = (title, rows) => `<ion-list-header><ion-label>${title}</ion-label></ion-list-header><ion-list inset="true">${rows}</ion-list>`;
 function openView(id, record) {
-  const m = productOf(id), p = m ?? { ...EMPTY_PRODUCT, name: record.name, notes: record.notes };
+  const m = productOf(id), p = m ?? { ...EMPTY_PRODUCT, name: record.name, notes: record.notes }, f = m && figures(m);
   viewing = id;
   $('#view-title').textContent = p.name;
   $('#view-edit').classList.toggle('ion-hide', !m);
   $('#view-body').innerHTML = readSection('Producto', readRow('Nombre', p.name) + readRow('Indicaciones', p.notes))
     + readSection('Pautas', p.schedules.map(x => `<ion-item><ion-label class="ion-text-wrap">${scheduleRow(p.schedules, x)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin pautas.' : '—'))
-    + readSection('Envases', p.containers.map(c => `<ion-item><ion-label class="ion-text-wrap">${containerRow(c)}</ion-label></ion-item>`).join('') || empty(m ? 'Sin envases.' : '—'))
-    + `<ion-list inset="true">${leftRow(m ? figures(m).left : null)}</ion-list>`
-    + `<ion-list inset="true">${purchaseRow(m)}</ion-list>`
+    + readSection('Envases', containerRows(p.containers, stockOf(p.containers, recordsOfProduct(id)), false) || empty(m ? 'Sin envases.' : '—'))
+    + `<ion-list inset="true">${leftRow(f?.left ?? null)}</ion-list>`
+    + `<ion-list inset="true">${purchaseRow(f)}</ion-list>`
     + readSection('Otros datos', readRow('Referencias', p.refs, true) + readRow('Notas', p.memo, true))
     + '<ion-list-header><ion-label>Estadísticas</ion-label></ion-list-header>'
     + [`<ion-item button="true" id="view-history"><ion-label>Registro</ion-label><ion-note slot="end">${recordCount(id)}</ion-note></ion-item>`,
@@ -961,9 +972,9 @@ function systemPrompt() {
   const summary = state.products.map(m => { const f = figures(m); return { id: m.id, nombre: m.name, dosis_hoy: f.doseToday, pausado: f.paused,
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, recordOf(m.id, id, today()) ? 'tomada' : 'pendiente'])) : {},
     dosis_al_dia: f.daily, envases: m.containers.length, dosis_restantes: f.left, fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
-    precio_ultimo_envase: f.price, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth), gastado_en_envases: f.spent,
+    precio_envase_en_curso: f.price, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth), gastado_en_envases: f.spent,
     tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken }; });
-  const t = totals(), overall = { productos_activos: t.products.length, precio_ultimos_envases: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
+  const t = totals(), overall = { productos_activos: t.products.length, precio_envases_en_curso: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
     proximas_compras: t.shopping.map(x => ({ id: x.m.id, nombre: x.m.name, fin_del_envase: x.end, dias_hasta_fin: x.daysLeft })) };
   return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now)}.
@@ -971,9 +982,9 @@ Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
 - products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }, containers = envases comprados { bought = fecha de compra AAAA-MM-DD, cost = € (o vacío), units = dosis del envase, adjust = reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes con las reales }). Cuando compre un envase, añádelo a containers con edit_product (conservando los que ya tiene); si las dosis restantes no cuadran con las que tiene de verdad, propón un reajuste en el último envase. Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
-Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases; dosis restantes = dosis de todos los envases más sus reajustes, menos las dosis tomadas desde la primera compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del último envase con coste, al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
+Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases; dosis restantes = dosis de todos los envases más sus reajustes, menos las dosis tomadas desde la primera compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del envase en curso (las tomas gastan los envases por orden de compra: el primero al que le quedan dosis), al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
 ${JSON.stringify(summary)}
-Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del último comprado; coste al día y al mes; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
+Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del envase en curso; coste al día y al mes; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
 ${JSON.stringify(overall)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
