@@ -412,10 +412,11 @@ function stockOf(containers, records) {
 //   spread over the doses per day; if it does not cover today, it ends today. soon: under SOON_DAYS days.
 // · price: cost of the container in use (stockOf); costPerDay = price / its doses × daily; costPerMonth = costPerDay
 //   × days of the current month. spent: what all its containers cost.
+// · each and current: doses left in each container and the one in use (stockOf).
 // · records, dosesTaken and firstDay: its history.
 // The product list, Costes, Próximas compras, the product view, the history and the assistant all read from here.
 function figures(m) {
-  const records = recordsOfProduct(m.id), daily = perDayUnits(m), { left, current } = stockOf(m.containers, records);
+  const records = recordsOfProduct(m.id), daily = perDayUnits(m), { left, each, current } = stockOf(m.containers, records);
   const inUse = m.containers[current], price = inUse && inUse.cost !== '' ? inUse.cost : null, priced = m.containers.filter(c => c.cost !== '');
   const costPerDay = price !== null && daily ? price / inUse.units * daily : null;
   let end = '';
@@ -424,7 +425,7 @@ function figures(m) {
     end = addDays(today(), rest < 0 ? 0 : Math.floor(rest / daily));
   }
   const days = end ? daysLeft(end) : null;
-  return { paused: paused(m), doseToday: doseOn(m, today()), daily, left, price, spent: priced.length ? priced.reduce((n, c) => n + c.cost, 0) : null,
+  return { paused: paused(m), doseToday: doseOn(m, today()), daily, left, each, current, price, spent: priced.length ? priced.reduce((n, c) => n + c.cost, 0) : null,
     costPerDay, costPerMonth: costPerDay === null ? null : costPerDay * monthDays(), end, daysLeft: days, soon: days !== null && days < SOON_DAYS,
     records: records.length, dosesTaken: dosesSum(records), firstDay: records.map(e => e.day).sort()[0] ?? '' };
 }
@@ -799,7 +800,8 @@ const signedText = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
 // Container row (editor list and product view): its doses as title, below when it was bought and its cost
 // («12/10 · 30 €») and a grey third line with its state and, if any, the adjustment («En curso · quedan 23 ·
 // reajuste −3»); stock is stockOf of the list and i the row.
-const containerState = (stock, i) => i < stock.current ? 'Gastado' : i > stock.current ? 'Sin empezar' : `En curso · quedan ${stock.each[i].toLocaleString('es')}`;
+const stateOf = (i, current) => i < current ? 'Gastado' : i > current ? 'Sin empezar' : 'En curso';
+const containerState = (stock, i) => i === stock.current ? `En curso · quedan ${stock.each[i].toLocaleString('es')}` : stateOf(i, stock.current);
 const containerRow = (c, stock, i) => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}<p>${[containerState(stock, i), c.adjust ? `reajuste ${signedText(c.adjust)}` : ''].filter(Boolean).join(' · ')}</p>`;
 const containerRows = (list, stock, button) => list.map((c, i) => `<ion-item ${button ? `button="true" data-container="${i}"` : ''}><ion-label class="ion-text-wrap">${containerRow(c, stock, i)}</ion-label></ion-item>`).join('');
 const leftRow = left => `<ion-item>${readLabel('Dosis restantes', left === null ? '' : left.toLocaleString('es'))}</ion-item>`;
@@ -971,26 +973,29 @@ function systemPrompt() {
   const cents = n => n === null ? null : Math.round(n * 100) / 100;
   const summary = state.products.map(m => { const f = figures(m); return { id: m.id, nombre: m.name, dosis_hoy: f.doseToday, pausado: f.paused,
     tomas_hoy: onDay(m, today()) ? Object.fromEntries(timingsOn(m, today()).map(id => [id, recordOf(m.id, id, today()) ? 'tomada' : 'pendiente'])) : {},
-    dosis_al_dia: f.daily, envases: m.containers.length, dosis_restantes: f.left, fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
+    dosis_al_dia: f.daily, envases: m.containers.map((c, i) => ({ comprado: c.bought, coste: c.cost === '' ? null : c.cost, dosis: c.units, reajuste: c.adjust, estado: stateOf(i, f.current).toLowerCase(), quedan: f.each[i] })),
+    dosis_restantes: f.left, fin_del_envase: f.end || null, dias_hasta_fin: f.daysLeft, se_acaba_pronto: f.soon,
     precio_envase_en_curso: f.price, coste_dia: cents(f.costPerDay), coste_mes: cents(f.costPerMonth), gastado_en_envases: f.spent,
     tomas_registradas: f.records, primera_toma: f.firstDay || null, dosis_tomadas: f.dosesTaken }; });
+  const spent = state.products.map(m => figures(m).spent).filter(n => n !== null);
   const t = totals(), overall = { productos_activos: t.products.length, precio_envases_en_curso: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
+    gastado_en_envases: spent.length ? spent.reduce((n, x) => n + x, 0) : null,
     proximas_compras: t.shopping.map(x => ({ id: x.m.id, nombre: x.m.name, fin_del_envase: x.end, dias_hasta_fin: x.daysLeft })) };
   return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now)}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
-- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }, containers = envases comprados { bought = fecha de compra AAAA-MM-DD, cost = € (o vacío), units = dosis del envase, adjust = reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes con las reales }). Cuando compre un envase, añádelo a containers con edit_product (conservando los que ya tiene); si las dosis restantes no cuadran con las que tiene de verdad, propón un reajuste en el último envase. Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
+- products: productos (id, name, notes = indicaciones, refs = referencias, memo = notas, created y updated = fecha de creación y del último guardado en ISO, schedules = pautas { dose, start AAAA-MM-DD, days, timings = ids de los momentos en que se toma con esa pauta, al menos uno }, containers = envases comprados { bought = fecha de compra AAAA-MM-DD, cost = € (o vacío), units = dosis del envase, adjust = reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes con las reales }). Las tomas gastan los envases por orden de compra; el envase en curso es el primero al que le quedan dosis. Cuando diga que ha comprado un envase, usa add_container; cuando diga cuántas dosis le quedan de verdad o que no le cuadran, usa adjust_stock (reajusta el envase en curso para que las dosis restantes sean esas); para cambiar o borrar envases ya registrados, edit_product con todos los envases que deben quedar. Cada día vale la última pauta que haya empezado, si su duración llega a ese día, en sus timings y con su dose (que empieza por la cantidad de cada toma). Un producto sin pauta vigente ni futura (también sin ninguna) está pausado: no sale en la toma y va en la lista «Pausados» de Productos; para que se tome hay que darle una pauta. Para cambiar los momentos de un producto, cambia los timings de su pauta (o crea otra con otros). Al crear un producto, propón ya su pauta (dosis, inicio, duración y momentos).
 - records: tomas registradas (at = cuándo se marcó, day = día de la toma, id = producto, timing = momento, name, dose y notes = el producto tal como se tomó). Lo guardado en una toma no cambia solo porque cambie el producto: para corregir tomas ya guardadas (una o muchas: su dosis, indicaciones o nombre) está edit_records.
-Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases; dosis restantes = dosis de todos los envases más sus reajustes, menos las dosis tomadas desde la primera compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del envase en curso (las tomas gastan los envases por orden de compra: el primero al que le quedan dosis), al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
+Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pausado; qué tomas de hoy están tomadas o pendientes por momento; dosis al día = cantidad de la dosis de hoy por cada momento visible de su pauta; envases, cada uno con fecha de compra, coste, dosis, reajuste, estado (gastado, en curso o sin empezar) y las dosis que le quedan; dosis restantes = dosis de todos los envases más sus reajustes, menos las dosis tomadas desde la primera compra; fin de las dosis restantes, días hasta entonces y si se acaba pronto, en menos de ${SOON_DAYS} días; precio del envase en curso (las tomas gastan los envases por orden de compra: el primero al que le quedan dosis), al día = ese precio ÷ sus dosis × dosis al día, y al mes = al día × días del mes actual, en euros; gastado en envases; tomas registradas, primera toma y dosis tomadas; null es que no se puede calcular):
 ${JSON.stringify(summary)}
-Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del envase en curso; coste al día y al mes; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
+Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del envase en curso; coste al día y al mes; lo gastado en envases de todos los productos; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
 ${JSON.stringify(overall)}
 Datos completos:
 ${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
-Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado un envase de X» → input date con key compra (hoy) e inputs number con key coste y dosis, y en actions edit_product con id y containers: los que ya tiene más { bought "{{compra}}", cost "{{coste}}", units "{{dosis}}" }; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
-Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, o corregir tomas ya guardadas (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
+Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado envases de X e Y» → una sección por producto con input date (key compra), number (key coste y dosis) y en actions add_container con id, bought "{{compra}}", cost "{{coste}}" y units "{{dosis}}"; «repasa lo que me queda» → un input number por producto con las dosis restantes y en actions adjust_stock con id y left; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas ya guardadas, registrar un envase comprado o cuadrar las dosis que quedan (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
 }
 
 // ---------- Assistant: tools ----------
@@ -1009,7 +1014,7 @@ const productProps = () => ({
     properties: { bought: stringProp('Fecha de compra AAAA-MM-DD'), cost: intProp('Coste del envase en €'), units: intProp('Dosis del envase'), adjust: intProp('Reajuste en dosis, positivo o negativo, para cuadrar las dosis restantes') } } },
 });
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } });
-const ACTIONS = ['create_product', 'edit_product', 'delete_product', 'add_record', 'remove_record', 'edit_records', 'edit_timing'];
+const ACTIONS = ['create_product', 'edit_product', 'delete_product', 'add_container', 'adjust_stock', 'add_record', 'remove_record', 'edit_records', 'edit_timing'];
 const UI_TYPES = ['text', 'check', 'toggle', 'radio', 'chips', 'select', 'input', 'textarea', 'button'];
 const ACTION = { type: 'object', description: 'Acción: una de las otras herramientas con sus argumentos; en los argumentos, {{clave}} se sustituye por el valor del elemento con esa clave', required: ['tool'], properties: { tool: { type: 'string', enum: ACTIONS }, args: { type: 'object', description: 'Argumentos de esa herramienta' } } };
 const tools = () => [
@@ -1035,6 +1040,8 @@ const tools = () => [
   tool('add_record', 'Úsala en cuanto pidan marcar, registrar o apuntar una toma, aunque no digan momento ni día (el formulario sale con el primer momento del producto ese día y hoy)', { id: stringProp('Id del producto'), timing: timingProp('Momento; si no, el primero del producto ese día'), day: stringProp('Día AAAA-MM-DD; si no, hoy'), time: stringProp('Hora HH:MM; si no, la actual') }, ['id']),
   tool('remove_record', 'Úsala en cuanto pidan desmarcar o quitar una toma (dejarla pendiente), aunque no digan momento ni día', { id: stringProp('Id del producto'), timing: timingProp('Momento; si no, el primero del producto ese día'), day: stringProp('Día AAAA-MM-DD; si no, hoy') }, ['id']),
   tool('edit_records', 'Úsala en cuanto pidan corregir, cambiar o reescribir tomas ya guardadas (la dosis, las indicaciones o el nombre con que quedaron), una o muchas a la vez, aunque no digan el valor nuevo: abre un formulario con el producto, los días, el momento y los valores nuevos', { id: stringProp('Id del producto'), from: stringProp('Primer día AAAA-MM-DD; si no, el de su primera toma'), to: stringProp('Último día AAAA-MM-DD; si no, el de su última toma'), timing: timingProp('Solo las tomas de ese momento; si no, de todos'), dose: stringProp('Dosis nueva (empieza por un número); vacía, no cambia'), notes: stringProp('Indicaciones nuevas; vacías, no cambian'), name: stringProp('Nombre nuevo; vacío, no cambia') }, ['id']),
+  tool('add_container', 'Úsala en cuanto digan que han comprado un envase de un producto, aunque no den el coste o las dosis (el formulario propone hoy y el coste y las dosis del último envase)', { id: stringProp('Id del producto'), bought: stringProp('Fecha de compra AAAA-MM-DD; si no, hoy'), cost: intProp('Coste en €'), units: intProp('Dosis del envase'), adjust: intProp('Reajuste en dosis, + o −') }, ['id']),
+  tool('adjust_stock', 'Úsala en cuanto digan cuántas dosis les quedan de verdad de un producto o que no les cuadran: propone el reajuste del envase en curso para que las dosis restantes sean esas', { id: stringProp('Id del producto'), left: intProp('Dosis que quedan de verdad') }, ['id']),
   tool('edit_timing', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: timingIds() }, name: stringProp('Nombre'), start: intProp('Hora de inicio 0-24'), end: intProp('Hora de fin 0-24'), visible: { type: 'boolean' } }, ['id']),
 ];
 
@@ -1081,6 +1088,15 @@ const recordFields = (d, withTime) => `
 const HHMM = /^\d{1,2}:\d{2}$/;
 const recordDraft = a => { const m = productOf(a.id), day = date(str(a.day)) || today(), t = str(a.time); return m && { id: m.id, name: m.name, timing: timingIds().includes(a.timing) ? a.timing : timingsOn(m, day)[0] ?? timingIds()[0], day, time: HHMM.test(t) ? t.padStart(5, '0') : '' }; };
 const recordValidate = d => failing([['day', date(d.day)], ['time', d.time === '' || HHMM.test(d.time)]]);
+// A container bought (proposes today and the cost and doses of the last one) and squaring the doses left (the
+// adjustment goes to the container in use, so that the doses left become the real ones).
+const productHeader = (name, extra = '') => `<ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(name)}</h2>${extra}</ion-label></ion-item>`;
+const containerDraft = a => { const m = productOf(a.id); if (!m) return null; const n = nextContainer(m.containers);
+  return { id: m.id, name: m.name, bought: date(str(a.bought)) || n.bought, cost: str(a.cost ?? n.cost), units: str(a.units ?? n.units), adjust: a.adjust ? str(a.adjust) : '' }; };
+const containerDescribe = d => `${d.units} dosis de ${d.name} comprado el ${shortDate(d.bought)}${d.cost !== '' ? ` por ${d.cost} €` : ''}${signed(d.adjust) ? ` (reajuste ${signedText(signed(d.adjust))})` : ''}`;
+const stockDraft = a => { const m = productOf(a.id); if (!m?.containers.length) return null; const f = figures(m); return { id: m.id, name: m.name, left: str(a.left ?? Math.max(0, f.left)) }; };
+const stockLive = d => { const f = figures(productOf(d.id)), real = int(d.left), diff = typeof real === 'number' ? real - f.left : 0;
+  return `La app calcula ${f.left.toLocaleString('es')}; ${diff ? `reajuste del envase en curso: ${signedText(diff)}` : 'cuadra, sin reajuste'}`; };
 // A proposal's final data, described as text for the assistant.
 const productDescribe = d => {
   const v = productValues(d);
@@ -1228,6 +1244,26 @@ const FORMS = {
     describe: d => `${recordsLabel(recordsOf(d).length)} de ${d.product} del ${shortDate(d.from)} al ${shortDate(d.to)}${d.timing ? ` en ${label(d.timing)}` : ''}: ${recordsText(d)}`,
     apply: d => { const rows = recordsOf(d), changes = recordsChanges(d); for (const e of rows) Object.assign(e, changes); return `${recordsLabel(rows.length)} de «${d.product}» ${rows.length === 1 ? 'cambiada' : 'cambiadas'}: ${recordsText(d)}`; },
   },
+  add_container: {
+    draft: containerDraft, key: a => [a.id, a.bought, a.units, a.cost].map(str).join('|'), title: () => 'Nuevo envase', brief: containerDescribe, describe: containerDescribe,
+    fields: d => `${productHeader(d.name)}
+  <ion-item><ion-input data-field="bought" type="date" label="Fecha de compra" label-placement="stacked" value="${esc(d.bought)}"></ion-input></ion-item>
+  <ion-item><ion-input data-field="cost" type="number" inputmode="numeric" label="Coste (€)" label-placement="stacked" placeholder="Sin coste" value="${esc(d.cost)}"></ion-input><ion-input data-field="units" type="number" inputmode="numeric" label="Dosis" label-placement="stacked" value="${esc(d.units)}"></ion-input><ion-input data-field="adjust" type="number" label="Reajuste" label-placement="stacked" placeholder="0" value="${esc(d.adjust)}"></ion-input></ion-item>`,
+    validate: d => failing([['bought', date(d.bought)], ['cost', int(d.cost) !== null], ['units', int(d.units, 1)], ['adjust', signed(d.adjust) !== null]]),
+    apply: d => { const m = productOf(d.id); if (!m) return null; updateProduct(m, { containers: [...m.containers, { bought: d.bought, cost: int(d.cost), units: int(d.units, 1), adjust: signed(d.adjust) }] }); return `Envase de «${m.name}» añadido`; },
+  },
+  adjust_stock: {
+    draft: stockDraft, key: a => str(a.id), missing: () => `ese producto no existe o no tiene envases. ${existing()}`, title: () => 'Cuadrar dosis restantes', brief: d => `${d.name} · quedan ${d.left}`,
+    fields: d => `${productHeader(d.name, `<p data-live>${stockLive(d)}</p>`)}
+  <ion-item><ion-input data-field="left" type="number" inputmode="numeric" label="Dosis que te quedan de verdad" label-placement="stacked" value="${esc(d.left)}"></ion-input></ion-item>`,
+    live: stockLive, validate: d => failing([['left', int(d.left) !== '' && int(d.left) !== null]]), describe: d => `${d.name}: quedan ${d.left} dosis`,
+    apply: d => {
+      const m = productOf(d.id); if (!m?.containers.length) return null;
+      const { left, current } = figures(m), diff = int(d.left) - left;
+      updateProduct(m, { containers: m.containers.map((c, i) => i === current ? { ...c, adjust: c.adjust + diff } : c) });
+      return diff ? `Dosis de «${m.name}» cuadradas: quedan ${d.left} (reajuste ${signedText(diff)} en el envase del ${shortDate(m.containers[current].bought)})` : `Las dosis de «${m.name}» ya cuadraban: quedan ${d.left}`;
+    },
+  },
   edit_timing: {
     missing: () => `no existe ese momento. ${existingTimings()}`,
     draft: a => { const ti = timingOf(a.id); return ti && { id: ti.id, name: str(a.name ?? ti.name), start: str(a.start ?? ti.start), end: str(a.end ?? ti.end), visible: typeof a.visible === 'boolean' ? a.visible : ti.visible }; },
@@ -1268,7 +1304,7 @@ function decide(v, saved) {
 // Saves a proposal if its data is valid; otherwise marks the failing fields red with their message below. The message
 // (errorText) is set only then and cleared on typing: with it fixed, Ionic draws a section below the field with
 // its own border even when the message is hidden, and the field shows two lines.
-const FIELD_ERRORS = { name: 'Pon un nombre', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24', from: 'Pon el día', to: 'Día igual o posterior a «Desde»', dose: 'Empieza por un número, o vacía' };
+const FIELD_ERRORS = { name: 'Pon un nombre', bought: 'Pon la fecha', cost: 'Número entero, o vacío', units: 'Número entero', adjust: 'Número entero, + o −', left: 'Número entero', day: 'Pon el día', time: 'Hora HH:MM, o vacía', start: 'De 0 a 24', end: 'De 0 a 24', from: 'Pon el día', to: 'Día igual o posterior a «Desde»', dose: 'Empieza por un número, o vacía' };
 // Errors of the schedule and container rows (their field names do not overlap).
 const ROW_ERRORS = { dose: 'Empieza por un número', start: 'Pon la fecha', days: 'Días, un número entero', bought: 'Pon la fecha', cost: 'Número entero, o vacío', units: 'Número entero', adjust: 'Número entero, + o −' };
 // The input of a failing check in a card: «@key» of a ui element, «field» or «field:row» of a schedule or container.
@@ -1360,6 +1396,8 @@ function suggestionPool() {
     ...products.filter(m => figures(m).end).map(m => `¿Cuándo se me acaba ${m.name} y cuántas dosis me quedan?`),
     ...(products.some(m => figures(m).end) ? [`¿Qué tengo que comprar en los próximos ${SHOP_DAYS} días? Hazme la lista con precios.`, '¿Qué envase se me acaba antes?'] : []),
     ...(products.some(m => !m.containers.length) ? ['Hazme un formulario para registrar el envase que tengo de los productos que no tienen ninguno.'] : []),
+    ...products.filter(m => m.containers.length).map(m => `¿Qué envase de ${m.name} está en curso y cuántas dosis le quedan?`),
+    ...(products.some(m => m.containers.length) ? ['Quiero repasar las dosis que me quedan de cada producto y cuadrarlas.', '¿Cuánto llevo gastado en envases? Hazme una tabla por producto.'] : []),
     // Costs
     ...(priced.length ? ['¿Cuánto me gasto al mes y en qué? Hazme una tabla por producto.', '¿Qué producto me sale más caro al día?', 'Hazme una gráfica de tarta con el reparto del gasto mensual por producto.'] : []),
     ...(priced.length && state.records.length ? ['¿Cuánto me he gastado este mes según las tomas registradas?'] : []),
