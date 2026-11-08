@@ -804,7 +804,9 @@ const signedText = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
 // («12/10 · 30 €») and a grey third line with its state, how much is consumed, the doses left and, if any, the
 // adjustment («En curso · 50% consumido · 158 restantes · −57 reajustadas»; the earlier ones, «Descartado · …»);
 // stock is stockOf of the list and i the row.
-const consumed = (c, left) => { const holds = c.units + c.adjust; return holds > 0 ? Math.min(100, Math.max(0, Math.round((holds - left) / holds * 100))) : 100; };
+// Doses left and percent consumed both with the adjustment applied: left = doses + adjustment − taken, consumed =
+// (doses − left) ÷ doses (316 doses, −57 adjusted and 158 left: 50%).
+const consumed = (c, left) => Math.min(100, Math.max(0, Math.round((c.units - left) / c.units * 100)));
 const containerUse = (c, left, inUse) => [inUse ? 'En curso' : 'Descartado', `${consumed(c, left)}% consumido`, `${left.toLocaleString('es')} restantes`, c.adjust ? `${signedText(c.adjust)} reajustadas` : ''].filter(Boolean).join(' · ');
 const containerRow = (c, stock, i) => `<h2 class="medium">${c.units.toLocaleString('es')} dosis</h2>${doseLine([shortDate(c.bought), c.cost !== '' ? euros(c.cost, 0) : ''].filter(Boolean).join(' · '))}<p>${containerUse(c, stock.each[i], i === stock.current)}</p>`;
 const containerRows = (list, stock, button) => list.map((c, i) => `<ion-item ${button ? `button="true" data-container="${i}"` : ''}><ion-label class="ion-text-wrap">${containerRow(c, stock, i)}</ion-label></ion-item>`).join('');
