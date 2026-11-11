@@ -252,7 +252,10 @@ const viewButton = id => `
         <ion-icon slot="icon-only" name="information-circle" color="${productOf(id) ? supplyColor(id) : 'medium'}" size="large"></ion-icon>
       </ion-button>`;
 // Dose row. If already taken, shows the time next to the dose; while sorting, the (i) gives way to the handle. A pending
-// dose of a product without containers cannot be checked: the row says so.
+// dose of a product without containers cannot be checked: the row says so. When the (i) is rose (the container runs
+// out soon), a rose line says when, in the format of the cost line of the product list («Envase se agota en 3 días»).
+const supplyLine = id => { const m = productOf(id), f = m && figures(m); if (!f?.soon) return '';
+  return `<p><ion-text color="rose" class="medium">${f.daysLeft <= 0 ? 'Envase se agota hoy' : f.daysLeft === 1 ? 'Envase se agota mañana' : `Envase se agota en ${f.daysLeft} días`}</ion-text></p>`; };
 const noContainer = (m, record) => !record && !productOf(m.id)?.containers.length;
 const doseItem = (m, timing, record, sorting) => `
     <ion-item data-id="${m.id}">
@@ -261,6 +264,7 @@ const doseItem = (m, timing, record, sorting) => `
         <h2 class="medium">${esc(m.name)}</h2>
         ${doseLine([record && time(record.at), m.dose].filter(Boolean).join(' · '))}
         ${notesLine(m)}
+        ${supplyLine(m.id)}
         ${noContainer(m, record) ? '<p><ion-text color="rose">Sin envase: añade uno en Productos para anotar la toma</ion-text></p>' : ''}
       </ion-label>
       ${sorting ? '<ion-reorder slot="end"></ion-reorder>' : viewButton(m.id)}
@@ -1546,7 +1550,7 @@ function renderChat() {
     + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
       : awaiting ? emptyList('Guarda o descarta las propuestas para continuar; si envías otro mensaje, se descartan.')
       : ready ? suggestionList(suggestions(suggestCount())) : '');
-  $('#chat-send').disabled = chatBusy || !ready;
+  $('#chat-send').disabled = voice.disabled = chatBusy || !ready;
   drawCharts();
   chatBody.scrollToBottom(200);
 }
@@ -1582,6 +1586,31 @@ function repairChat() {
 // What exists right now, so the assistant corrects itself when it refers to something missing.
 const existingTimings = () => `Los momentos que hay ahora son: ${state.timings.map(ti => `«${label(ti.id)}» (id ${ti.id})`).join(', ')}.`;
 const existing = () => state.products.length ? `Los productos que hay ahora son: ${state.products.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ningún producto: si hace falta, créalo.';
+// ---------- Assistant: voice ----------
+
+// Push to talk with the browser's speech recognition, in Spanish: while the dot is held it listens (rose dot), the text
+// fills the input as it is recognised and, on release, it is sent. Without speech recognition, the dot does not show.
+const Speech = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+const voice = $('#chat-voice');
+let listening = null;
+function startVoice(e) {
+  e.preventDefault();
+  if (listening || voice.disabled) return;
+  let heard = false;
+  listening = Object.assign(new Speech(), { lang: 'es-ES', interimResults: true, continuous: true });
+  listening.onresult = ev => { heard = true; chatInput.value = [...ev.results].map(r => r[0].transcript).join(''); };
+  listening.onerror = () => {}; // «end» always follows
+  listening.onend = () => { listening = null; voice.classList.remove('listening'); if (heard && str(chatInput.value).trim()) sendChat(); };
+  voice.classList.add('listening');
+  listening.start();
+}
+const stopVoice = () => listening?.stop();
+if (Speech) {
+  voice.classList.remove('ion-hide');
+  voice.addEventListener('pointerdown', startVoice);
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) voice.addEventListener(type, stopVoice);
+}
+
 // ---------- Assistant: message bar and «Texto» ----------
 
 // Last row of each message: icons to copy it, view it on a screen where text can be selected (on mobile
