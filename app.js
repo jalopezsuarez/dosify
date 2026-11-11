@@ -253,9 +253,9 @@ const viewButton = id => `
       </ion-button>`;
 // Dose row. If already taken, shows the time next to the dose; while sorting, the (i) gives way to the handle. A pending
 // dose of a product without containers cannot be checked: the row says so. When the (i) is rose (the container runs
-// out soon), a rose line says when, in the format of the cost line of the product list («Envase se agota en 3 días»).
+// out soon), a rose line says when, in the format of the cost line of the product list («Se agota en 3 días.»).
 const supplyLine = id => { const m = productOf(id), f = m && figures(m); if (!f?.soon) return '';
-  return `<p><ion-text color="rose" class="medium">${f.daysLeft <= 0 ? 'Envase se agota hoy' : f.daysLeft === 1 ? 'Envase se agota mañana' : `Envase se agota en ${f.daysLeft} días`}</ion-text></p>`; };
+  return `<p><ion-text color="rose" class="medium">${f.daysLeft <= 0 ? 'Se agota hoy.' : f.daysLeft === 1 ? 'Se agota mañana.' : `Se agota en ${f.daysLeft} días.`}</ion-text></p>`; };
 const noContainer = (m, record) => !record && !productOf(m.id)?.containers.length;
 const doseItem = (m, timing, record, sorting) => `
     <ion-item data-id="${m.id}">
