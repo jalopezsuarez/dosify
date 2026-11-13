@@ -978,7 +978,7 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // The voice conversation uses the same prompt with spoken answers instead of Markdown, a confirmation by voice
 // instead of the cards' buttons (no dynamic UI) and only the last 30 days of records (less to send, faster answers).
 const VOICE_STYLE = 'Estás en una conversación por voz: responde en español con frases cortas y naturales, como hablando, sin Markdown, listas, tablas ni gráficas; di las fechas, horas y cantidades como se dicen («el 12 de noviembre», «a las nueve y media»).';
-const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar: dísela en una frase y pregunta si la guardas; con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
+const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar: dísela en una frase y pregunta si la guardas; con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Si pide terminar la conversación (terminar, colgar, dejarlo), despídete en pocas palabras y llama a end_conversation; si pide cerrar el asistente o salir, despídete igual y llama a close_assistant. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
 function systemPrompt(voice = false) {
   const now = new Date();
@@ -1623,7 +1623,7 @@ const ELEVEN_API = 'https://api.elevenlabs.io/v1';
 const PROMPT_BYTES = 60000, RECORDS_BYTES = 40000; // what the prompt and a list of records may take, under the 64 KB limit
 const voiceModal = $('#voice'), voiceTranscript = $('#voice-transcript'), voiceMic = $('#voice-mic'), voiceState = $('#voice-state');
 const voicePending = new Map(); // proposal id → { name, draft }
-let call = null, voiceOpen = false, micOn = true, speaking = null; // speaking: the agent's line being said { el, text, final }
+let call = null, voiceOpen = false, micOn = true, agentSpeaking = false, speaking = null; // speaking: the agent's line being said { el, text, final }
 const loadScript = src => new Promise((resolve, reject) => document.head.append(Object.assign(document.createElement('script'), { src, onload: resolve, onerror: () => reject(new Error('No se ha podido cargar ElevenLabs.')) })));
 async function eleven(path, init = {}) {
   const res = await fetch(`${ELEVEN_API}${path}`, { ...init, headers: { 'xi-api-key': ai.voiceKey, 'Content-Type': 'application/json' } });
@@ -1632,12 +1632,14 @@ async function eleven(path, init = {}) {
   return res.json();
 }
 
-// The tools of the voice conversation: those of the chat but the dynamic UI, plus reading the records and confirming or
-// discarding a proposal.
+// The tools of the voice conversation: those of the chat but the dynamic UI, plus reading the records, confirming or
+// discarding a proposal and closing (the conversation or the whole assistant).
 const voiceTools = () => [...tools().filter(t => t.function.name !== 'ui'),
   tool('get_records', 'Consulta las tomas registradas entre dos días, de todos los productos o de uno', { from: stringProp('Primer día AAAA-MM-DD'), to: stringProp('Último día AAAA-MM-DD'), id: stringProp('Id del producto; si no, de todos') }, ['from', 'to']),
   tool('confirm_change', 'Guarda la propuesta que quien usa la app acaba de aprobar', { id: stringProp('Id de la propuesta') }, ['id']),
-  tool('discard_change', 'Descarta la propuesta que quien usa la app no quiere', { id: stringProp('Id de la propuesta') }, ['id'])];
+  tool('discard_change', 'Descarta la propuesta que quien usa la app no quiere', { id: stringProp('Id de la propuesta') }, ['id']),
+  tool('end_conversation', 'Termina la conversación por voz y vuelve al chat escrito, cuando pida terminarla, colgar o dejarlo', {}),
+  tool('close_assistant', 'Termina la conversación y cierra el asistente entero, cuando pida cerrar el asistente o salir', {})];
 // A JSON schema as ElevenLabs takes it: every property typed and described, and no enums (the timing ids change per
 // device and are in the prompt).
 const elevenSchema = (p, name) => p.type === 'object' ? { type: 'object', description: p.description ?? name, required: p.required ?? [], properties: Object.fromEntries(Object.entries(p.properties ?? {}).map(([k, v]) => [k, elevenSchema(v, k)])) }
@@ -1670,28 +1672,32 @@ const setVoiceState = text => { voiceState.textContent = text; };
 const scrollVoice = () => setTimeout(() => { voiceTranscript.scrollTop = voiceTranscript.scrollHeight; }, 60);
 function voiceLine(kind, text) {
   const label = kind === 'user' ? `<ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${esc(text)}</ion-text></ion-label>`
-    : `<ion-label class="ion-text-wrap" ${kind === 'error' ? 'color="danger"' : ''}>${esc(text)}</ion-label>`;
+    : `<ion-label class="ion-text-wrap" ${kind === 'error' ? 'color="danger"' : ''}><span>${esc(text)}</span></ion-label>`;
   voiceTranscript.insertAdjacentHTML('beforeend', `<ion-list inset="true"><ion-item lines="none">${label}</ion-item></ion-list>`);
   scrollVoice();
-  return voiceTranscript.lastElementChild.querySelector('ion-label');
+  return voiceTranscript.lastElementChild.querySelector('ion-label > *'); // its text, rewritten as the agent speaks
 }
 // The agent's line grows as its audio plays (alignment) and ends with the full text when it stops speaking.
+// Without the voice's audio tags («[happy]») and, if nothing is said («...»), empty.
+const spoken = text => /[\p{L}\p{N}]/u.test(text) ? text.replace(/\[[^\]]*\]\s*/g, '').trim() : '';
 function sayChars(chars) {
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.text += chars;
-  speaking.el.textContent = speaking.text;
+  speaking.el.textContent = spoken(speaking.text);
   scrollVoice();
 }
 function endAgentLine(cut) {
   if (!speaking) return;
-  speaking.el.textContent = cut ? `${speaking.text.trim()}…` : speaking.final || speaking.text;
+  const text = cut ? spoken(speaking.text) && `${spoken(speaking.text)}…` : speaking.final || spoken(speaking.text);
+  if (text) speaking.el.textContent = text; else speaking.el.closest('ion-list').remove();
   speaking = null;
 }
 function remember(role, text) {
   chat.push({ role, content: text }); chatView.push({ who: role, text }); saveChat();
 }
 function onVoiceMessage({ source, message }) {
-  if (source === 'user' && !/[\p{L}\p{N}]/u.test(message)) return; // silence comes as «...»
+  message = spoken(message);
+  if (!message) return; // silence comes as «...»
   if (source === 'user') { endAgentLine(true); voiceLine('user', message); return remember('user', message); }
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.final = message;
@@ -1743,12 +1749,14 @@ const voiceClientTools = () => ({
   get_records: readRecords,
   ...Object.fromEntries(voiceTools().map(t => t.function.name).filter(name => FORMS[name]).map(name => [name, args => proposeByVoice(name, args)])),
   confirm_change: ({ id }) => decideByVoice(id, true),
+  end_conversation: () => closeVoice(false),
+  close_assistant: () => closeVoice(true),
   discard_change: ({ id }) => decideByVoice(id, false),
 });
 
 async function openVoice() {
   if (!ai.voiceAgent) return notice('Conversación por voz', 'Configúrala en Productos › Asistente: el ID del agente de ElevenLabs, su API key y «Preparar el agente de voz».');
-  voiceTranscript.innerHTML = ''; voicePending.clear(); speaking = null; micOn = true; showMic(); setVoiceState('Conectando…');
+  voiceTranscript.innerHTML = ''; voicePending.clear(); speaking = null; agentSpeaking = false; micOn = true; showMic(); setVoiceState('Conectando…');
   await voiceModal.present();
   voiceOpen = true;
   try {
@@ -1760,7 +1768,7 @@ async function openVoice() {
       overrides: { agent: { prompt: { prompt }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
       clientTools: voiceClientTools(),
       onConnect: () => setVoiceState('Te escucho'),
-      onModeChange: ({ mode }) => { if (mode === 'listening') endAgentLine(false); setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
+      onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (!agentSpeaking) { endAgentLine(false); closing?.(); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
       onAudioAlignment: a => sayChars(a.chars.join('')),
       onMessage: onVoiceMessage,
       onInterruption: () => endAgentLine(true),
@@ -1770,7 +1778,17 @@ async function openVoice() {
     if (!voiceOpen) endVoice(); // closed while connecting
   } catch (e) { voiceLine('error', e.message); setVoiceState('No se ha podido conectar'); }
 }
+// Closing by voice: once the agent has said goodbye (it stops speaking), or after 10 s at most, the voice screen closes
+// and, for the whole assistant, the chat too.
+let closing = null;
+function closeVoice(all) {
+  closing = () => { closing = null; voiceModal.dismiss(); if (all) chatModal.dismiss(); };
+  setTimeout(() => { if (!agentSpeaking) closing?.(); }, 4000);
+  setTimeout(() => closing?.(), 10000);
+  return `${all ? 'El asistente se cierra' : 'La conversación termina'} en cuanto acabes de hablar: despídete en pocas palabras.`;
+}
 function endVoice() {
+  closing = null;
   voiceOpen = false;
   call?.endSession(); call = null;
   renderChat();
