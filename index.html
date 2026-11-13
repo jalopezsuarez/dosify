@@ -68,7 +68,7 @@
     ion-app { height: calc(100% - var(--keyboard, 0px)); bottom: var(--keyboard, 0px); }
     /* While typing (app.js sets «keyboard»), no room for the home indicator under the input box: the keyboard covers it */
     html.keyboard ion-footer { --ion-safe-area-bottom: 0px; } /* on the footer: modals set their own value */
-    /* Flat fill (no border, no shadow) of your messages */
+    /* Flat fill (no border, no shadow) shared by your messages, the input box and the voice capsule */
     :root { --surface: #fff; }
     @media (prefers-color-scheme: dark) { :root { --surface: rgba(255, 255, 255, 0.06); } }
     /* Assistant and voice: your messages in flat bubbles (up to the screen less 64 px; placed with Ionic's flex and
@@ -81,18 +81,18 @@
     .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; }
     /* Assistant: the icon row of each message, Ionic's own, on the message's background */
     #chat-body .msg-actions { --background: transparent; }
-    /* Assistant: the input box, transparent on the chat's background */
-    #chat-input { --padding-start: 18px; --padding-end: 6px; --padding-top: 11px; --padding-bottom: 11px; font-size: 17px; margin: 4px 10px 12px; width: calc(100% - 20px); }
+    /* Assistant: the input box, rounded and flat like the voice capsule */
+    #chat-input { --padding-start: 18px; --padding-end: 6px; --padding-top: 11px; --padding-bottom: 11px; --background: var(--surface); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px 12px; width: calc(100% - 20px); }
     #chat-input, #chat-input .textarea-wrapper { min-height: 0; } /* only as tall as its text (Ionic sets 44 px in iOS and 56 px in Android) */
     #chat-input .textarea-end { align-self: center; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
-    /* Voice conversation: the transcript on top and, below it, the microphone in a transparent area that takes
+    /* Voice conversation: the transcript on top and, below it, the microphone in a big rounded flat capsule that takes
        the bottom third, close to the bottom edge */
     #voice-clock { font-variant-numeric: tabular-nums; } /* the running clock does not wobble */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; padding-bottom: 0; } /* the capsule keeps its own room for the home indicator */
     #voice-transcript { overflow-y: auto; }
-    #voice-controls { height: max(210px, calc(33.33% - 16px)); margin: 8px 12px max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); gap: 16px; }
+    #voice-controls { height: max(210px, calc(33.33% - 16px)); margin: 8px 12px max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); gap: 16px; border-radius: 40px; background: var(--surface); }
     #voice-mic { width: 136px; height: 136px; margin: 0; }
     #voice-mic ion-icon { font-size: 56px; }
     /* Markdown replies: tables with thin borders and horizontal scroll when they do not fit; charts with fixed height */
