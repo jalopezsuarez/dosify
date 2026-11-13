@@ -978,7 +978,7 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // The voice conversation uses the same prompt with spoken answers instead of Markdown, a confirmation by voice
 // instead of the cards' buttons (no dynamic UI) and only the last 30 days of records (less to send, faster answers).
 const VOICE_STYLE = 'Estás en una conversación por voz: responde en español con frases cortas y naturales, como hablando, sin Markdown, listas, tablas ni gráficas; di las fechas, horas y cantidades como se dicen («el 12 de noviembre», «a las nueve y media»).';
-const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar: dísela en una frase y pregunta si la guardas; con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
+const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar: dísela en una frase y pregunta si la guardas; con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
 function systemPrompt(voice = false) {
   const now = new Date();
@@ -1643,8 +1643,11 @@ const voiceTools = () => [...tools().filter(t => t.function.name !== 'ui'),
 const elevenSchema = (p, name) => p.type === 'object' ? { type: 'object', description: p.description ?? name, required: p.required ?? [], properties: Object.fromEntries(Object.entries(p.properties ?? {}).map(([k, v]) => [k, elevenSchema(v, k)])) }
   : p.type === 'array' ? { type: 'array', description: p.description ?? name, items: elevenSchema(p.items ?? { type: 'string' }, name) }
   : { type: ['boolean', 'integer', 'number'].includes(p.type) ? p.type : 'string', description: p.description ?? name };
-// «Preparar el agente de voz»: creates (or updates) each tool in ElevenLabs as a client tool, links them to the agent and
-// lets the app send it the prompt, the first message and the language.
+// Turn-taking at the user's pace: the agent waits for a clear end of turn, re-engages only after the longest silence
+// ElevenLabs allows (30 s) and never hangs up for silence.
+const VOICE_TURN = { turn_eagerness: 'patient', turn_timeout: 30, silence_end_call_timeout: -1 };
+// «Preparar el agente de voz»: creates (or updates) each tool in ElevenLabs as a client tool, links them to the agent,
+// sets its turn-taking (VOICE_TURN) and lets the app send it the prompt, the first message and the language.
 async function setupVoice() {
   if (!ai.voiceAgent || !ai.voiceKey) return notice('Faltan datos', 'Pon el ID del agente y la API key de ElevenLabs.');
   try {
@@ -1655,7 +1658,7 @@ async function setupVoice() {
       ids.push(ai.voiceTools[f.name] = known?.id ?? (await eleven('/convai/tools', { method: 'POST', body })).id);
     }
     saveAi();
-    await eleven(`/convai/agents/${encodeURIComponent(ai.voiceAgent)}`, { method: 'PATCH', body: JSON.stringify({ conversation_config: { agent: { prompt: { tool_ids: ids } } },
+    await eleven(`/convai/agents/${encodeURIComponent(ai.voiceAgent)}`, { method: 'PATCH', body: JSON.stringify({ conversation_config: { agent: { prompt: { tool_ids: ids } }, turn: VOICE_TURN },
       platform_settings: { overrides: { conversation_config_override: { agent: { prompt: { prompt: true }, first_message: true, language: true } } } } }) });
     notice('Agente preparado', `Tiene las ${ids.length} herramientas de Dosify y permiso para recibir los datos, el primer mensaje y el idioma.`);
   } catch (e) { notice('No se ha podido preparar el agente', e.message); }
@@ -1688,6 +1691,7 @@ function remember(role, text) {
   chat.push({ role, content: text }); chatView.push({ who: role, text }); saveChat();
 }
 function onVoiceMessage({ source, message }) {
+  if (source === 'user' && !/[\p{L}\p{N}]/u.test(message)) return; // silence comes as «...»
   if (source === 'user') { endAgentLine(true); voiceLine('user', message); return remember('user', message); }
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.final = message;
