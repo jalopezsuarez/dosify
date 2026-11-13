@@ -86,9 +86,6 @@
     /* Assistant: the input box, rounded and flat like the voice capsule */
     #chat-input { --padding-start: 18px; --padding-end: 6px; --background: var(--surface); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px 12px; width: calc(100% - 20px); }
     #chat-input .textarea-end { align-self: center; }
-    /* Android: Material's height for a text field (56 px) with the text centered; Ionic's own is 72 px, for forms with a label */
-    .md #chat-input { --padding-top: 16px; --padding-bottom: 16px; }
-    .md #chat-input, .md #chat-input .textarea-wrapper { min-height: 56px; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
     /* Voice conversation: the transcript on top and, below it, the microphone in a big rounded flat capsule that takes
