@@ -78,22 +78,16 @@
     .bubble-text { font-size: 0.875rem; line-height: 1.5; overflow-wrap: anywhere; }
     .md .bubble-text { font-size: 1rem; }
     .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; margin-top: 4px; }
-    /* Assistant: the icon row of each message, shorter than a normal row and with the first icon (or the last one, in
-       your messages) at the same indent as the text */
-    #chat-body .msg-actions { --min-height: 32px; --background: transparent; }
-    #chat-body .msg-actions ion-buttons { margin: 0; gap: 16px; }
-    #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.7; }
-    #chat-body .msg-actions ion-icon { font-size: 20.5px; } /* one point under Ionic's in iOS (21.45px) */
+    /* Assistant: the icon row of each message, Ionic's own, on the message's background */
+    #chat-body .msg-actions { --background: transparent; }
     /* Assistant: the bar of the input box, without a separator line and with the chat's background */
     #chat ion-footer ion-toolbar { --background: var(--ion-color-light); }
     /* Assistant: the input box, rounded and flat like the voice capsule */
     #chat-input { --padding-start: 18px; --padding-end: 6px; --padding-top: 11px; --padding-bottom: 11px; --background: var(--surface); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px 12px; width: calc(100% - 20px); }
-    #chat-input, #chat-input .textarea-wrapper { min-height: 0; } /* only as tall as its text (Ionic sets 44px) */
+    #chat-input, #chat-input .textarea-wrapper { min-height: 0; } /* only as tall as its text (Ionic sets 44 px in iOS and 56 px in Android) */
     #chat-input .textarea-end { align-self: center; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
-    /* Assistant: «Hablar» / «Enviar» pill inside the input box, primary with white text */
-    #chat-send { --ion-color-contrast: #fff !important; --padding-start: 16px; --padding-end: 16px; height: 30px; font-size: 15px; margin: 0 0 0 8px; text-transform: none; font-weight: 600; letter-spacing: 0; }
     /* Voice conversation: the transcript on top and, below it, the microphone in a big rounded flat capsule that takes
        the bottom third, close to the bottom edge */
     #voice-clock { font-variant-numeric: tabular-nums; } /* the running clock does not wobble */
