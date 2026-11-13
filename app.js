@@ -1990,7 +1990,11 @@ $('#delete').onclick = () => ask('¿Eliminar este producto?', () => { deleteProd
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-new').onclick = () => { chatEpoch++; resetSuggestions(); for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
-$('#chat-send').onclick = () => str(chatInput.value).trim() ? sendChat() : openVoice();
+// «Hablar» / «Enviar». On touch it acts at touchend and cancels the touch's mouse events: otherwise the box loses focus
+// first, the keyboard hides, the screen moves and the click falls outside the pill, so nothing was sent.
+const pillAction = () => str(chatInput.value).trim() ? sendChat() : openVoice();
+pill.onclick = pillAction;
+pill.addEventListener('touchend', e => { e.preventDefault(); pillAction(); });
 chatInput.addEventListener('ionInput', updatePill);
 $('#voice-setup').onclick = setupVoice;
 $('#voice-mic').onclick = toggleMic;
