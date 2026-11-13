@@ -66,6 +66,8 @@
     /* Keyboard in the browser (iOS): the app shrinks to the visible area (--keyboard is set by app.js with visualViewport),
        so the input box sits above the keyboard without Safari scrolling the page and hiding the header */
     ion-app { height: calc(100% - var(--keyboard, 0px)); bottom: var(--keyboard, 0px); }
+    /* With the keyboard open, no room for the home indicator under the input box (the keyboard covers it) */
+    html.keyboard { --ion-safe-area-bottom: 0px; }
     /* Assistant: the icon row of each message, shorter than a normal row and with the first icon (or the last one, in
        your messages) at the same indent as the text */
     #chat-body .msg-actions { --min-height: 32px; }
@@ -73,12 +75,13 @@
     #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.5; }
     #chat-body .msg-actions ion-icon { font-size: 20.5px; } /* one point under Ionic's in iOS (21.45px) */
     /* Assistant: the input box, rounded with a clear border and a bit taller (Ionic only outlines it in md mode) */
-    #chat-input { --padding-start: 18px; --padding-end: 8px; --padding-top: 10px; --padding-bottom: 10px; --background: var(--ion-background-color, #fff); border: 1.5px solid var(--ion-color-step-300, #b3b3b3); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 8px 10px; width: calc(100% - 20px); }
+    #chat-input { --padding-start: 18px; --padding-end: 8px; --padding-top: 7px; --padding-bottom: 7px; --background: var(--ion-background-color, #fff); border: 1.5px solid var(--ion-color-step-300, #b3b3b3); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px; width: calc(100% - 20px); }
+    #chat-input, #chat-input .textarea-wrapper { min-height: 0; } /* only as tall as its text (Ionic sets 44px) */
     #chat-input .textarea-end { align-self: center; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
     /* Assistant: «Hablar» / «Enviar» pill inside the input box, primary with white text */
-    #chat-send { --ion-color-contrast: #fff !important; --border-radius: 999px; --padding-start: 16px; --padding-end: 16px; height: 32px; font-size: 15px; margin: 0 0 0 8px; align-self: center; text-transform: none; font-weight: 600; letter-spacing: 0; }
+    #chat-send { --ion-color-contrast: #fff !important; --border-radius: 999px; --padding-start: 16px; --padding-end: 16px; height: 30px; font-size: 15px; margin: 0 0 0 8px; align-self: center; text-transform: none; font-weight: 600; letter-spacing: 0; }
     /* Voice conversation: the transcript on top (two thirds) and the microphone below (one third) */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; }
     #voice-transcript { flex: 2; overflow-y: auto; padding: 8px 0; }

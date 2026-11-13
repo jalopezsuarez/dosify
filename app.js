@@ -2049,6 +2049,7 @@ if (window.visualViewport) {
   const fit = () => {
     const kb = Math.max(0, Math.round(window.innerHeight - vv.height));
     document.documentElement.style.setProperty('--keyboard', `${kb}px`);
+    document.documentElement.classList.toggle('keyboard', kb > 0);
     if (kb) { window.scrollTo(0, 0); if (chatModal.classList.contains('show-modal')) chatBody.scrollToBottom(0); }
   };
   vv.addEventListener('resize', fit);
