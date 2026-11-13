@@ -1487,7 +1487,7 @@ const proposalCard = (v, i) => {
   return `<div data-proposal="${i}">
     <ion-list-header><ion-label>${esc(form.title(v.draft))}</ion-label></ion-list-header>
     ${formBody(form, v.draft)}
-    <div class="proposal-actions">
+    <div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom">
       <ion-button fill="outline" color="medium" data-act="discard">Descartar</ion-button>
       <ion-button ${form.danger ? 'color="danger"' : ''} data-act="save">${saveText(form, v.draft)}</ion-button>
     </div>
@@ -1551,7 +1551,7 @@ function openProposalEditor(i) {
 }
 
 // With several pending proposals, a row to save or discard them all.
-const allRow = () => pendingProposals().length > 1 ? `<div class="proposal-actions"><ion-button fill="outline" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button data-act="save-all">Guardar todas (${pendingProposals().length})</ion-button></div>` : '';
+const allRow = () => pendingProposals().length > 1 ? `<div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom"><ion-button fill="outline" color="medium" data-act="discard-all">Descartar todas</ion-button><ion-button data-act="save-all">Guardar todas (${pendingProposals().length})</ion-button></div>` : '';
 function renderChat() {
   saveChat();
   const ready = aiReady();
@@ -1738,7 +1738,7 @@ function proposeByVoice(name, args) {
   const id = newId();
   voicePending.set(id, { name, draft });
   voiceTranscript.insertAdjacentHTML('beforeend', `<div data-voice-card="${id}"><ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(form.title(draft))}</h2><p>${esc(form.describe(draft))}</p></ion-label></ion-item></ion-list>
-    <div class="proposal-actions"><ion-button fill="outline" color="medium" data-voice-act="discard" data-id="${id}">Descartar</ion-button><ion-button data-voice-act="save" data-id="${id}">${saveText(form, draft)}</ion-button></div></div>`);
+    <div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom"><ion-button fill="outline" color="medium" data-voice-act="discard" data-id="${id}">Descartar</ion-button><ion-button data-voice-act="save" data-id="${id}">${saveText(form, draft)}</ion-button></div></div>`);
   scrollVoice();
   return `Propuesta ${id} preparada, sin guardar: ${form.describe(draft)}. Dísela en una frase y pregunta si la guardas.`;
 }

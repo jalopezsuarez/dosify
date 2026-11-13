@@ -93,7 +93,7 @@
     #voice-clock { font-variant-numeric: tabular-nums; } /* the running clock does not wobble */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; padding-bottom: 0; } /* the capsule keeps its own room for the home indicator */
     #voice-controls { --gap: max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); position: sticky; bottom: var(--gap); z-index: 1; height: max(210px, calc(33.33% - 16px)); margin: 8px 12px var(--gap); gap: 16px; border-radius: var(--surface-radius); background: var(--surface); }
-    #voice-mic { width: 136px; height: 136px; margin: 0; }
+    #voice-mic { width: 136px; height: 136px; }
     #voice-mic ion-icon { font-size: 56px; }
     /* Markdown replies: tables with thin borders and horizontal scroll when they do not fit; charts with fixed height */
     #chat-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; margin: 6px 0; }
@@ -102,8 +102,8 @@
     #chat-body .md-p { margin: 0 0 6px; }
     /* Chips of the assistant's proposals, a bit larger (ion-chip has no size setting) */
     #chat-body ion-chip, #proposal-body ion-chip { font-size: 15px; height: 36px; }
-    /* Proposal buttons («Descartar» / «Guardar», «todas»): outside the list, half width each, as wide as the lists */
-    .proposal-actions { display: flex; gap: 12px; margin: 0 16px 16px; }
+    /* Proposal buttons («Descartar» / «Guardar», «todas»): outside the list (placed with Ionic's flex and margin utilities), half width each */
+    .proposal-actions { gap: 12px; }
     .proposal-actions ion-button { flex: 1; margin: 0; height: 44px; font-size: 16px; }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core@9.0.8/dist/ionic/ionic.esm.js"></script>
