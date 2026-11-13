@@ -75,13 +75,10 @@
        margin utilities), with the text at the size of the assistant's (Ionic's wrapped label: 14 px in iOS, 16 px in
        Android) and the icon row inside */
     .bubble { max-width: calc(100% - 32px); padding: 11px 16px; border-radius: 18px; background: var(--surface); }
-    .bubble-text { font-size: 0.875rem; line-height: 1.5; overflow-wrap: anywhere; }
-    .md .bubble-text { font-size: 1rem; }
-    .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; margin-top: 4px; }
+    .bubble ion-label { overflow-wrap: anywhere; }
+    .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; }
     /* Assistant: the icon row of each message, Ionic's own, on the message's background */
     #chat-body .msg-actions { --background: transparent; }
-    /* Assistant: the bar of the input box, without a separator line and with the chat's background */
-    #chat ion-footer ion-toolbar { --background: var(--ion-color-light); }
     /* Assistant: the input box, rounded and flat like the voice capsule */
     #chat-input { --padding-start: 18px; --padding-end: 6px; --padding-top: 11px; --padding-bottom: 11px; --background: var(--surface); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px 12px; width: calc(100% - 20px); }
     #chat-input, #chat-input .textarea-wrapper { min-height: 0; } /* only as tall as its text (Ionic sets 44 px in iOS and 56 px in Android) */
@@ -94,7 +91,6 @@
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; padding-bottom: 0; } /* the capsule keeps its own room for the home indicator */
     #voice-transcript { overflow-y: auto; }
     #voice-controls { height: max(210px, calc(33.33% - 16px)); margin: 8px 12px max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); gap: 16px; border-radius: 40px; background: var(--surface); }
-    #voice-state { color: color-mix(in srgb, var(--ion-text-color, #000) 75%, transparent); } /* readable on the capsule */
     #voice-mic { width: 136px; height: 136px; margin: 0; }
     #voice-mic ion-icon { font-size: 56px; }
     /* Markdown replies: tables with thin borders and horizontal scroll when they do not fit; charts with fixed height */
@@ -105,8 +101,8 @@
     /* Chips of the assistant's proposals, a bit larger (ion-chip has no size setting) */
     #chat-body ion-chip, #proposal-body ion-chip { font-size: 15px; height: 36px; }
     /* Proposal buttons («Descartar» / «Guardar», «todas»): outside the list, half width each, as wide as the lists */
-    #chat-body .proposal-actions, #voice-transcript .proposal-actions { display: flex; gap: 12px; margin: 0 16px 16px; }
-    #chat-body .proposal-actions ion-button, #voice-transcript .proposal-actions ion-button { flex: 1; margin: 0; height: 44px; font-size: 16px; }
+    .proposal-actions { display: flex; gap: 12px; margin: 0 16px 16px; }
+    .proposal-actions ion-button { flex: 1; margin: 0; height: 44px; font-size: 16px; }
   </style>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core@9.0.8/dist/ionic/ionic.esm.js"></script>
   <script type="module" src="app.js"></script>
@@ -236,7 +232,7 @@
       <div id="voice-transcript" class="ion-flex-1 ion-padding-vertical"></div>
       <div id="voice-controls" class="ion-flex-none ion-display-flex ion-flex-column ion-align-items-center ion-justify-content-center">
         <ion-button id="voice-mic" color="rose" shape="round" aria-label="Silenciar el micro"><ion-icon slot="icon-only" name="mic"></ion-icon></ion-button>
-        <ion-note id="voice-state">Conectando…</ion-note>
+        <ion-note id="voice-state" color="medium">Conectando…</ion-note>
       </div>
     </ion-content>
   </ion-modal>
@@ -251,7 +247,7 @@
     </ion-header>
     <ion-content id="chat-body" color="light"></ion-content>
     <ion-footer class="ion-no-border">
-      <ion-toolbar>
+      <ion-toolbar color="light">
         <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta a Dosify" auto-grow="true" rows="1" enterkeyhint="send">
           <ion-button slot="end" id="chat-send" color="primary" shape="round" size="small">Hablar</ion-button>
         </ion-textarea>

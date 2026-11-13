@@ -1495,7 +1495,7 @@ const proposalCard = (v, i) => {
 };
 // Your messages: a bubble as wide as its text, on the right (flex utilities); the assistant's: a row on the chat's own
 // background (color="light", as the page), without a card. Shared by the chat and the voice transcript.
-const bubble = (html, bar = '') => `<div class="ion-display-flex ion-justify-content-end ion-margin"><div class="bubble"><div class="bubble-text ion-text-end">${html}</div>${bar}</div></div>`;
+const bubble = (html, bar = '') => `<div class="ion-display-flex ion-justify-content-end ion-margin"><div class="bubble ion-text-end"><ion-label class="ion-text-wrap">${html}</ion-label>${bar}</div></div>`;
 const plainLine = (html, attrs = '') => `<ion-item color="light" lines="none"><ion-label class="ion-text-wrap" ${attrs}>${html}</ion-label></ion-item>`;
 const BLOCKS = {
   user: (v, i) => bubble(linkify(v.text), messageBar(i, true)),
