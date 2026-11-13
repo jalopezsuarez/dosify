@@ -74,11 +74,11 @@
     :root { --surface: #fff; }
     @media (prefers-color-scheme: dark) { :root { --surface: rgba(255, 255, 255, 0.06); } }
     /* Assistant and voice: your messages in flat bubbles as wide as their text (up to the screen less 64 px), on the
-       right and right-aligned, with the text at the item's size and the icon row inside; the assistant's, without a
+       right and right-aligned, with the text at the size of the assistant's and the icon row inside; the assistant's, without a
        bubble, on the page */
     .bubble { width: fit-content; max-width: calc(100% - 64px); margin: 16px 16px 16px auto; padding: 11px 16px; border-radius: 18px; background: var(--surface); }
-    .bubble-text { font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; text-align: end; }
-    .md .bubble-text { font-size: 16px; }
+    .bubble-text { font-size: 0.875rem; line-height: 1.5; overflow-wrap: anywhere; text-align: end; } /* as the assistant's text: Ionic's wrapped label (14 px in iOS, 16 px in Android) */
+    .md .bubble-text { font-size: 1rem; }
     .bubble .msg-actions { --background: transparent; --padding-start: 0; --inner-padding-end: 0; margin-top: 4px; }
     .plain, .plain ion-item { background: transparent; --background: transparent; }
     .plain ion-item { --padding-start: 0; --inner-padding-end: 0; } /* no indent: the text starts at the list's edge */
