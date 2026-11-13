@@ -66,8 +66,8 @@
     /* Keyboard in the browser (iOS): the app shrinks to the visible area (--keyboard is set by app.js with visualViewport),
        so the input box sits above the keyboard without Safari scrolling the page and hiding the header */
     ion-app { height: calc(100% - var(--keyboard, 0px)); bottom: var(--keyboard, 0px); }
-    /* With the keyboard open, no room for the home indicator under the input box (the keyboard covers it) */
-    html.keyboard { --ion-safe-area-bottom: 0px; }
+    /* While typing (app.js sets «keyboard»), no room for the home indicator under the input box: the keyboard covers it */
+    html.keyboard ion-footer { --ion-safe-area-bottom: 0px; } /* on the footer: modals set their own value */
     /* Assistant: the icon row of each message, shorter than a normal row and with the first icon (or the last one, in
        your messages) at the same indent as the text */
     #chat-body .msg-actions { --min-height: 32px; }
@@ -83,6 +83,7 @@
     /* Assistant: «Hablar» / «Enviar» pill inside the input box, primary with white text */
     #chat-send { --ion-color-contrast: #fff !important; --border-radius: 999px; --padding-start: 16px; --padding-end: 16px; height: 30px; font-size: 15px; margin: 0 0 0 8px; align-self: center; text-transform: none; font-weight: 600; letter-spacing: 0; }
     /* Voice conversation: the transcript on top (two thirds) and the microphone below (one third) */
+    #voice-clock { font-variant-numeric: tabular-nums; } /* the running clock does not wobble */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; }
     #voice-transcript { flex: 2; overflow-y: auto; padding: 8px 0; }
     #voice-controls { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; border-top: 1px solid var(--ion-color-step-150, #e3e3e3); }
@@ -220,7 +221,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start"><ion-button id="voice-close">Cerrar</ion-button></ion-buttons>
-        <ion-title>Conversación</ion-title>
+        <ion-title id="voice-clock">00:00</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content color="light" scroll-y="false">

@@ -1621,9 +1621,9 @@ function notice(header, message) {
 const ELEVENLABS = 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.32.1/dist/lib.iife.js';
 const ELEVEN_API = 'https://api.elevenlabs.io/v1';
 const PROMPT_BYTES = 60000, RECORDS_BYTES = 40000; // what the prompt and a list of records may take, under the 64 KB limit
-const voiceModal = $('#voice'), voiceTranscript = $('#voice-transcript'), voiceMic = $('#voice-mic'), voiceState = $('#voice-state');
+const voiceModal = $('#voice'), voiceTranscript = $('#voice-transcript'), voiceMic = $('#voice-mic'), voiceState = $('#voice-state'), voiceClock = $('#voice-clock');
 const voicePending = new Map(); // proposal id → { name, draft }
-let call = null, voiceOpen = false, micOn = true, agentSpeaking = false, lineEnd = 0, speaking = null; // speaking: the agent's line being said { el, text, final }
+let call = null, voiceOpen = false, micOn = true, agentSpeaking = false, lineEnd = 0, clock = 0, speaking = null; // speaking: the agent's line being said { el, text, final }
 const loadScript = src => new Promise((resolve, reject) => document.head.append(Object.assign(document.createElement('script'), { src, onload: resolve, onerror: () => reject(new Error('No se ha podido cargar ElevenLabs.')) })));
 async function eleven(path, init = {}) {
   const res = await fetch(`${ELEVEN_API}${path}`, { ...init, headers: { 'xi-api-key': ai.voiceKey, 'Content-Type': 'application/json' } });
@@ -1665,6 +1665,15 @@ async function setupVoice() {
     notice('Agente preparado', `Tiene las ${ids.length} herramientas de Dosify y permiso para recibir los datos, el primer mensaje y el idioma.`);
   } catch (e) { notice('No se ha podido preparar el agente', e.message); }
 }
+
+// The title is a clock (mm:ss) that runs from the moment the call connects until it ends.
+const showClock = seconds => { voiceClock.textContent = [Math.floor(seconds / 60), seconds % 60].map(n => String(n).padStart(2, '0')).join(':'); };
+function startClock() {
+  const start = Date.now();
+  clearInterval(clock);
+  clock = setInterval(() => showClock(Math.floor((Date.now() - start) / 1000)), 1000);
+}
+const stopClock = () => clearInterval(clock);
 
 // Transcript lines, like the chat: the user's on the right in teal, the agent's on the left, errors in red.
 const setVoiceState = text => { voiceState.textContent = text; };
@@ -1760,7 +1769,7 @@ const voiceClientTools = () => ({
 
 async function openVoice() {
   if (!ai.voiceAgent) return notice('Conversación por voz', 'Configúrala en Productos › Asistente: el ID del agente de ElevenLabs, su API key y «Preparar el agente de voz».');
-  voiceTranscript.innerHTML = ''; voicePending.clear(); speaking = null; agentSpeaking = false; micOn = true; showMic(); setVoiceState('Conectando…');
+  voiceTranscript.innerHTML = ''; voicePending.clear(); speaking = null; agentSpeaking = false; micOn = true; showMic(); showClock(0); setVoiceState('Conectando…');
   await voiceModal.present();
   voiceOpen = true;
   try {
@@ -1771,13 +1780,13 @@ async function openVoice() {
     call = await window.ElevenLabsClient.Conversation.startSession({ ...auth,
       overrides: { agent: { prompt: { prompt }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
       clientTools: voiceClientTools(),
-      onConnect: () => setVoiceState('Te escucho'),
+      onConnect: () => { startClock(); setVoiceState('Te escucho'); },
       onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (!agentSpeaking) { clearTimeout(lineEnd); lineEnd = setTimeout(endAgentLine, 3000, false); closing?.(); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
       onAudioAlignment: a => sayChars(a.chars.join('')),
       onMessage: onVoiceMessage,
       onInterruption: () => endAgentLine(true),
       onError: message => voiceLine('error', message),
-      onDisconnect: () => { call = null; setVoiceState('Conversación terminada'); },
+      onDisconnect: () => { stopClock(); call = null; setVoiceState('Conversación terminada'); },
     });
     if (!voiceOpen) endVoice(); // closed while connecting
   } catch (e) { voiceLine('error', e.message); setVoiceState('No se ha podido conectar'); }
@@ -1792,7 +1801,7 @@ function closeVoice(all) {
   return `${all ? 'El asistente se cierra' : 'La conversación termina'} en cuanto acabes de hablar: despídete en pocas palabras.`;
 }
 function endVoice() {
-  closing = null; clearTimeout(lineEnd);
+  closing = null; clearTimeout(lineEnd); stopClock();
   voiceOpen = false;
   call?.endSession(); call = null;
   renderChat();
@@ -2041,6 +2050,11 @@ proposalBody.addEventListener('click', e => { if (e.target.closest('#proposal-di
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && render());
+// While typing in a field (the keyboard is up and covers the home indicator), «keyboard» on <html> drops the room kept
+// under the footers for it. Measuring the keyboard is not enough: some iPhones resize the page instead.
+const typing = () => document.documentElement.classList.toggle('keyboard', !!document.activeElement?.closest('input, textarea'));
+document.addEventListener('focusin', typing);
+document.addEventListener('focusout', () => setTimeout(typing));
 // Keyboard in the browser (iOS): Ionic does not notice and Safari scrolls the page to show the field, so the header
 // and half the screen disappear. With visualViewport, the app shrinks to the visible area (--keyboard), the page goes
 // back to the top and, in the assistant, the chat stays at the end.
@@ -2049,7 +2063,6 @@ if (window.visualViewport) {
   const fit = () => {
     const kb = Math.max(0, Math.round(window.innerHeight - vv.height));
     document.documentElement.style.setProperty('--keyboard', `${kb}px`);
-    document.documentElement.classList.toggle('keyboard', kb > 0);
     if (kb) { window.scrollTo(0, 0); if (chatModal.classList.contains('show-modal')) chatBody.scrollToBottom(0); }
   };
   vv.addEventListener('resize', fit);
