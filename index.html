@@ -74,6 +74,8 @@
     /* Assistant: padding of the input box (ion-textarea variables) */
     #chat-input { --padding-start: 16px; --padding-end: 6px; margin: 6px 10px; width: calc(100% - 20px); }
     #chat-input .textarea-end { align-self: center; }
+    /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
+    .secret input { -webkit-text-security: disc; }
     /* Assistant: «Hablar» / «Enviar» pill inside the input box, primary with white text */
     #chat-send { --ion-color-contrast: #fff !important; --border-radius: 999px; --padding-start: 14px; --padding-end: 14px; height: 30px; margin: 0 0 0 8px; align-self: center; text-transform: none; font-weight: 600; letter-spacing: 0; }
     /* Voice conversation: the transcript on top and the microphone below, half and half */
@@ -155,12 +157,12 @@
       <ion-list-header><ion-label>Asistente</ion-label></ion-list-header>
       <ion-list inset="true" id="assistant-settings">
         <ion-item><ion-input name="url" type="url" inputmode="url" label="URL base (compatible con OpenAI)" label-placement="stacked" placeholder="https://api.openai.com/v1"></ion-input></ion-item>
-        <ion-item><ion-input name="key" type="password" label="API key" label-placement="stacked" placeholder="sk-…"></ion-input></ion-item>
+        <ion-item><ion-input name="key" type="text" class="secret" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" label="API key" label-placement="stacked" placeholder="sk-…"></ion-input></ion-item>
         <ion-item><ion-input name="model" label="Modelo" label-placement="stacked" placeholder="gpt-4o-mini"></ion-input></ion-item>
       </ion-list>
       <ion-list inset="true" id="voice-settings">
         <ion-item><ion-input name="voiceAgent" label="ID del agente de ElevenLabs" label-placement="stacked" placeholder="agent_…"></ion-input></ion-item>
-        <ion-item><ion-input name="voiceKey" type="password" label="API key de ElevenLabs" label-placement="stacked" placeholder="sk_…"></ion-input></ion-item>
+        <ion-item><ion-input name="voiceKey" type="text" class="secret" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" label="API key de ElevenLabs" label-placement="stacked" placeholder="sk_…"></ion-input></ion-item>
         <ion-item button="true" detail="false" id="voice-setup"><ion-icon slot="start" name="mic-outline"></ion-icon><ion-label>Preparar el agente de voz</ion-label></ion-item>
       </ion-list>
       <ion-list-header><ion-label>Zona de peligro</ion-label></ion-list-header>

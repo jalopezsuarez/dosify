@@ -1624,6 +1624,7 @@ let call = null, voiceOpen = false, micOn = true, speaking = null; // speaking: 
 const loadScript = src => new Promise((resolve, reject) => document.head.append(Object.assign(document.createElement('script'), { src, onload: resolve, onerror: () => reject(new Error('No se ha podido cargar ElevenLabs.')) })));
 async function eleven(path, init = {}) {
   const res = await fetch(`${ELEVEN_API}${path}`, { ...init, headers: { 'xi-api-key': ai.voiceKey, 'Content-Type': 'application/json' } });
+  if (res.status === 401) throw new Error('ElevenLabs no reconoce la API key. Vuelve a pegarla entera: empieza por «sk_» y tiene unos 50 caracteres.');
   if (!res.ok) throw new Error(`ElevenLabs respondió ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
 }
