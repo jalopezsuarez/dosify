@@ -73,9 +73,10 @@
     /* Assistant and voice: your messages in rounder bubbles; the assistant's, without a bubble, on the page itself */
     ion-list.bubble.list-inset { border-radius: 18px; } /* over Ionic's inset radius */
     .plain, .plain ion-item { background: transparent; --background: transparent; }
+    .plain ion-item { --padding-start: 0; --inner-padding-end: 0; } /* no indent: the text starts at the list's edge */
     #chat-body .msg-actions { --min-height: 32px; }
     #chat-body .msg-actions ion-buttons { margin: 0; gap: 16px; }
-    #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.5; }
+    #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.7; }
     #chat-body .msg-actions ion-icon { font-size: 20.5px; } /* one point under Ionic's in iOS (21.45px) */
     /* Assistant: the input box, rounded with a clear border and a bit taller (Ionic only outlines it in md mode) */
     #chat-input { --padding-start: 18px; --padding-end: 6px; --padding-top: 11px; --padding-bottom: 11px; --background: var(--ion-background-color, #fff); border: 1.5px solid var(--ion-color-step-300, #b3b3b3); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px; width: calc(100% - 20px); }
