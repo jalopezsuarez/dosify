@@ -86,6 +86,8 @@
     #chat-body .msg-actions ion-buttons { margin: 0; gap: 16px; }
     #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.7; }
     #chat-body .msg-actions ion-icon { font-size: 20.5px; } /* one point under Ionic's in iOS (21.45px) */
+    /* Assistant: the bar of the input box, without a separator line and with the chat's background */
+    #chat ion-footer ion-toolbar { --background: var(--ion-color-light); }
     /* Assistant: the input box, rounded and flat like the voice capsule */
     #chat-input { --padding-start: 18px; --padding-end: 6px; --padding-top: 11px; --padding-bottom: 11px; --background: var(--surface); border-radius: 28px; overflow: hidden; font-size: 17px; margin: 4px 10px; width: calc(100% - 20px); }
     #chat-input, #chat-input .textarea-wrapper { min-height: 0; } /* only as tall as its text (Ionic sets 44px) */
@@ -258,7 +260,7 @@
       </ion-toolbar>
     </ion-header>
     <ion-content id="chat-body" color="light"></ion-content>
-    <ion-footer>
+    <ion-footer class="ion-no-border">
       <ion-toolbar>
         <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta a Dosify" auto-grow="true" rows="1" enterkeyhint="send">
           <ion-button slot="end" id="chat-send" color="primary" shape="round" size="small">Hablar</ion-button>
