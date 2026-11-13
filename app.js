@@ -1494,8 +1494,8 @@ const proposalCard = (v, i) => {
   </div>`;
 };
 const BLOCKS = {
-  user: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${linkify(v.text)}</ion-text></ion-label></ion-item>${messageBar(i, true)}</ion-list>`,
-  assistant: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>${messageBar(i, false)}</ion-list>`,
+  user: (v, i) => `<ion-list inset="true" class="bubble"><ion-item lines="none"><ion-label class="ion-text-wrap ion-text-end">${linkify(v.text)}</ion-label></ion-item>${messageBar(i, true)}</ion-list>`,
+  assistant: (v, i) => `<ion-list inset="true" class="plain"><ion-item lines="none"><ion-label class="ion-text-wrap">${markdown(v.text)}</ion-label></ion-item>${messageBar(i, false)}</ion-list>`,
   action: (v, i) => actionLine(v.ok, v.text),
   error: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
   proposal: (v, i) => proposalCard(v, i),
@@ -1675,14 +1675,14 @@ function startClock() {
 }
 const stopClock = () => clearInterval(clock);
 
-// Transcript lines, like the chat: the user's on the right in teal, the agent's on the left, errors in red.
+// Transcript lines, like the chat: the user's on the right in a bubble, the agent's on the left without one, errors in red.
 const setVoiceState = text => { voiceState.textContent = text; };
 // Scrolls the transcript to the end once Ionic has drawn what was just added.
 const scrollVoice = () => setTimeout(() => { voiceTranscript.scrollTop = voiceTranscript.scrollHeight; }, 60);
 function voiceLine(kind, text) {
-  const label = kind === 'user' ? `<ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${esc(text)}</ion-text></ion-label>`
+  const label = kind === 'user' ? `<ion-label class="ion-text-wrap ion-text-end">${esc(text)}</ion-label>`
     : `<ion-label class="ion-text-wrap" ${kind === 'error' ? 'color="danger"' : ''}><span>${esc(text)}</span></ion-label>`;
-  voiceTranscript.insertAdjacentHTML('beforeend', `<ion-list inset="true"><ion-item lines="none">${label}</ion-item></ion-list>`);
+  voiceTranscript.insertAdjacentHTML('beforeend', `<ion-list inset="true" class="${kind === 'agent' ? 'plain' : 'bubble'}"><ion-item lines="none">${label}</ion-item></ion-list>`);
   scrollVoice();
   return voiceTranscript.lastElementChild.querySelector('ion-label > *'); // its text, rewritten as the agent speaks
 }

@@ -23,7 +23,7 @@
       --ion-color-primary-shade: #60b7db;
       --ion-color-primary-tint: #7cd5fa;
     }
-    /* Custom colors per Ionic's «Adding colors»: «teal» (#78b7af: info icon, costs and, in the assistant, your messages and the suggestions) and «rose» (#e47969: container with under 7 days left) */
+    /* Custom colors per Ionic's «Adding colors»: «teal» (#78b7af: info icon, costs and, in the assistant, the suggestions) and «rose» (#e47969: container with under 7 days left) */
     :root {
       --ion-color-teal: #78b7af;
       --ion-color-teal-rgb: 120, 183, 175;
@@ -70,6 +70,9 @@
     html.keyboard ion-footer { --ion-safe-area-bottom: 0px; } /* on the footer: modals set their own value */
     /* Assistant: the icon row of each message, shorter than a normal row and with the first icon (or the last one, in
        your messages) at the same indent as the text */
+    /* Assistant and voice: your messages in rounder bubbles; the assistant's, without a bubble, on the page itself */
+    ion-list.bubble.list-inset { border-radius: 18px; } /* over Ionic's inset radius */
+    .plain, .plain ion-item { background: transparent; --background: transparent; }
     #chat-body .msg-actions { --min-height: 32px; }
     #chat-body .msg-actions ion-buttons { margin: 0; gap: 16px; }
     #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.5; }
