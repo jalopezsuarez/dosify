@@ -951,15 +951,17 @@ function saveTimingEditor() {
 // model) are stored apart from the data, only in this browser, and never go in the CSV. On each request the assistant
 // gets all the app data; it can change them with tools, and each change becomes an editable proposal to save or discard.
 const AI_KEY = 'dosify-assistant';
-// No defaults: until all three fields are filled in, the assistant cannot be used.
-const AI_FIELDS = ['url', 'key', 'model'];
-const ai = (() => { const v = load(AI_KEY) ?? {}; return Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])); })();
+// No defaults: until url, key and model are filled in, the assistant cannot be used. The voice conversation needs the
+// ElevenLabs agent id (and, for a private agent, its API key); voiceTools keeps the ids of the tools created there.
+const AI_FIELDS = ['url', 'key', 'model', 'voiceAgent', 'voiceKey'];
+const ai = (() => { const v = load(AI_KEY) ?? {}; return { ...Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])), voiceTools: v.voiceTools && typeof v.voiceTools === 'object' ? v.voiceTools : {} }; })();
+const saveAi = () => localStorage.setItem(AI_KEY, JSON.stringify(ai));
 const aiReady = () => !!(ai.url && ai.key && ai.model); // no defaults: all three are needed
-const aiField = name => $(`#assistant-settings [name="${name}"]`);
+const aiField = name => $(`[name="${name}"]`, manager);
 // Saved while typing (not only on blur, which on iOS may not fire when closing Products) and the fields are
 // filled with the stored values each time Products opens.
 const showAi = () => AI_FIELDS.forEach(k => { aiField(k).value = ai[k]; });
-for (const k of AI_FIELDS) aiField(k).addEventListener('ionInput', () => { ai[k] = String(aiField(k).value ?? '').trim(); localStorage.setItem(AI_KEY, JSON.stringify(ai)); });
+for (const k of AI_FIELDS) aiField(k).addEventListener('ionInput', () => { ai[k] = str(aiField(k).value).trim(); saveAi(); });
 showAi();
 manager.addEventListener('ionModalWillPresent', showAi);
 
@@ -973,8 +975,12 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 
 // ---------- Assistant: system prompt ----------
 
+// The voice conversation uses the same prompt with spoken answers instead of Markdown, a confirmation by voice
+// instead of the cards' buttons (no dynamic UI) and only the last 30 days of records (less to send, faster answers).
+const VOICE_STYLE = 'Estás en una conversación por voz: responde en español con frases cortas y naturales, como hablando, sin Markdown, listas, tablas ni gráficas; di las fechas, horas y cantidades como se dicen («el 12 de noviembre», «a las nueve y media»).';
+const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar: dísela en una frase y pregunta si la guardas; con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
-function systemPrompt() {
+function systemPrompt(voice = false) {
   const now = new Date();
   // The same figures the app shows, per product and overall, with Spanish keys and euros rounded to cents.
   const cents = n => n === null ? null : Math.round(n * 100) / 100;
@@ -988,7 +994,7 @@ function systemPrompt() {
   const t = totals(), overall = { productos_activos: t.products.length, precio_envases_en_curso: t.containers, coste_dia: cents(t.costPerDay), coste_mes: cents(t.costPerMonth),
     gastado_en_envases: spent.length ? spent.reduce((n, x) => n + x, 0) : null,
     proximas_compras: t.shopping.map(x => ({ id: x.m.id, nombre: x.m.name, fin_del_envase: x.end, dias_hasta_fin: x.daysLeft })) };
-  return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}. Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
+  return `Eres el asistente de Dosify, una app para llevar la medicación y la suplementación (productos con sus pautas) y registrar las tomas. ${voice ? VOICE_STYLE : `Responde en español, breve y claro, en Markdown: títulos, negritas, listas y, cuando ayuden a comparar o resumir, tablas. Para mostrar evolución o reparto puedes añadir una gráfica con un bloque de código \`\`\`chart que contenga solo JSON: {"type": "bar"|"line"|"pie"|"doughnut", "labels": [...], "datasets": [{"label": "...", "data": [números]}]}.`} Usa solo los datos que te doy; si algo no está, dilo. Habla siempre en lenguaje natural y de tú, en segunda persona («has guardado», «tienes», «te queda»): nunca muestres JSON, claves, ids ni datos en bruto. No das consejo médico: para dudas de salud, remite al médico o al farmacéutico.
 Hoy es ${now.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (${today()}), y son las ${time(now)}.
 Datos:
 - timings: momentos de toma, en su orden (no se reordenan; id aleatorio; name es el nombre que ve el usuario; start y end, horas, opcionales; visible, si sale en la app; order, ids de producto en el orden de tomas). Por defecto son ${DEFAULT_TIMINGS.map(d => d.name).join(', ')}, pero pueden haberse renombrado: usa siempre los ids y nombres que ves en los datos. En la toma de cada día solo se ven los momentos visibles que ese día tienen algún producto pendiente o toma hecha.
@@ -998,11 +1004,11 @@ Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pa
 ${JSON.stringify(summary)}
 Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del envase en curso; coste al día y al mes; lo gastado en envases de todos los productos; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
 ${JSON.stringify(overall)}
-Datos completos:
-${JSON.stringify({ timings: state.timings, products: state.products, records: state.records })}
+${voice ? 'Datos (las tomas, solo de los últimos 30 días; para antes, usa los cálculos por producto):' : 'Datos completos:'}
+${JSON.stringify({ timings: state.timings, products: state.products, records: voice ? state.records.filter(e => e.day >= addDays(today(), -30)) : state.records })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
-Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado envases de X e Y» → una sección por producto con input date (key compra), number (key coste y dosis) y en actions add_container con id, bought "{{compra}}", cost "{{coste}}" y units "{{dosis}}"; «repasa lo que me queda» → un input number por producto con las dosis restantes y en actions adjust_stock con id y left; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
-Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas ya guardadas, registrar un envase comprado o cuadrar las dosis que quedan (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`;
+${voice ? VOICE_RULE : `Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado envases de X e Y» → una sección por producto con input date (key compra), number (key coste y dosis) y en actions add_container con id, bought "{{compra}}", cost "{{coste}}" y units "{{dosis}}"; «repasa lo que me queda» → un input number por producto con las dosis restantes y en actions adjust_stock con id y left; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas ya guardadas, registrar un envase comprado o cuadrar las dosis que quedan (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`}`;
 }
 
 // ---------- Assistant: tools ----------
@@ -1295,12 +1301,13 @@ let chatEpoch = 0, awaiting = false;
 const pendingProposals = () => chatView.filter(v => v.who === 'proposal' && v.status === 'pending');
 // The assistant is answered in text, never JSON, so it does not echo it to the user.
 const pushToolResult = (callId, content) => { if (!chat.some(m => m.role === 'tool' && m.tool_call_id === callId)) chat.push({ role: 'tool', tool_call_id: callId, content }); };
+// Applies a proposal and normalises the data after an assistant write (timing orders, sorted schedules and records).
+const applyForm = (name, draft) => { const summary = FORMS[name].apply(draft); Object.assign(state, clean(state)); commit(); return summary; };
 function decide(v, saved) {
   if (v.status !== 'pending') return; // already decided (e.g. double tap on «Guardar»): never applied twice
   const form = FORMS[v.tool];
   if (saved) {
-    const summary = form.apply(v.draft);
-    Object.assign(state, clean(state)); commit(); // normalise after an assistant write (timing orders, sorted schedules and records)
+    const summary = applyForm(v.tool, v.draft);
     v.status = 'saved'; v.text = summary ?? 'No se ha podido aplicar';
     pushToolResult(v.id, summary ? `Has guardado la propuesta. ${summary}. Datos finales (con los cambios que hayas hecho): ${form.describe(v.draft)}.` : 'No se ha podido aplicar: ya no existe.');
   } else {
@@ -1550,7 +1557,7 @@ function renderChat() {
     + (chatBusy ? '<ion-list inset="true"><ion-item lines="none"><ion-spinner name="dots"></ion-spinner></ion-item></ion-list>'
       : awaiting ? emptyList('Guarda o descarta las propuestas para continuar; si envías otro mensaje, se descartan.')
       : ready ? suggestionList(suggestions(suggestCount())) : '');
-  $('#chat-send').disabled = voice.disabled = chatBusy || !ready;
+  updatePill();
   drawCharts();
   chatBody.scrollToBottom(200);
 }
@@ -1586,29 +1593,164 @@ function repairChat() {
 // What exists right now, so the assistant corrects itself when it refers to something missing.
 const existingTimings = () => `Los momentos que hay ahora son: ${state.timings.map(ti => `«${label(ti.id)}» (id ${ti.id})`).join(', ')}.`;
 const existing = () => state.products.length ? `Los productos que hay ahora son: ${state.products.map(m => `«${m.name}» (id ${m.id})`).join(', ')}.` : 'Ahora mismo no hay ningún producto: si hace falta, créalo.';
-// ---------- Assistant: voice ----------
+// ---------- Assistant: input pill ----------
 
-// Push to talk with the browser's speech recognition, in Spanish: while the dot is held it listens (rose dot), the text
-// fills the input as it is recognised and, on release, it is sent. Without speech recognition, the dot does not show.
-const Speech = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-const voice = $('#chat-voice');
-let listening = null;
-function startVoice(e) {
-  e.preventDefault();
-  if (listening || voice.disabled) return;
-  let heard = false;
-  listening = Object.assign(new Speech(), { lang: 'es-ES', interimResults: true, continuous: true });
-  listening.onresult = ev => { heard = true; chatInput.value = [...ev.results].map(r => r[0].transcript).join(''); };
-  listening.onerror = () => {}; // «end» always follows
-  listening.onend = () => { listening = null; voice.classList.remove('listening'); if (heard && str(chatInput.value).trim()) sendChat(); };
-  voice.classList.add('listening');
-  listening.start();
+// One pill inside the input box: «Hablar» (opens the voice conversation) while it is empty and «Enviar» once there is
+// text; it is disabled while an answer is on its way and, to send, until the assistant is configured.
+const pill = $('#chat-send');
+function updatePill() {
+  const typed = !!str(chatInput.value).trim();
+  pill.textContent = typed ? 'Enviar' : 'Hablar';
+  pill.disabled = chatBusy || (typed && !aiReady());
 }
-const stopVoice = () => listening?.stop();
-if (Speech) {
-  voice.classList.remove('ion-hide');
-  voice.addEventListener('pointerdown', startVoice);
-  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) voice.addEventListener(type, stopVoice);
+// One-button alert for notices.
+function notice(header, message) {
+  const alert = $('#confirm');
+  Object.assign(alert, { header, message, buttons: [{ text: 'Aceptar', role: 'cancel' }] });
+  alert.present();
+}
+
+// ---------- Assistant: voice conversation (ElevenLabs) ----------
+
+// An ElevenLabs agent does the listening, the turns, the interruptions and the voice; the app gives it the prompt with
+// the data (systemPrompt(true)) and runs its tools in the browser. Each tool prepares a proposal shown as a card; it is
+// saved or discarded by voice (confirm_change, discard_change) or with the card's buttons. The transcript shows what is
+// said: the agent's words as its audio plays and the user's at the end of each turn. Both stay in the chat afterwards.
+const ELEVENLABS = 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.32.1/dist/lib.iife.js';
+const ELEVEN_API = 'https://api.elevenlabs.io/v1';
+const voiceModal = $('#voice'), voiceTranscript = $('#voice-transcript'), voiceMic = $('#voice-mic'), voiceState = $('#voice-state');
+const voicePending = new Map(); // proposal id → { name, draft }
+let call = null, voiceOpen = false, micOn = true, speaking = null; // speaking: the agent's line being said { el, text, final }
+const loadScript = src => new Promise((resolve, reject) => document.head.append(Object.assign(document.createElement('script'), { src, onload: resolve, onerror: () => reject(new Error('No se ha podido cargar ElevenLabs.')) })));
+async function eleven(path, init = {}) {
+  const res = await fetch(`${ELEVEN_API}${path}`, { ...init, headers: { 'xi-api-key': ai.voiceKey, 'Content-Type': 'application/json' } });
+  if (!res.ok) throw new Error(`ElevenLabs respondió ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return res.json();
+}
+
+// The tools of the voice conversation: those of the chat but the dynamic UI, plus confirming or discarding a proposal.
+const voiceTools = () => [...tools().filter(t => t.function.name !== 'ui'),
+  tool('confirm_change', 'Guarda la propuesta que quien usa la app acaba de aprobar', { id: stringProp('Id de la propuesta') }, ['id']),
+  tool('discard_change', 'Descarta la propuesta que quien usa la app no quiere', { id: stringProp('Id de la propuesta') }, ['id'])];
+// A JSON schema as ElevenLabs takes it: every property typed and described, and no enums (the timing ids change per
+// device and are in the prompt).
+const elevenSchema = (p, name) => p.type === 'object' ? { type: 'object', description: p.description ?? name, required: p.required ?? [], properties: Object.fromEntries(Object.entries(p.properties ?? {}).map(([k, v]) => [k, elevenSchema(v, k)])) }
+  : p.type === 'array' ? { type: 'array', description: p.description ?? name, items: elevenSchema(p.items ?? { type: 'string' }, name) }
+  : { type: ['boolean', 'integer', 'number'].includes(p.type) ? p.type : 'string', description: p.description ?? name };
+// «Preparar el agente de voz»: creates (or updates) each tool in ElevenLabs as a client tool, links them to the agent and
+// lets the app send it the prompt, the first message and the language.
+async function setupVoice() {
+  if (!ai.voiceAgent || !ai.voiceKey) return notice('Faltan datos', 'Pon el ID del agente y la API key de ElevenLabs.');
+  try {
+    const ids = [];
+    for (const { function: f } of voiceTools()) {
+      const body = JSON.stringify({ tool_config: { type: 'client', name: f.name, description: f.description, parameters: elevenSchema(f.parameters, f.name), expects_response: true, response_timeout_secs: 30 } });
+      const known = ai.voiceTools[f.name] && await eleven(`/convai/tools/${ai.voiceTools[f.name]}`, { method: 'PATCH', body }).catch(() => null);
+      ids.push(ai.voiceTools[f.name] = known?.id ?? (await eleven('/convai/tools', { method: 'POST', body })).id);
+    }
+    saveAi();
+    await eleven(`/convai/agents/${encodeURIComponent(ai.voiceAgent)}`, { method: 'PATCH', body: JSON.stringify({ conversation_config: { agent: { prompt: { tool_ids: ids } } },
+      platform_settings: { overrides: { conversation_config_override: { agent: { prompt: { prompt: true }, first_message: true, language: true } } } } }) });
+    notice('Agente preparado', `Tiene las ${ids.length} herramientas de Dosify y permiso para recibir los datos, el primer mensaje y el idioma.`);
+  } catch (e) { notice('No se ha podido preparar el agente', e.message); }
+}
+
+// Transcript lines, like the chat: the user's on the right in teal, the agent's on the left, errors in red.
+const setVoiceState = text => { voiceState.textContent = text; };
+// Scrolls the transcript to the end once Ionic has drawn what was just added.
+const scrollVoice = () => setTimeout(() => { voiceTranscript.scrollTop = voiceTranscript.scrollHeight; }, 60);
+function voiceLine(kind, text) {
+  const label = kind === 'user' ? `<ion-label class="ion-text-wrap ion-text-end"><ion-text color="teal" class="medium">${esc(text)}</ion-text></ion-label>`
+    : `<ion-label class="ion-text-wrap" ${kind === 'error' ? 'color="danger"' : ''}>${esc(text)}</ion-label>`;
+  voiceTranscript.insertAdjacentHTML('beforeend', `<ion-list inset="true"><ion-item lines="none">${label}</ion-item></ion-list>`);
+  scrollVoice();
+  return voiceTranscript.lastElementChild.querySelector('ion-label');
+}
+// The agent's line grows as its audio plays (alignment) and ends with the full text when it stops speaking.
+function sayChars(chars) {
+  speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
+  speaking.text += chars;
+  speaking.el.textContent = speaking.text;
+  scrollVoice();
+}
+function endAgentLine(cut) {
+  if (!speaking) return;
+  speaking.el.textContent = cut ? `${speaking.text.trim()}…` : speaking.final || speaking.text;
+  speaking = null;
+}
+function remember(role, text) {
+  chat.push({ role, content: text }); chatView.push({ who: role, text }); saveChat();
+}
+function onVoiceMessage({ source, message }) {
+  if (source === 'user') { endAgentLine(true); voiceLine('user', message); return remember('user', message); }
+  speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
+  speaking.final = message;
+  remember('assistant', message);
+}
+const showMic = () => { voiceMic.color = micOn ? 'rose' : 'primary'; voiceMic.querySelector('ion-icon').name = micOn ? 'mic' : 'mic-off'; voiceMic.setAttribute('aria-label', micOn ? 'Silenciar el micro' : 'Activar el micro'); };
+function toggleMic() {
+  micOn = !micOn;
+  call?.setMicMuted(!micOn);
+  showMic();
+  setVoiceState(micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar');
+}
+
+// Proposals by voice: a card with «Descartar» / «Guardar» in the transcript; the agent gets what to read and how to
+// confirm. Deciding by voice or with the buttons applies it like the chat's cards (and tells the agent about taps).
+function proposeByVoice(name, args) {
+  const form = FORMS[name], draft = form.draft(args ?? {});
+  if (!draft) return `No se ha podido proponer: ${form.missing?.() ?? `no existe ningún producto con ese id. ${existing()}`}`;
+  const bad = form.validate(draft);
+  if (bad.length) return `Faltan o no valen estos datos: ${bad.join(', ')}. Pregúntalos y vuelve a llamar con ellos.`;
+  const id = newId();
+  voicePending.set(id, { name, draft });
+  voiceTranscript.insertAdjacentHTML('beforeend', `<div data-voice-card="${id}"><ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(form.title(draft))}</h2><p>${esc(form.describe(draft))}</p></ion-label></ion-item></ion-list>
+    <div class="proposal-actions"><ion-button fill="outline" color="medium" data-voice-act="discard" data-id="${id}">Descartar</ion-button><ion-button data-voice-act="save" data-id="${id}">${saveText(form, draft)}</ion-button></div></div>`);
+  scrollVoice();
+  return `Propuesta ${id} preparada, sin guardar: ${form.describe(draft)}. Dísela en una frase y pregunta si la guardas.`;
+}
+function decideByVoice(id, save, tapped = false) {
+  const p = voicePending.get(id);
+  if (!p) return 'Esa propuesta ya no está pendiente.';
+  voicePending.delete(id);
+  const text = save ? applyForm(p.name, p.draft) ?? 'No se ha podido aplicar: ya no existe.' : `${FORMS[p.name].title(p.draft)}: propuesta descartada`;
+  voiceTranscript.querySelector(`[data-voice-card="${id}"]`).outerHTML = actionLine(save, text);
+  chatView.push({ who: 'action', ok: save, text }); saveChat();
+  if (tapped) call?.sendContextualUpdate(`Quien usa la app ha ${save ? `guardado en pantalla la propuesta ${id}: ${text}` : `descartado en pantalla la propuesta ${id}`}.`);
+  return save ? `Guardado. ${text}.` : 'Descartada; no se ha cambiado nada.';
+}
+const voiceClientTools = () => ({
+  ...Object.fromEntries(voiceTools().map(t => t.function.name).filter(name => FORMS[name]).map(name => [name, args => proposeByVoice(name, args)])),
+  confirm_change: ({ id }) => decideByVoice(id, true),
+  discard_change: ({ id }) => decideByVoice(id, false),
+});
+
+async function openVoice() {
+  if (!ai.voiceAgent) return notice('Conversación por voz', 'Configúrala en Productos › Asistente: el ID del agente de ElevenLabs, su API key y «Preparar el agente de voz».');
+  voiceTranscript.innerHTML = ''; voicePending.clear(); speaking = null; micOn = true; showMic(); setVoiceState('Conectando…');
+  await voiceModal.present();
+  voiceOpen = true;
+  try {
+    if (!window.ElevenLabsClient) await loadScript(ELEVENLABS);
+    const auth = ai.voiceKey ? { conversationToken: (await eleven(`/convai/conversation/token?agent_id=${encodeURIComponent(ai.voiceAgent)}`)).token } : { agentId: ai.voiceAgent };
+    call = await window.ElevenLabsClient.Conversation.startSession({ ...auth,
+      overrides: { agent: { prompt: { prompt: systemPrompt(true) }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
+      clientTools: voiceClientTools(),
+      onConnect: () => setVoiceState('Te escucho'),
+      onModeChange: ({ mode }) => { if (mode === 'listening') endAgentLine(false); setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
+      onAudioAlignment: a => sayChars(a.chars.join('')),
+      onMessage: onVoiceMessage,
+      onInterruption: () => endAgentLine(true),
+      onError: message => voiceLine('error', message),
+      onDisconnect: () => { call = null; setVoiceState('Conversación terminada'); },
+    });
+    if (!voiceOpen) endVoice(); // closed while connecting
+  } catch (e) { voiceLine('error', e.message); setVoiceState('No se ha podido conectar'); }
+}
+function endVoice() {
+  voiceOpen = false;
+  call?.endSession(); call = null;
+  renderChat();
 }
 
 // ---------- Assistant: message bar and «Texto» ----------
@@ -1790,7 +1932,13 @@ $('#delete').onclick = () => ask('¿Eliminar este producto?', () => { deleteProd
 
 $('#assistant').onclick = () => { renderChat(); chatModal.present(); loadLibs().then(renderChat); };
 $('#chat-new').onclick = () => { chatEpoch++; resetSuggestions(); for (const r of resolvers.values()) r(); resolvers.clear(); chat = []; chatView = []; chatBusy = false; awaiting = false; renderChat(); };
-$('#chat-send').onclick = sendChat;
+$('#chat-send').onclick = () => str(chatInput.value).trim() ? sendChat() : openVoice();
+chatInput.addEventListener('ionInput', updatePill);
+$('#voice-setup').onclick = setupVoice;
+$('#voice-mic').onclick = toggleMic;
+$('#voice-close').onclick = () => voiceModal.dismiss();
+voiceModal.addEventListener('ionModalDidDismiss', endVoice);
+$('#voice-transcript').addEventListener('click', e => { const b = e.target.closest('[data-voice-act]'); if (b) decideByVoice(b.dataset.id, b.dataset.voiceAct === 'save', true); });
 // Interaction with the chat: suggestions and «Más», message icons, proposal rows (open the edit view), proposal fields
 // (written to the draft), chips (timings, schedules, visible, ui elements) and buttons (ui buttons, save, discard, all).
 // UI elements: checkboxes, toggles, radios and selects write their value to the draft.
