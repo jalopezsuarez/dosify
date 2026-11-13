@@ -77,10 +77,13 @@
       :root { --glass-background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)); --glass-border: rgba(255, 255, 255, 0.08);
         --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12); }
     }
-    /* Assistant and voice: your messages in rounder glass bubbles; the assistant's, without a bubble, on the page itself */
-    ion-list.bubble.list-inset { border-radius: 18px; overflow: visible; } /* over Ionic's inset radius; the shadow shows */
-    .bubble { background: var(--glass-background); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); }
-    .bubble ion-item { --background: transparent; }
+    /* Assistant and voice: your messages in glass bubbles as wide as their text (up to the screen less 64 px), on the
+       right, with the text at the item's size and the icon row inside; the assistant's, without a bubble, on the page */
+    .bubble { width: fit-content; max-width: calc(100% - 64px); margin: 16px 16px 16px auto; padding: 11px 16px; border-radius: 18px;
+      background: var(--glass-background); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); }
+    .bubble-text { font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
+    .md .bubble-text { font-size: 16px; }
+    .bubble .msg-actions { --background: transparent; --padding-start: 0; --inner-padding-end: 0; margin-top: 4px; }
     .plain, .plain ion-item { background: transparent; --background: transparent; }
     .plain ion-item { --padding-start: 0; --inner-padding-end: 0; } /* no indent: the text starts at the list's edge */
     #chat-body .msg-actions { --min-height: 32px; }
