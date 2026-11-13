@@ -90,11 +90,10 @@
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
     /* Voice conversation: the transcript on top and, below it, the microphone in a big rounded flat capsule that takes
-       the bottom third, close to the bottom edge */
+       the bottom third, close to the bottom edge; the capsule sticks to the bottom and the transcript scrolls behind it */
     #voice-clock { font-variant-numeric: tabular-nums; } /* the running clock does not wobble */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; padding-bottom: 0; } /* the capsule keeps its own room for the home indicator */
-    #voice-transcript { overflow-y: auto; }
-    #voice-controls { height: max(210px, calc(33.33% - 16px)); margin: 8px 12px max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); gap: 16px; border-radius: 40px; background: var(--surface); }
+    #voice-controls { --gap: max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); position: sticky; bottom: var(--gap); z-index: 1; height: max(210px, calc(33.33% - 16px)); margin: 8px 12px var(--gap); gap: 16px; border-radius: 40px; background: var(--surface); }
     #voice-mic { width: 136px; height: 136px; margin: 0; }
     #voice-mic ion-icon { font-size: 56px; }
     /* Markdown replies: tables with thin borders and horizontal scroll when they do not fit; charts with fixed height */
@@ -232,7 +231,7 @@
         <ion-title id="voice-clock">00:00</ion-title>
       </ion-toolbar>
     </ion-header>
-    <ion-content color="light" scroll-y="false">
+    <ion-content color="light">
       <div id="voice-transcript" class="ion-flex-1 ion-padding-vertical"></div>
       <div id="voice-controls" class="ion-flex-none ion-display-flex ion-flex-column ion-align-items-center ion-justify-content-center">
         <ion-button id="voice-mic" color="rose" shape="round" aria-label="Silenciar el micro"><ion-icon slot="icon-only" name="mic"></ion-icon></ion-button>

@@ -1682,7 +1682,7 @@ const stopClock = () => clearInterval(clock);
 // Transcript lines, like the chat: the user's on the right in a bubble, the agent's on the left without one, errors in red.
 const setVoiceState = text => { voiceState.textContent = text; };
 // Scrolls the transcript to the end once Ionic has drawn what was just added.
-const scrollVoice = () => setTimeout(() => { voiceTranscript.scrollTop = voiceTranscript.scrollHeight; }, 60);
+const scrollVoice = () => setTimeout(() => voiceModal.querySelector('ion-content').scrollToBottom(0), 60);
 function voiceLine(kind, text) {
   voiceTranscript.insertAdjacentHTML('beforeend', kind === 'user' ? bubble(esc(text))
     : kind === 'agent' ? `<div class="ion-margin-vertical">${plainLine(`<span>${esc(text)}</span>`)}</div>`
