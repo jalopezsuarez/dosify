@@ -1379,7 +1379,7 @@ function drawCharts() {
           backgroundColor: round ? spec.labels.map((_, j) => CHART_COLORS[j % CHART_COLORS.length]) : CHART_COLORS[i % CHART_COLORS.length],
           borderColor: round ? undefined : CHART_COLORS[i % CHART_COLORS.length],
         })) },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: round || spec.datasets.length > 1 } } },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: round || spec.datasets.length > 1 } } },
       }));
     } catch {
       canvas.parentElement.outerHTML = '<ion-text color="medium">(Gráfica no válida)</ion-text>';
