@@ -68,8 +68,6 @@
     ion-app { height: calc(100% - var(--keyboard, 0px)); bottom: var(--keyboard, 0px); }
     /* While typing (app.js sets «keyboard»), no room for the home indicator under the input box: the keyboard covers it */
     html.keyboard ion-footer { --ion-safe-area-bottom: 0px; } /* on the footer: modals set their own value */
-    /* Assistant: the icon row of each message, shorter than a normal row and with the first icon (or the last one, in
-       your messages) at the same indent as the text */
     /* Flat fill (no border, no shadow) shared by your messages, the input box and the voice capsule */
     :root { --surface: #fff; }
     @media (prefers-color-scheme: dark) { :root { --surface: rgba(255, 255, 255, 0.06); } }
@@ -80,8 +78,10 @@
     .bubble-text { font-size: 0.875rem; line-height: 1.5; overflow-wrap: anywhere; text-align: end; } /* as the assistant's text: Ionic's wrapped label (14 px in iOS, 16 px in Android) */
     .md .bubble-text { font-size: 1rem; }
     .bubble .msg-actions { --background: transparent; --padding-start: 0; --inner-padding-end: 0; margin-top: 4px; }
-    .plain, .plain ion-item { background: transparent; --background: transparent; }
-    .plain ion-item { --padding-start: 0; --inner-padding-end: 0; } /* no indent: the text starts at the list's edge */
+    .plain { background: transparent; }
+    .plain ion-item { --background: transparent; --padding-start: 0; --inner-padding-end: 0; } /* no indent: the text starts at the list's edge */
+    /* Assistant: the icon row of each message, shorter than a normal row and with the first icon (or the last one, in
+       your messages) at the same indent as the text */
     #chat-body .msg-actions { --min-height: 32px; }
     #chat-body .msg-actions ion-buttons { margin: 0; gap: 16px; }
     #chat-body .msg-actions ion-button { margin: 0; width: auto; min-width: 0; --padding-start: 0; --padding-end: 0; opacity: 0.7; }
@@ -95,7 +95,7 @@
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
     /* Assistant: «Hablar» / «Enviar» pill inside the input box, primary with white text */
-    #chat-send { --ion-color-contrast: #fff !important; --border-radius: 999px; --padding-start: 16px; --padding-end: 16px; height: 30px; font-size: 15px; margin: 0 0 0 8px; align-self: center; text-transform: none; font-weight: 600; letter-spacing: 0; }
+    #chat-send { --ion-color-contrast: #fff !important; --padding-start: 16px; --padding-end: 16px; height: 30px; font-size: 15px; margin: 0 0 0 8px; text-transform: none; font-weight: 600; letter-spacing: 0; }
     /* Voice conversation: the transcript on top and, below it, the microphone in a big rounded flat capsule that takes
        the bottom third, close to the bottom edge */
     #voice-clock { font-variant-numeric: tabular-nums; } /* the running clock does not wobble */
@@ -105,7 +105,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; border-radius: 40px;
       background: var(--surface); }
     #voice-state { color: color-mix(in srgb, var(--ion-text-color, #000) 75%, transparent); } /* readable on the capsule */
-    #voice-mic { width: 136px; height: 136px; --border-radius: 50%; margin: 0; }
+    #voice-mic { width: 136px; height: 136px; margin: 0; }
     #voice-mic ion-icon { font-size: 56px; }
     /* Markdown replies: tables with thin borders and horizontal scroll when they do not fit; charts with fixed height */
     #chat-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; margin: 6px 0; }
@@ -245,7 +245,7 @@
     <ion-content color="light" scroll-y="false">
       <div id="voice-transcript"></div>
       <div id="voice-controls">
-        <ion-button id="voice-mic" color="rose" aria-label="Silenciar el micro"><ion-icon slot="icon-only" name="mic"></ion-icon></ion-button>
+        <ion-button id="voice-mic" color="rose" shape="round" aria-label="Silenciar el micro"><ion-icon slot="icon-only" name="mic"></ion-icon></ion-button>
         <ion-note id="voice-state">Conectando…</ion-note>
       </div>
     </ion-content>
