@@ -78,12 +78,12 @@
     .secret input { -webkit-text-security: disc; }
     /* Assistant: «Hablar» / «Enviar» pill inside the input box, primary with white text */
     #chat-send { --ion-color-contrast: #fff !important; --border-radius: 999px; --padding-start: 16px; --padding-end: 16px; height: 32px; font-size: 15px; margin: 0 0 0 8px; align-self: center; text-transform: none; font-weight: 600; letter-spacing: 0; }
-    /* Voice conversation: the transcript on top and the microphone below, half and half */
+    /* Voice conversation: the transcript on top (two thirds) and the microphone below (one third) */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; }
-    #voice-transcript { flex: 1; overflow-y: auto; padding: 8px 0; }
+    #voice-transcript { flex: 2; overflow-y: auto; padding: 8px 0; }
     #voice-controls { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; border-top: 1px solid var(--ion-color-step-150, #e3e3e3); }
-    #voice-mic { width: 136px; height: 136px; --border-radius: 50%; margin: 0; }
-    #voice-mic ion-icon { font-size: 56px; }
+    #voice-mic { width: 120px; height: 120px; --border-radius: 50%; margin: 0; }
+    #voice-mic ion-icon { font-size: 50px; }
     /* Markdown replies: tables with thin borders and horizontal scroll when they do not fit; charts with fixed height */
     #chat-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; margin: 6px 0; }
     #chat-body th, #chat-body td { border: 1px solid var(--ion-color-step-250, #d0d0d0); padding: 4px 8px; text-align: left; white-space: nowrap; }

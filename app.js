@@ -1623,7 +1623,7 @@ const ELEVEN_API = 'https://api.elevenlabs.io/v1';
 const PROMPT_BYTES = 60000, RECORDS_BYTES = 40000; // what the prompt and a list of records may take, under the 64 KB limit
 const voiceModal = $('#voice'), voiceTranscript = $('#voice-transcript'), voiceMic = $('#voice-mic'), voiceState = $('#voice-state');
 const voicePending = new Map(); // proposal id → { name, draft }
-let call = null, voiceOpen = false, micOn = true, agentSpeaking = false, speaking = null; // speaking: the agent's line being said { el, text, final }
+let call = null, voiceOpen = false, micOn = true, agentSpeaking = false, lineEnd = 0, speaking = null; // speaking: the agent's line being said { el, text, final }
 const loadScript = src => new Promise((resolve, reject) => document.head.append(Object.assign(document.createElement('script'), { src, onload: resolve, onerror: () => reject(new Error('No se ha podido cargar ElevenLabs.')) })));
 async function eleven(path, init = {}) {
   const res = await fetch(`${ELEVEN_API}${path}`, { ...init, headers: { 'xi-api-key': ai.voiceKey, 'Content-Type': 'application/json' } });
@@ -1677,16 +1677,20 @@ function voiceLine(kind, text) {
   scrollVoice();
   return voiceTranscript.lastElementChild.querySelector('ion-label > *'); // its text, rewritten as the agent speaks
 }
-// The agent's line grows as its audio plays (alignment) and ends with the full text when it stops speaking.
+// The agent's line grows as its audio plays (alignment) and ends with the full text when the user speaks or 3 s after
+// the agent stops (its audio can pause mid-answer: the line then carries on). Answers between two user turns (around a
+// tool call) share a line.
 // Without the voice's audio tags («[happy]») and, if nothing is said («...»), empty.
 const spoken = text => /[\p{L}\p{N}]/u.test(text) ? text.replace(/\[[^\]]*\]\s*/g, '').trim() : '';
 function sayChars(chars) {
+  clearTimeout(lineEnd);
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.text += chars;
   speaking.el.textContent = spoken(speaking.text);
   scrollVoice();
 }
 function endAgentLine(cut) {
+  clearTimeout(lineEnd);
   if (!speaking) return;
   const text = cut ? spoken(speaking.text) && `${spoken(speaking.text)}…` : speaking.final || spoken(speaking.text);
   if (text) speaking.el.textContent = text; else speaking.el.closest('ion-list').remove();
@@ -1698,9 +1702,9 @@ function remember(role, text) {
 function onVoiceMessage({ source, message }) {
   message = spoken(message);
   if (!message) return; // silence comes as «...»
-  if (source === 'user') { endAgentLine(true); voiceLine('user', message); return remember('user', message); }
+  if (source === 'user') { endAgentLine(agentSpeaking); voiceLine('user', message); return remember('user', message); }
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
-  speaking.final = message;
+  speaking.final = [speaking.final, message].filter(Boolean).join(' ');
   remember('assistant', message);
 }
 const showMic = () => { voiceMic.color = micOn ? 'rose' : 'primary'; voiceMic.querySelector('ion-icon').name = micOn ? 'mic' : 'mic-off'; voiceMic.setAttribute('aria-label', micOn ? 'Silenciar el micro' : 'Activar el micro'); };
@@ -1768,7 +1772,7 @@ async function openVoice() {
       overrides: { agent: { prompt: { prompt }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
       clientTools: voiceClientTools(),
       onConnect: () => setVoiceState('Te escucho'),
-      onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (!agentSpeaking) { endAgentLine(false); closing?.(); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
+      onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (!agentSpeaking) { clearTimeout(lineEnd); lineEnd = setTimeout(endAgentLine, 3000, false); closing?.(); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
       onAudioAlignment: a => sayChars(a.chars.join('')),
       onMessage: onVoiceMessage,
       onInterruption: () => endAgentLine(true),
@@ -1788,7 +1792,7 @@ function closeVoice(all) {
   return `${all ? 'El asistente se cierra' : 'La conversación termina'} en cuanto acabes de hablar: despídete en pocas palabras.`;
 }
 function endVoice() {
-  closing = null;
+  closing = null; clearTimeout(lineEnd);
   voiceOpen = false;
   call?.endSession(); call = null;
   renderChat();
