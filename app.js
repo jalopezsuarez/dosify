@@ -1004,8 +1004,8 @@ Cálculos por producto, los mismos que muestra la app (dosis de hoy; si está pa
 ${JSON.stringify(summary)}
 Totales de los productos activos (lo que cuesta un envase de cada uno, al precio del envase en curso; coste al día y al mes; lo gastado en envases de todos los productos; y los envases que se acaban en ${SHOP_DAYS} días, del más urgente al menos):
 ${JSON.stringify(overall)}
-${voice ? 'Datos (las tomas, solo de los últimos 30 días; para antes, usa los cálculos por producto):' : 'Datos completos:'}
-${JSON.stringify({ timings: state.timings, products: state.products, records: voice ? state.records.filter(e => e.day >= addDays(today(), -30)) : state.records })}
+${voice ? 'Datos (sin las tomas registradas: para verlas, llama a get_records con los días y, si quieres, el producto):' : 'Datos completos:'}
+${JSON.stringify({ timings: state.timings, products: state.products, ...!voice && { records: state.records } })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
 ${voice ? VOICE_RULE : `Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado envases de X e Y» → una sección por producto con input date (key compra), number (key coste y dosis) y en actions add_container con id, bought "{{compra}}", cost "{{coste}}" y units "{{dosis}}"; «repasa lo que me queda» → un input number por producto con las dosis restantes y en actions adjust_stock con id y left; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
 Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas ya guardadas, registrar un envase comprado o cuadrar las dosis que quedan (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`}`;
@@ -1613,11 +1613,14 @@ function notice(header, message) {
 // ---------- Assistant: voice conversation (ElevenLabs) ----------
 
 // An ElevenLabs agent does the listening, the turns, the interruptions and the voice; the app gives it the prompt with
-// the data (systemPrompt(true)) and runs its tools in the browser. Each tool prepares a proposal shown as a card; it is
-// saved or discarded by voice (confirm_change, discard_change) or with the card's buttons. The transcript shows what is
-// said: the agent's words as its audio plays and the user's at the end of each turn. Both stay in the chat afterwards.
+// the data but the records (systemPrompt(true)), which it reads with get_records, and runs its tools in the browser.
+// Each message to the agent must stay under 64 KB: that is why the records are read on demand and capped. Each other
+// tool prepares a proposal shown as a card; it is saved or discarded by voice (confirm_change, discard_change) or with
+// the card's buttons. The transcript shows what is said: the agent's words as its audio plays and the user's at the end
+// of each turn. Both stay in the chat afterwards.
 const ELEVENLABS = 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.32.1/dist/lib.iife.js';
 const ELEVEN_API = 'https://api.elevenlabs.io/v1';
+const PROMPT_BYTES = 60000, RECORDS_BYTES = 40000; // what the prompt and a list of records may take, under the 64 KB limit
 const voiceModal = $('#voice'), voiceTranscript = $('#voice-transcript'), voiceMic = $('#voice-mic'), voiceState = $('#voice-state');
 const voicePending = new Map(); // proposal id → { name, draft }
 let call = null, voiceOpen = false, micOn = true, speaking = null; // speaking: the agent's line being said { el, text, final }
@@ -1629,8 +1632,10 @@ async function eleven(path, init = {}) {
   return res.json();
 }
 
-// The tools of the voice conversation: those of the chat but the dynamic UI, plus confirming or discarding a proposal.
+// The tools of the voice conversation: those of the chat but the dynamic UI, plus reading the records and confirming or
+// discarding a proposal.
 const voiceTools = () => [...tools().filter(t => t.function.name !== 'ui'),
+  tool('get_records', 'Consulta las tomas registradas entre dos días, de todos los productos o de uno', { from: stringProp('Primer día AAAA-MM-DD'), to: stringProp('Último día AAAA-MM-DD'), id: stringProp('Id del producto; si no, de todos') }, ['from', 'to']),
   tool('confirm_change', 'Guarda la propuesta que quien usa la app acaba de aprobar', { id: stringProp('Id de la propuesta') }, ['id']),
   tool('discard_change', 'Descarta la propuesta que quien usa la app no quiere', { id: stringProp('Id de la propuesta') }, ['id'])];
 // A JSON schema as ElevenLabs takes it: every property typed and described, and no enums (the timing ids change per
@@ -1720,7 +1725,18 @@ function decideByVoice(id, save, tapped = false) {
   if (tapped) call?.sendContextualUpdate(`Quien usa la app ha ${save ? `guardado en pantalla la propuesta ${id}: ${text}` : `descartado en pantalla la propuesta ${id}`}.`);
   return save ? `Guardado. ${text}.` : 'Descartada; no se ha cambiado nada.';
 }
+// The records between two days (of one product or all), the latest first, as many as fit in a message to the agent.
+function readRecords({ from, to, id }) {
+  const found = state.records.filter(e => e.day >= date(from) && e.day <= (date(to) || '9999') && (!id || e.id === id))
+    .sort((a, b) => b.day.localeCompare(a.day) || b.at.localeCompare(a.at))
+    .map(e => ({ day: e.day, time: time(e.at), timing: e.timing, id: e.id, name: e.name, dose: e.dose, notes: e.notes }));
+  if (!found.length) return 'No hay tomas registradas en esos días.';
+  const fit = [];
+  for (let size = 0, e; (e = found[fit.length]) && (size += new Blob([JSON.stringify(e)]).size) < RECORDS_BYTES;) fit.push(e);
+  return `${found.length} tomas${fit.length < found.length ? `; aquí van las ${fit.length} más recientes (para las demás, pide menos días)` : ''}: ${JSON.stringify(fit)}`;
+}
 const voiceClientTools = () => ({
+  get_records: readRecords,
   ...Object.fromEntries(voiceTools().map(t => t.function.name).filter(name => FORMS[name]).map(name => [name, args => proposeByVoice(name, args)])),
   confirm_change: ({ id }) => decideByVoice(id, true),
   discard_change: ({ id }) => decideByVoice(id, false),
@@ -1734,8 +1750,10 @@ async function openVoice() {
   try {
     if (!window.ElevenLabsClient) await loadScript(ELEVENLABS);
     const auth = ai.voiceKey ? { conversationToken: (await eleven(`/convai/conversation/token?agent_id=${encodeURIComponent(ai.voiceAgent)}`)).token } : { agentId: ai.voiceAgent };
+    const prompt = systemPrompt(true);
+    if (new Blob([prompt]).size > PROMPT_BYTES) throw new Error('Hay demasiados datos para la conversación por voz: acorta las indicaciones, referencias o notas de los productos.');
     call = await window.ElevenLabsClient.Conversation.startSession({ ...auth,
-      overrides: { agent: { prompt: { prompt: systemPrompt(true) }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
+      overrides: { agent: { prompt: { prompt }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
       clientTools: voiceClientTools(),
       onConnect: () => setVoiceState('Te escucho'),
       onModeChange: ({ mode }) => { if (mode === 'listening') endAgentLine(false); setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
