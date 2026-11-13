@@ -72,10 +72,12 @@
     :root { --surface: #fff; }
     @media (prefers-color-scheme: dark) { :root { --surface: rgba(255, 255, 255, 0.06); } }
     /* Assistant and voice: your messages in flat bubbles (up to the screen less 64 px; placed with Ionic's flex and
-       margin utilities), with the text at the size of the assistant's (Ionic's wrapped label: 14 px in iOS, 16 px in
-       Android) and the icon row inside */
+       margin utilities), with the text as the assistant's and the icon row inside */
     .bubble { max-width: calc(100% - 32px); padding: 11px 16px; border-radius: 18px; background: var(--surface); }
     .bubble ion-label { overflow-wrap: anywhere; }
+    /* Assistant and voice: your messages and the replies at the reading size (1rem: in iOS the system's body text,
+       17 pt by default, which grows with its text size; 16 px in Android), not Ionic's smaller wrapped label */
+    ion-label.reading.ion-text-wrap { font-size: 1rem; }
     .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; }
     /* Assistant: the icon row of each message, Ionic's own, on the message's background */
     #chat-body .msg-actions { --background: transparent; }
