@@ -978,7 +978,7 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // The voice conversation uses the same prompt with spoken answers instead of Markdown, a confirmation by voice
 // instead of the cards' buttons (no dynamic UI) and only the last 30 days of records (less to send, faster answers).
 const VOICE_STYLE = 'Estás en una conversación por voz: responde en español con frases cortas y naturales, como hablando, sin Markdown, listas, tablas ni gráficas; di las fechas, horas y cantidades como se dicen («el 12 de noviembre», «a las nueve y media»).';
-const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar, y se pregunta una sola vez: nunca preguntes «¿la guardo?» ni pidas permiso antes de llamar a la herramienta (tampoco al pasar al siguiente elemento: llama y pregunta entonces); con la propuesta preparada, dísela en una frase y pregunta si la guardas, salvo que su último mensaje ya pidiera o aprobara justo ese cambio: entonces llama directamente a confirm_change sin volver a preguntar. Con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Si pide terminar la conversación (terminar, colgar, dejarlo), despídete en pocas palabras y llama a end_conversation; si pide cerrar el asistente o salir, despídete igual y llama a close_assistant. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
+const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar, que sale en pantalla con los botones «Descartar» y «Guardar», y se pregunta una sola vez, con ella ya en pantalla: nunca preguntes «¿la guardo?», «¿la marco?» ni pidas permiso antes de llamar a la herramienta (tampoco al pasar al siguiente elemento: llama primero y pregunta después); con la propuesta preparada, dísela en una frase y pregunta si la guardas. Solo cuando conteste a esa pregunta: con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Si pide terminar la conversación (terminar, colgar, dejarlo), despídete en pocas palabras y llama a end_conversation; si pide cerrar el asistente o salir, despídete igual y llama a close_assistant. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
 function systemPrompt(voice = false) {
   const now = new Date();
@@ -1716,7 +1716,7 @@ function remember(role, text) {
 function onVoiceMessage({ source, message }) {
   message = spoken(message);
   if (!message) return; // silence comes as «...»
-  if (source === 'user') { endAgentLine(agentSpeaking); voiceLine('user', message); return remember('user', message); }
+  if (source === 'user') { for (const p of voicePending.values()) p.answered = true; endAgentLine(agentSpeaking); voiceLine('user', message); return remember('user', message); }
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.final = [speaking.final, message].filter(Boolean).join(' ');
   remember('assistant', message);
@@ -1731,21 +1731,23 @@ function toggleMic() {
 
 // Proposals by voice: a card with «Descartar» / «Guardar» in the transcript; the agent gets what to read and how to
 // confirm. Deciding by voice or with the buttons applies it like the chat's cards (and tells the agent about taps).
+// By voice it is saved only once the user has spoken after the card appeared: the question is asked with it on screen.
 function proposeByVoice(name, args) {
   const form = FORMS[name], draft = form.draft(args ?? {});
   if (!draft) return `No se ha podido proponer: ${form.missing?.() ?? `no existe ningún producto con ese id. ${existing()}`}`;
   const bad = form.validate(draft);
   if (bad.length) return `Faltan o no valen estos datos: ${bad.join(', ')}. Pregúntalos y vuelve a llamar con ellos.`;
   const id = newId();
-  voicePending.set(id, { name, draft });
+  voicePending.set(id, { name, draft, answered: false }); // answered: the user has spoken since the card appeared
   voiceTranscript.insertAdjacentHTML('beforeend', `<div data-voice-card="${id}"><ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(form.title(draft))}</h2><p>${esc(form.describe(draft))}</p></ion-label></ion-item></ion-list>
     <div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom"><ion-button fill="outline" color="medium" data-voice-act="discard" data-id="${id}">Descartar</ion-button><ion-button data-voice-act="save" data-id="${id}">${saveText(form, draft)}</ion-button></div></div>`);
   scrollVoice();
-  return `Propuesta ${id} preparada, sin guardar: ${form.describe(draft)}. Si su último mensaje ya aprobó este cambio (un «sí» a lo que le propusiste), llama ya a confirm_change con ${id} sin volver a preguntar; si no, dísela en una frase y pregunta si la guardas.`;
+  return `Propuesta ${id} preparada y en pantalla, sin guardar: ${form.describe(draft)}. Dísela en una frase y pregunta si la guardas; espera su respuesta antes de confirm_change.`;
 }
 function decideByVoice(id, save, tapped = false) {
   const p = voicePending.get(id);
   if (!p) return 'Esa propuesta ya no está pendiente.';
+  if (save && !tapped && !p.answered) return 'Aún no ha contestado a esta propuesta: dísela en una frase, pregunta si la guardas y espera su respuesta.';
   voicePending.delete(id);
   const text = save ? applyForm(p.name, p.draft) ?? 'No se ha podido aplicar: ya no existe.' : `${FORMS[p.name].title(p.draft)}: propuesta descartada`;
   voiceTranscript.querySelector(`[data-voice-card="${id}"]`).outerHTML = actionLine(save, text);
