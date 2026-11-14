@@ -1493,12 +1493,14 @@ const proposalCard = (v, i) => {
     </div>
   </div>`;
 };
-// A message in the chat and the voice transcript: a row on the chat's own background (color="light", as the page),
-// without a card; yours aligned to the right. All Ionic.
-const messageLine = (html, mine = false) => `<ion-item color="light" lines="none"><ion-label class="ion-text-wrap reading${mine ? ' ion-text-end' : ''}">${html}</ion-label></ion-item>`;
+// A message in the chat and the voice transcript, all Ionic: yours in a card (inset list, as the «Texto» screen), with
+// the text on the right; the assistant's, a row on the chat's own background (color="light", as the page).
+const messageLine = (html, mine = false, bar = '') => mine
+  ? `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap reading ion-text-end">${html}</ion-label></ion-item>${bar}</ion-list>`
+  : `<div class="ion-margin-vertical"><ion-item color="light" lines="none"><ion-label class="ion-text-wrap reading">${html}</ion-label></ion-item>${bar}</div>`;
 const BLOCKS = {
-  user: (v, i) => `<div class="ion-margin-vertical">${messageLine(linkify(v.text), true)}${messageBar(i, true)}</div>`,
-  assistant: (v, i) => `<div class="ion-margin-vertical">${messageLine(markdown(v.text))}${messageBar(i, false)}</div>`,
+  user: (v, i) => messageLine(linkify(v.text), true, messageBar(i, true)),
+  assistant: (v, i) => messageLine(markdown(v.text), false, messageBar(i, false)),
   action: (v, i) => actionLine(v.ok, v.text),
   error: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
   proposal: (v, i) => proposalCard(v, i),
@@ -1683,8 +1685,8 @@ const setVoiceState = text => { voiceState.textContent = text; };
 // Scrolls the transcript to the end once Ionic has drawn what was just added.
 const scrollVoice = () => setTimeout(() => voiceModal.querySelector('ion-content').scrollToBottom(0), 60);
 function voiceLine(kind, text) {
-  voiceTranscript.insertAdjacentHTML('beforeend', kind === 'user' ? `<div class="ion-margin-vertical">${messageLine(esc(text), true)}</div>`
-    : kind === 'agent' ? `<div class="ion-margin-vertical">${messageLine(`<span>${esc(text)}</span>`)}</div>`
+  voiceTranscript.insertAdjacentHTML('beforeend', kind === 'user' ? messageLine(esc(text), true)
+    : kind === 'agent' ? messageLine(`<span>${esc(text)}</span>`)
     : `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger"><span>${esc(text)}</span></ion-label></ion-item></ion-list>`);
   scrollVoice();
   return voiceTranscript.lastElementChild.querySelector('ion-label > *'); // its text, rewritten as the agent speaks
@@ -1818,7 +1820,7 @@ function endVoice() {
 const textModal = $('#text-view');
 const copyText = text => navigator.clipboard.writeText(text).catch(() => {});
 const messageButton = (i, act, icon, title) => `<ion-button color="medium" data-msg="${i}" data-msg-act="${act}" aria-label="${title}" title="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
-const messageBar = (i, mine) => `<ion-item color="light" lines="none"><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
+const messageBar = (i, mine) => `<ion-item lines="none"${mine ? '' : ' color="light"'}><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
 const MESSAGE_ACTIONS = {
   copy: v => copyText(v.text),
   // The «Texto» screen opens with all the text already selected.
