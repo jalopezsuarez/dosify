@@ -72,8 +72,8 @@
        17 pt by default, which grows with its text size; 16 px in Android), not Ionic's smaller wrapped label */
     ion-label.reading.ion-text-wrap { font-size: 1rem; }
     /* Assistant: the bar of the input box, transparent: the conversation (fullscreen) scrolls behind the capsule */
-    #chat ion-footer ion-toolbar { --background: transparent; }
-    /* Assistant: the input box, an Ionic card like the voice one, with two rows: the text, full width, that grows, and
+    #chat ion-footer ion-toolbar { --background: transparent; --padding-start: 0; --padding-end: 0; padding-inline: 0; } /* the box as wide as the chat's cards (iOS modals give toolbars 8 px) */
+    /* Assistant: the input box, an Ionic inset list like the chat's cards and the voice one, with two rows: the text, full width, that grows, and
        below it a row of actions on the right («Hablar» / «Enviar», white on the main color) */
     #chat-composer { padding: 0 8px 8px; }
     #chat-input { --padding-start: 10px; --padding-end: 10px; font-size: 17px; }
@@ -83,8 +83,8 @@
     #chat-send { --ion-color-contrast: #fff !important; margin: 0; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
-    /* Voice conversation: the transcript on top and, below it, the microphone in an Ionic card that takes the bottom
-       third, close to the bottom edge; the card sticks to the bottom and the transcript scrolls behind it */
+    /* Voice conversation: the transcript on top and, below it, the microphone in an Ionic inset list (a card) that takes the bottom
+       third, close to the bottom edge; it sticks to the bottom and the transcript scrolls behind it */
     #voice ion-content::part(scroll) { display: flex; flex-direction: column; padding-bottom: 0; } /* the capsule keeps its own room for the home indicator */
     #voice-controls { --gap: max(8px, calc(var(--ion-safe-area-bottom, 0px) - 14px)); position: sticky; bottom: var(--gap); z-index: 1; height: max(210px, calc(33.33% - 16px)); margin-bottom: var(--gap); gap: 16px; }
     #voice-mic { width: 136px; height: 136px; }
@@ -226,10 +226,10 @@
     </ion-header>
     <ion-content color="light">
       <div id="voice-transcript" class="ion-flex-1 ion-padding-vertical"></div>
-      <ion-card id="voice-controls" class="ion-flex-none ion-display-flex ion-flex-column ion-align-items-center ion-justify-content-center">
+      <ion-list id="voice-controls" inset="true" class="ion-flex-none ion-display-flex ion-flex-column ion-align-items-center ion-justify-content-center">
         <ion-button id="voice-mic" color="rose" shape="round" aria-label="Silenciar el micro"><ion-icon slot="icon-only" name="mic"></ion-icon></ion-button>
         <ion-note id="voice-state" color="medium">Conectando…</ion-note>
-      </ion-card>
+      </ion-list>
     </ion-content>
   </ion-modal>
 
@@ -244,12 +244,12 @@
     <ion-content id="chat-body" color="light" fullscreen="true"></ion-content>
     <ion-footer class="ion-no-border">
       <ion-toolbar>
-        <ion-card id="chat-composer">
+        <ion-list id="chat-composer" inset="true">
           <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta a Dosify" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
           <div class="ion-display-flex ion-justify-content-end">
             <ion-button id="chat-send" color="primary" shape="round" size="small">Hablar</ion-button>
           </div>
-        </ion-card>
+        </ion-list>
       </ion-toolbar>
     </ion-footer>
   </ion-modal>
