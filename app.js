@@ -1493,13 +1493,12 @@ const proposalCard = (v, i) => {
     </div>
   </div>`;
 };
-// Your messages: a bubble as wide as its text, on the right (flex utilities); the assistant's: a row on the chat's own
-// background (color="light", as the page), without a card. Shared by the chat and the voice transcript.
-const bubble = (html, bar = '') => `<div class="ion-display-flex ion-justify-content-end ion-margin"><div class="bubble ion-text-end"><ion-label class="ion-text-wrap reading">${html}</ion-label>${bar}</div></div>`;
-const plainLine = (html, attrs = '') => `<ion-item color="light" lines="none"><ion-label class="ion-text-wrap reading" ${attrs}>${html}</ion-label></ion-item>`;
+// A message in the chat and the voice transcript: a row on the chat's own background (color="light", as the page),
+// without a card; yours aligned to the right. All Ionic.
+const messageLine = (html, mine = false) => `<ion-item color="light" lines="none"><ion-label class="ion-text-wrap reading${mine ? ' ion-text-end' : ''}">${html}</ion-label></ion-item>`;
 const BLOCKS = {
-  user: (v, i) => bubble(linkify(v.text), messageBar(i, true)),
-  assistant: (v, i) => `<div class="ion-margin-vertical">${plainLine(markdown(v.text))}${messageBar(i, false)}</div>`,
+  user: (v, i) => `<div class="ion-margin-vertical">${messageLine(linkify(v.text), true)}${messageBar(i, true)}</div>`,
+  assistant: (v, i) => `<div class="ion-margin-vertical">${messageLine(markdown(v.text))}${messageBar(i, false)}</div>`,
   action: (v, i) => actionLine(v.ok, v.text),
   error: (v, i) => `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger">${esc(v.text)}</ion-label></ion-item></ion-list>`,
   proposal: (v, i) => proposalCard(v, i),
@@ -1679,13 +1678,13 @@ function startClock() {
 }
 const stopClock = () => clearInterval(clock);
 
-// Transcript lines, like the chat: the user's on the right in a bubble, the agent's on the left without one, errors in red.
+// Transcript lines, like the chat: the user's on the right, the agent's on the left, errors in red.
 const setVoiceState = text => { voiceState.textContent = text; };
 // Scrolls the transcript to the end once Ionic has drawn what was just added.
 const scrollVoice = () => setTimeout(() => voiceModal.querySelector('ion-content').scrollToBottom(0), 60);
 function voiceLine(kind, text) {
-  voiceTranscript.insertAdjacentHTML('beforeend', kind === 'user' ? bubble(esc(text))
-    : kind === 'agent' ? `<div class="ion-margin-vertical">${plainLine(`<span>${esc(text)}</span>`)}</div>`
+  voiceTranscript.insertAdjacentHTML('beforeend', kind === 'user' ? `<div class="ion-margin-vertical">${messageLine(esc(text), true)}</div>`
+    : kind === 'agent' ? `<div class="ion-margin-vertical">${messageLine(`<span>${esc(text)}</span>`)}</div>`
     : `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" color="danger"><span>${esc(text)}</span></ion-label></ion-item></ion-list>`);
   scrollVoice();
   return voiceTranscript.lastElementChild.querySelector('ion-label > *'); // its text, rewritten as the agent speaks
@@ -1819,7 +1818,7 @@ function endVoice() {
 const textModal = $('#text-view');
 const copyText = text => navigator.clipboard.writeText(text).catch(() => {});
 const messageButton = (i, act, icon, title) => `<ion-button color="medium" data-msg="${i}" data-msg-act="${act}" aria-label="${title}" title="${title}"><ion-icon slot="icon-only" name="${icon}"></ion-icon></ion-button>`;
-const messageBar = (i, mine) => `<ion-item lines="none" class="msg-actions"><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
+const messageBar = (i, mine) => `<ion-item color="light" lines="none"><ion-buttons slot="${mine ? 'end' : 'start'}">${messageButton(i, 'copy', 'copy-outline', 'Copiar')}${messageButton(i, 'select', 'text-outline', 'Seleccionar texto')}${mine ? messageButton(i, 'edit', 'create-outline', 'Editar') : ''}</ion-buttons></ion-item>`;
 const MESSAGE_ACTIONS = {
   copy: v => copyText(v.text),
   // The «Texto» screen opens with all the text already selected.

@@ -68,19 +68,12 @@
     ion-app { height: calc(100% - var(--keyboard, 0px)); bottom: var(--keyboard, 0px); }
     /* While typing (app.js sets «keyboard»), no room for the home indicator under the input box: the keyboard covers it */
     html.keyboard ion-footer { --ion-safe-area-bottom: 0px; } /* on the footer: modals set their own value */
-    /* Flat fill (no border, no shadow) and corners shared by your messages, the input box and the voice capsule */
+    /* Flat fill (no border, no shadow) and corners shared by the input box and the voice capsule */
     :root { --surface: #fff; --surface-radius: 18px; }
     @media (prefers-color-scheme: dark) { :root { --surface: #2f3135; } } /* opaque: the chat scrolls behind the input box */
-    /* Assistant and voice: your messages in flat bubbles (up to the screen less 64 px; placed with Ionic's flex and
-       margin utilities), with the text as the assistant's and the icon row inside */
-    .bubble { max-width: calc(100% - 32px); padding: 11px 16px; border-radius: var(--surface-radius); background: var(--surface); }
-    .bubble ion-label { overflow-wrap: anywhere; }
     /* Assistant and voice: your messages, the replies and the «Texto» screen at the reading size (1rem: in iOS the system's body text,
        17 pt by default, which grows with its text size; 16 px in Android), not Ionic's smaller wrapped label */
     ion-label.reading.ion-text-wrap { font-size: 1rem; }
-    .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; }
-    /* Assistant: the icon row of each message, Ionic's own, on the message's background */
-    #chat-body .msg-actions { --background: transparent; }
     /* Assistant: the bar of the input box, transparent: the conversation (fullscreen) scrolls behind the capsule */
     #chat ion-footer ion-toolbar { --background: transparent; }
     /* Assistant: the input box, a capsule like the voice one with two rows: the text, full width, that grows, and below it
