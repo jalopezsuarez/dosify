@@ -383,7 +383,7 @@ const scheduleText = m => { const p = scheduleOn(m, today()) ?? m.schedules.at(-
 // snapshot is taken each time Products opens, so going back home resets it.
 let updatedAtOpen = new Map();
 const snapshotUpdated = () => { updatedAtOpen = new Map(state.products.map(m => [m.id, m.updated])); };
-const savedMark = m => updatedAtOpen.get(m.id) === m.updated ? '' : '<ion-icon class="saved" name="checkmark-circle" color="primary" aria-label="Guardado"></ion-icon>';
+const savedMark = m => updatedAtOpen.get(m.id) === m.updated ? '' : '<ion-icon class="saved" size="small" name="checkmark-circle" color="primary" aria-label="Guardado"></ion-icon>';
 const productRow = m => { const off = paused(m), cost = off ? '' : costLine(m); return `
   <ion-item button="true" detail="false" data-id="${m.id}">
     <ion-label class="ion-text-wrap"${off ? ' color="medium"' : ''}>
