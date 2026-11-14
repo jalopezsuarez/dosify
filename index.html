@@ -75,12 +75,12 @@
     #chat ion-footer ion-toolbar { --background: transparent; --padding-start: 0; --padding-end: 0; padding-inline: 0; } /* the box as wide as the chat's cards (iOS modals give toolbars 8 px) */
     /* Assistant: the input box, an Ionic inset list like the chat's cards and the voice one, with two rows: the text, full width, that grows, and
        below it a row of actions on the right («Hablar» / «Enviar», white on the main color) */
-    #chat-composer { padding: 0 8px 8px; }
+    #chat-composer { padding: 0 6px 4px; }
     #chat-input { --padding-start: 10px; --padding-end: 10px; font-size: 17px; }
     /* Android: the height of a native text field (56 px) instead of Ionic's 72 px, meant for forms with a label */
     .md #chat-input { --padding-top: 16px; --padding-bottom: 16px; }
     .md #chat-input, .md #chat-input .textarea-wrapper { min-height: 56px; }
-    #chat-send { --ion-color-contrast: #fff !important; margin: 0; }
+    #chat-send { --ion-color-contrast: #fff !important; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
     /* Voice conversation: the transcript on top and, below it, the microphone in an Ionic inset list (a card) that takes the bottom
