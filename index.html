@@ -75,7 +75,7 @@
        margin utilities), with the text as the assistant's and the icon row inside */
     .bubble { max-width: calc(100% - 32px); padding: 11px 16px; border-radius: var(--surface-radius); background: var(--surface); }
     .bubble ion-label { overflow-wrap: anywhere; }
-    /* Assistant and voice: your messages and the replies at the reading size (1rem: in iOS the system's body text,
+    /* Assistant and voice: your messages, the replies and the «Texto» screen at the reading size (1rem: in iOS the system's body text,
        17 pt by default, which grows with its text size; 16 px in Android), not Ionic's smaller wrapped label */
     ion-label.reading.ion-text-wrap { font-size: 1rem; }
     .bubble .msg-actions { --padding-start: 0; --inner-padding-end: 0; }
@@ -83,9 +83,11 @@
     #chat-body .msg-actions { --background: transparent; }
     /* Assistant: the bar of the input box, transparent: the conversation (fullscreen) scrolls behind the capsule */
     #chat ion-footer ion-toolbar { --background: transparent; }
-    /* Assistant: the input box, rounded and flat like the voice capsule */
-    #chat-input { --padding-start: 18px; --padding-end: 6px; --background: var(--surface); border-radius: var(--surface-radius); overflow: hidden; font-size: 17px; margin: 4px 6px 12px; width: calc(100% - 12px); }
-    #chat-input .textarea-end { align-self: center; }
+    /* Assistant: the input box, a capsule like the voice one with two rows: the text, full width, that grows, and below it
+       a row of actions on the right («Hablar» / «Enviar», white on the main color) */
+    #chat-composer { margin: 4px 6px 12px; padding: 0 8px 8px; border-radius: var(--surface-radius); background: var(--surface); }
+    #chat-input { --padding-start: 10px; --padding-end: 10px; font-size: 17px; }
+    #chat-send { --ion-color-contrast: #fff !important; margin: 0; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
     /* Voice conversation: the transcript on top and, below it, the microphone in a big rounded flat capsule that takes
@@ -250,9 +252,12 @@
     <ion-content id="chat-body" color="light" fullscreen="true"></ion-content>
     <ion-footer class="ion-no-border">
       <ion-toolbar>
-        <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta a Dosify" auto-grow="true" rows="1" enterkeyhint="send">
-          <ion-button slot="end" id="chat-send" color="primary" shape="round" size="small">Hablar</ion-button>
-        </ion-textarea>
+        <div id="chat-composer">
+          <ion-textarea id="chat-input" aria-label="Mensaje" placeholder="Pregunta a Dosify" auto-grow="true" rows="1" enterkeyhint="send"></ion-textarea>
+          <div class="ion-display-flex ion-justify-content-end">
+            <ion-button id="chat-send" color="primary" shape="round" size="small">Hablar</ion-button>
+          </div>
+        </div>
       </ion-toolbar>
     </ion-footer>
   </ion-modal>

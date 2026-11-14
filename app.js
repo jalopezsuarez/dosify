@@ -1824,10 +1824,10 @@ const MESSAGE_ACTIONS = {
   copy: v => copyText(v.text),
   // The «Texto» screen opens with all the text already selected.
   select: v => {
-    $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap" id="text-content">${lines(v.text)}</ion-label></ion-item></ion-list>`;
+    $('#text-body').innerHTML = `<ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap reading" id="text-content">${lines(v.text)}</ion-label></ion-item></ion-list>`;
     textModal.present().then(() => { const range = document.createRange(); range.selectNodeContents($('#text-content')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); });
   },
-  edit: v => { chatInput.value = v.text; chatInput.setFocus(); },
+  edit: v => { chatInput.value = v.text; updatePill(); chatInput.setFocus(); }, // set by code: no ionInput, so the pill is updated here
 };
 
 // Sends the question and serves the tools the assistant asks for until it replies with text.
