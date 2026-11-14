@@ -978,7 +978,7 @@ const saveChat = () => localStorage.setItem(CHAT_KEY, JSON.stringify({ chat, cha
 // The voice conversation uses the same prompt with spoken answers instead of Markdown, a confirmation by voice
 // instead of the cards' buttons (no dynamic UI) and only the last 30 days of records (less to send, faster answers).
 const VOICE_STYLE = 'Estás en una conversación por voz: responde en español con frases cortas y naturales, como hablando, sin Markdown, listas, tablas ni gráficas; di las fechas, horas y cantidades como se dicen («el 12 de noviembre», «a las nueve y media»).';
-const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar, que sale en pantalla con los botones «Descartar» y «Guardar», y se pregunta una sola vez, con ella ya en pantalla: nunca preguntes «¿la guardo?», «¿la marco?» ni pidas permiso antes de llamar a la herramienta (tampoco al pasar al siguiente elemento: llama primero y pregunta después); con la propuesta preparada, dísela en una frase y pregunta si la guardas. Solo cuando conteste a esa pregunta: con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Si pide terminar la conversación (terminar, colgar, dejarlo), despídete en pocas palabras y llama a end_conversation; si pide cerrar el asistente o salir, despídete igual y llama a close_assistant. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
+const VOICE_RULE = 'Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas, registrar un envase o cuadrar dosis, llama a la herramienta en ese mismo turno, sin describir antes lo que harías. Cada llamada prepara una propuesta sin guardar, que sale en pantalla con los botones «Descartar» y «Guardar», y se pregunta una sola vez, con ella ya en pantalla: nunca preguntes «¿la guardo?», «¿la marco?» ni pidas permiso antes de llamar a la herramienta (tampoco al pasar al siguiente elemento: llama primero y pregunta después); con la propuesta preparada, dísela en una frase y pregunta si la guardas. Solo cuando conteste a esa pregunta: con un sí, llama a confirm_change con su id; con un no, a discard_change. Si la herramienta dice que falta un dato, pregúntalo y vuelve a llamar. Ve a su ritmo: puede tardar en contestar porque está mirando la pantalla o haciendo otra cosa; si se queda en silencio, no le metas prisa, no preguntes si sigue ahí ni repitas lo que ya has dicho: como mucho, di una sola vez «Aquí estoy cuando quieras». Si pide terminar, colgar o dejarlo, llama a end_conversation; si pide cerrar el asistente o salir, a close_assistant: al momento, sin despedirte ni decir nada. Una llamada por elemento; nunca repitas una propuesta ya guardada. Usa los id que ves en los datos, pero no los digas.';
 // What the assistant knows: what the app is, the data model, precomputed figures per product and all the data as JSON.
 function systemPrompt(voice = false) {
   const now = new Date();
@@ -1008,7 +1008,7 @@ ${voice ? 'Datos (sin las tomas registradas: para verlas, llama a get_records co
 ${JSON.stringify({ timings: state.timings, products: state.products, ...!voice && { records: state.records } })}
 Los datos de arriba son los únicos ciertos ahora mismo: lo que se dijera en mensajes anteriores puede haber cambiado. Comprueba en ellos si algo existe antes de hablar de ello; un producto con el mismo nombre que ya está en los datos se modifica, no se crea otro.
 ${voice ? VOICE_RULE : `Interacción: siempre que quien usa la app quiera elegir, marcar varias cosas, repasar o confirmar una lista, rellenar o editar datos o responder entre opciones, no contestes con texto: llama a ui y compón la pantalla que haga falta con sus elementos (text, check, toggle, radio, chips, select, input de text/number/date/time, textarea y button), en una o varias secciones con título. Cada elemento tiene una clave (key): al aplicar recibes su valor y puedes usarlo en los argumentos de las acciones como {{clave}}. Las acciones son las otras herramientas: en un check, toggle, opción de radio, chips o select, se ejecuta si queda marcado o elegido; en un button, al pulsarlo; en actions (globales), siempre. Ejemplos: «una lista con check para marcar las tomas de esta mañana» → una sección con un check por producto pendiente del momento de la mañana, cada uno con action add_record (id, timing, day); «he comprado envases de X e Y» → una sección por producto con input date (key compra), number (key coste y dosis) y en actions add_container con id, bought "{{compra}}", cost "{{coste}}" y units "{{dosis}}"; «repasa lo que me queda» → un input number por producto con las dosis restantes y en actions adjust_stock con id y left; «¿qué producto?» → radio o buttons con los candidatos; elegir momentos → chips multiple. Los elementos sin acción solo te devuelven su valor: sirven para preguntar. Texto, tablas y gráficas solo cuando no hay nada con lo que interactuar.
-Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas ya guardadas, registrar un envase comprado o cuadrar las dosis que quedan (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos.`}`;
+Regla principal: siempre que el mensaje implique crear, cambiar, borrar, marcar o quitar algo, corregir tomas ya guardadas, registrar un envase comprado o cuadrar las dosis que quedan (lo pida como lo pida), llama a la herramienta en ese mismo turno, antes de nada: sin pedir datos, sin pedir confirmación y sin describir lo que harías. Cada llamada genera en la conversación un formulario editable con lo que propongas, que quien usa la app completa, guarda o descarta; recibirás el resultado con los datos finales. Si falta algún dato, no lo preguntes: llama igualmente con lo que tengas (basta con identificar el producto, la toma o el momento), el formulario sale con los valores actuales y quien usa la app lo rellena; si te dan el dato, ponlo en la llamada. Para varios elementos, una llamada por elemento (se muestran como una lista); nunca repitas una llamada igual ni vuelvas a proponer algo que el resultado ya te ha confirmado como guardado. Si no está claro a qué producto se refiere, propón una llamada por cada candidato. Usa los id que ves en los datos. Si pide cerrar, terminar, salir o colgar, llama a close_assistant al momento, sin despedirte ni escribir nada.`}`;
 }
 
 // ---------- Assistant: tools ----------
@@ -1055,6 +1055,7 @@ const tools = () => [
   tool('edit_records', 'Úsala en cuanto pidan corregir, cambiar o reescribir tomas ya guardadas (la dosis, las indicaciones o el nombre con que quedaron), una o muchas a la vez, aunque no digan el valor nuevo: abre un formulario con el producto, los días, el momento y los valores nuevos', { id: stringProp('Id del producto'), from: stringProp('Primer día AAAA-MM-DD; si no, el de su primera toma'), to: stringProp('Último día AAAA-MM-DD; si no, el de su última toma'), timing: timingProp('Solo las tomas de ese momento; si no, de todos'), dose: stringProp('Dosis nueva (empieza por un número); vacía, no cambia'), notes: stringProp('Indicaciones nuevas; vacías, no cambian'), name: stringProp('Nombre nuevo; vacío, no cambia') }, ['id']),
   tool('add_container', 'Úsala en cuanto digan que han comprado un envase de un producto, aunque no den el coste o las dosis (el formulario propone hoy y el coste y las dosis del último envase)', { id: stringProp('Id del producto'), bought: stringProp('Fecha de compra AAAA-MM-DD; si no, hoy'), cost: intProp('Coste en €'), units: intProp('Dosis del envase'), adjust: intProp('Reajuste en dosis, + o −') }, ['id']),
   tool('adjust_stock', 'Úsala en cuanto digan cuántas dosis les quedan de verdad de un producto o que no les cuadran: propone el reajuste del envase en curso para que las dosis restantes sean esas', { id: stringProp('Id del producto'), left: intProp('Dosis que quedan de verdad') }, ['id']),
+  tool('close_assistant', 'Cierra el asistente al momento, sin despedirte ni decir nada, en cuanto pida cerrar, terminar, salir o colgar', {}),
   tool('edit_timing', 'Úsala en cuanto pidan cambiar un momento (nombre, horas, visible), aunque no digan el valor nuevo', { id: { type: 'string', enum: timingIds() }, name: stringProp('Nombre'), start: intProp('Hora de inicio 0-24'), end: intProp('Hora de fin 0-24'), visible: { type: 'boolean' } }, ['id']),
 ];
 
@@ -1643,8 +1644,7 @@ const voiceTools = () => [...tools().filter(t => t.function.name !== 'ui'),
   tool('get_records', 'Consulta las tomas registradas entre dos días, de todos los productos o de uno', { from: stringProp('Primer día AAAA-MM-DD'), to: stringProp('Último día AAAA-MM-DD'), id: stringProp('Id del producto; si no, de todos') }, ['from', 'to']),
   tool('confirm_change', 'Guarda la propuesta que quien usa la app acaba de aprobar', { id: stringProp('Id de la propuesta') }, ['id']),
   tool('discard_change', 'Descarta la propuesta que quien usa la app no quiere', { id: stringProp('Id de la propuesta') }, ['id']),
-  tool('end_conversation', 'Termina la conversación por voz y vuelve al chat escrito, cuando pida terminarla, colgar o dejarlo', {}),
-  tool('close_assistant', 'Termina la conversación y cierra el asistente entero, cuando pida cerrar el asistente o salir', {})];
+  tool('end_conversation', 'Termina la conversación por voz al momento, sin despedirte ni decir nada, y vuelve al chat escrito, cuando pida terminarla, colgar o dejarlo', {})];
 // A JSON schema as ElevenLabs takes it: every property typed and described, and no enums (the timing ids change per
 // device and are in the prompt).
 const elevenSchema = (p, name) => p.type === 'object' ? { type: 'object', description: p.description ?? name, required: p.required ?? [], properties: Object.fromEntries(Object.entries(p.properties ?? {}).map(([k, v]) => [k, elevenSchema(v, k)])) }
@@ -1716,7 +1716,7 @@ function remember(role, text) {
 function onVoiceMessage({ source, message }) {
   message = spoken(message);
   if (!message) return; // silence comes as «...»
-  if (source === 'user') { for (const p of voicePending.values()) p.answered = true; endAgentLine(agentSpeaking); voiceLine('user', message); return remember('user', message); }
+  if (source === 'user') { for (const p of voicePending.values()) p.answered ||= p.asked; endAgentLine(agentSpeaking); voiceLine('user', message); return remember('user', message); }
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.final = [speaking.final, message].filter(Boolean).join(' ');
   remember('assistant', message);
@@ -1731,14 +1731,15 @@ function toggleMic() {
 
 // Proposals by voice: a card with «Descartar» / «Guardar» in the transcript; the agent gets what to read and how to
 // confirm. Deciding by voice or with the buttons applies it like the chat's cards (and tells the agent about taps).
-// By voice it is saved only once the user has spoken after the card appeared: the question is asked with it on screen.
+// By voice it is saved only after the agent has spoken with the card on screen and the user has answered after that:
+// the one question is always asked with the card on screen.
 function proposeByVoice(name, args) {
   const form = FORMS[name], draft = form.draft(args ?? {});
   if (!draft) return `No se ha podido proponer: ${form.missing?.() ?? `no existe ningún producto con ese id. ${existing()}`}`;
   const bad = form.validate(draft);
   if (bad.length) return `Faltan o no valen estos datos: ${bad.join(', ')}. Pregúntalos y vuelve a llamar con ellos.`;
   const id = newId();
-  voicePending.set(id, { name, draft, answered: false }); // answered: the user has spoken since the card appeared
+  voicePending.set(id, { name, draft, asked: false, answered: false }); // asked: the agent spoke with the card on screen; answered: then the user
   voiceTranscript.insertAdjacentHTML('beforeend', `<div data-voice-card="${id}"><ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(form.title(draft))}</h2><p>${esc(form.describe(draft))}</p></ion-label></ion-item></ion-list>
     <div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom"><ion-button fill="outline" color="medium" data-voice-act="discard" data-id="${id}">Descartar</ion-button><ion-button data-voice-act="save" data-id="${id}">${saveText(form, draft)}</ion-button></div></div>`);
   scrollVoice();
@@ -1747,7 +1748,7 @@ function proposeByVoice(name, args) {
 function decideByVoice(id, save, tapped = false) {
   const p = voicePending.get(id);
   if (!p) return 'Esa propuesta ya no está pendiente.';
-  if (save && !tapped && !p.answered) return 'Aún no ha contestado a esta propuesta: dísela en una frase, pregunta si la guardas y espera su respuesta.';
+  if (save && !tapped && !p.answered) return 'No guardado: aún no ha contestado a esta propuesta, que ya está en pantalla. Dísela en una frase, pregunta si la guardas y espera su respuesta.';
   voicePending.delete(id);
   const text = save ? applyForm(p.name, p.draft) ?? 'No se ha podido aplicar: ya no existe.' : `${FORMS[p.name].title(p.draft)}: propuesta descartada`;
   voiceTranscript.querySelector(`[data-voice-card="${id}"]`).outerHTML = actionLine(save, text);
@@ -1788,7 +1789,7 @@ async function openVoice() {
       overrides: { agent: { prompt: { prompt }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
       clientTools: voiceClientTools(),
       onConnect: () => { startClock(); setVoiceState('Te escucho'); },
-      onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (!agentSpeaking) { clearTimeout(lineEnd); lineEnd = setTimeout(endAgentLine, 3000, false); closing?.(); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
+      onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (agentSpeaking) for (const p of voicePending.values()) p.asked = true; else { clearTimeout(lineEnd); lineEnd = setTimeout(endAgentLine, 3000, false); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
       onAudioAlignment: a => sayChars(a.chars.join('')),
       onMessage: onVoiceMessage,
       onInterruption: () => endAgentLine(true),
@@ -1798,17 +1799,14 @@ async function openVoice() {
     if (!voiceOpen) endVoice(); // closed while connecting
   } catch (e) { voiceLine('error', e.message); setVoiceState('No se ha podido conectar'); }
 }
-// Closing by voice: once the agent has said goodbye (it stops speaking), or after 10 s at most, the voice screen closes
-// and, for the whole assistant, the chat too.
-let closing = null;
+// Closing by voice: at once, without a goodbye: the voice screen and, for the whole assistant, the chat too.
 function closeVoice(all) {
-  closing = () => { closing = null; voiceModal.dismiss(); if (all) chatModal.dismiss(); };
-  setTimeout(() => { if (!agentSpeaking) closing?.(); }, 4000);
-  setTimeout(() => closing?.(), 10000);
-  return `${all ? 'El asistente se cierra' : 'La conversación termina'} en cuanto acabes de hablar: despídete en pocas palabras.`;
+  voiceModal.dismiss();
+  if (all) chatModal.dismiss();
+  return 'Cerrado.';
 }
 function endVoice() {
-  closing = null; clearTimeout(lineEnd); stopClock();
+  clearTimeout(lineEnd); stopClock();
   voiceOpen = false;
   call?.endSession(); call = null;
   renderChat();
@@ -1855,6 +1853,11 @@ async function sendChat() {
       const message = await askModel();
       if (epoch !== chatEpoch) return;
       chat.push({ role: 'assistant', content: message.content ?? '', ...(message.tool_calls?.length ? { tool_calls: message.tool_calls } : {}) });
+      if (message.tool_calls?.some(c => c.function.name === 'close_assistant')) { // at once, with no reply shown
+        for (const c of message.tool_calls) pushToolResult(c.id, 'Cerrado.');
+        chatModal.dismiss();
+        break;
+      }
       if (message.content) chatView.push({ who: 'assistant', text: message.content });
       if (!message.tool_calls?.length) break;
       // Each tool call becomes an editable proposal; wait until the user decides on all of them.
