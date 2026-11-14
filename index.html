@@ -87,6 +87,9 @@
        a row of actions on the right («Hablar» / «Enviar», white on the main color) */
     #chat-composer { margin: 4px 6px 12px; padding: 0 8px 8px; border-radius: var(--surface-radius); background: var(--surface); }
     #chat-input { --padding-start: 10px; --padding-end: 10px; font-size: 17px; }
+    /* Android: the height of a native text field (56 px) instead of Ionic's 72 px, meant for forms with a label */
+    .md #chat-input { --padding-top: 16px; --padding-bottom: 16px; }
+    .md #chat-input, .md #chat-input .textarea-wrapper { min-height: 56px; }
     #chat-send { --ion-color-contrast: #fff !important; margin: 0; }
     /* API keys: text fields shown as dots, so the browser does not take them for passwords and autofill them */
     .secret input { -webkit-text-security: disc; }
