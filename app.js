@@ -953,16 +953,17 @@ function saveTimingEditor() {
 // gets all the app data; it can change them with tools, and each change becomes an editable proposal to save or discard.
 const AI_KEY = 'dosify-assistant';
 // No defaults: until url, key and model are filled in, the assistant cannot be used. The voice conversation needs the
-// ElevenLabs agent id (and, for a private agent, its API key); voiceTools keeps the ids of the tools created there.
+// ElevenLabs agent id (and, for a private agent, its API key); voiceTools keeps the ids of the tools created there
+// and voiceToolsSignature the signature of the tools the agent was prepared with.
 const AI_FIELDS = ['url', 'key', 'model', 'voiceAgent', 'voiceKey'];
-const ai = (() => { const v = load(AI_KEY) ?? {}; return { ...Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])), voiceTools: v.voiceTools && typeof v.voiceTools === 'object' ? v.voiceTools : {} }; })();
+const ai = (() => { const v = load(AI_KEY) ?? {}; return { ...Object.fromEntries(AI_FIELDS.map(k => [k, asText(v[k]).trim()])), voiceTools: v.voiceTools && typeof v.voiceTools === 'object' ? v.voiceTools : {}, voiceToolsSignature: asText(v.voiceToolsSignature) }; })();
 const saveAi = () => localStorage.setItem(AI_KEY, JSON.stringify(ai));
 const aiReady = () => !!(ai.url && ai.key && ai.model); // no defaults: all three are needed
 const aiField = name => $(`[name="${name}"]`, manager);
 // Saved while typing (not only on blur, which on iOS may not fire when closing Products) and the fields are
 // filled with the stored values each time Products opens.
 const showAi = () => AI_FIELDS.forEach(k => { aiField(k).value = ai[k]; });
-for (const k of AI_FIELDS) aiField(k).addEventListener('ionInput', () => { ai[k] = str(aiField(k).value).trim(); saveAi(); });
+for (const k of AI_FIELDS) aiField(k).addEventListener('ionInput', () => { ai[k] = str(aiField(k).value).trim(); if (k.startsWith('voice')) ai.voiceToolsSignature = ''; saveAi(); }); // another agent: prepare it again
 showAi();
 manager.addEventListener('ionModalWillPresent', showAi);
 
@@ -1657,20 +1658,27 @@ const elevenSchema = (p, name) => p.type === 'object' ? { type: 'object', descri
 const VOICE_TURN = { turn_eagerness: 'patient', turn_timeout: 30, silence_end_call_timeout: -1 };
 // «Preparar el agente de voz»: creates (or updates) each tool in ElevenLabs as a client tool, links them to the agent,
 // sets its turn-taking (VOICE_TURN) and lets the app send it the prompt, the first message and the language.
+const toolConfigs = () => voiceTools().map(({ function: f }) => ({ type: 'client', name: f.name, description: f.description, parameters: elevenSchema(f.parameters, f.name), expects_response: true, response_timeout_secs: 30 }));
+// A short signature of the tools: when it is not the one the agent was prepared with, the voice prepares it again by
+// itself before starting (with the API key), so a new version of the app never runs with old tools.
+const signature = text => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0).toString(36);
+async function prepareVoice() {
+  const ids = [];
+  for (const config of toolConfigs()) {
+    const body = JSON.stringify({ tool_config: config });
+    const known = ai.voiceTools[config.name] && await eleven(`/convai/tools/${ai.voiceTools[config.name]}`, { method: 'PATCH', body }).catch(() => null);
+    ids.push(ai.voiceTools[config.name] = known?.id ?? (await eleven('/convai/tools', { method: 'POST', body })).id);
+  }
+  await eleven(`/convai/agents/${encodeURIComponent(ai.voiceAgent)}`, { method: 'PATCH', body: JSON.stringify({ conversation_config: { agent: { prompt: { tool_ids: ids } }, turn: VOICE_TURN },
+    platform_settings: { overrides: { conversation_config_override: { agent: { prompt: { prompt: true }, first_message: true, language: true } } } } }) });
+  ai.voiceToolsSignature = signature(JSON.stringify(toolConfigs()));
+  saveAi();
+  return ids.length;
+}
 async function setupVoice() {
   if (!ai.voiceAgent || !ai.voiceKey) return notice('Faltan datos', 'Pon el ID del agente y la API key de ElevenLabs.');
-  try {
-    const ids = [];
-    for (const { function: f } of voiceTools()) {
-      const body = JSON.stringify({ tool_config: { type: 'client', name: f.name, description: f.description, parameters: elevenSchema(f.parameters, f.name), expects_response: true, response_timeout_secs: 30 } });
-      const known = ai.voiceTools[f.name] && await eleven(`/convai/tools/${ai.voiceTools[f.name]}`, { method: 'PATCH', body }).catch(() => null);
-      ids.push(ai.voiceTools[f.name] = known?.id ?? (await eleven('/convai/tools', { method: 'POST', body })).id);
-    }
-    saveAi();
-    await eleven(`/convai/agents/${encodeURIComponent(ai.voiceAgent)}`, { method: 'PATCH', body: JSON.stringify({ conversation_config: { agent: { prompt: { tool_ids: ids } }, turn: VOICE_TURN },
-      platform_settings: { overrides: { conversation_config_override: { agent: { prompt: { prompt: true }, first_message: true, language: true } } } } }) });
-    notice('Agente preparado', `Tiene las ${ids.length} herramientas de Dosify y permiso para recibir los datos, el primer mensaje y el idioma.`);
-  } catch (e) { notice('No se ha podido preparar el agente', e.message); }
+  try { notice('Agente preparado', `Tiene las ${await prepareVoice()} herramientas de Dosify y permiso para recibir los datos, el primer mensaje y el idioma.`); }
+  catch (e) { notice('No se ha podido preparar el agente', e.message); }
 }
 
 // The title is a clock (mm:ss) that runs from the moment the call connects until it ends.
@@ -1780,6 +1788,7 @@ const voiceClientTools = () => ({
   end_conversation: () => closeVoice(false),
   close_assistant: () => closeVoice(true),
   discard_change: ({ id }) => decideByVoice(id, false),
+  ...Object.fromEntries(GUIDED_TOOLS.map(t => [t.function.name, () => 'Esa herramienta es solo de la toma guiada: aquí no vale. Usa la que corresponda a lo que ha pedido.'])),
 });
 
 // The voice conversation of the assistant (free, with the data and all its tools).
@@ -1798,6 +1807,7 @@ async function startVoice({ prompt, firstMessage, clientTools }) {
   voiceOpen = true;
   try {
     if (!window.ElevenLabsClient) await loadScript(ELEVENLABS);
+    if (ai.voiceKey && ai.voiceToolsSignature !== signature(JSON.stringify(toolConfigs()))) { setVoiceState('Preparando el agente…'); await prepareVoice(); }
     const auth = ai.voiceKey ? { conversationToken: (await eleven(`/convai/conversation/token?agent_id=${encodeURIComponent(ai.voiceAgent)}`)).token } : { agentId: ai.voiceAgent };
     if (new Blob([prompt]).size > PROMPT_BYTES) throw new Error('Hay demasiados datos para la conversación por voz: acorta las indicaciones, referencias o notas de los productos.');
     call = await window.ElevenLabsClient.Conversation.startSession({ ...auth,
@@ -1902,7 +1912,9 @@ function guidedInfo() {
 }
 // Every tool does nothing once done (the screen is closing) and reads only what the app gives.
 const guidedTool = fn => () => !guided || guided.done ? 'No digas nada.' : fn();
+// Any other tool of the agent (those of the assistant) is turned away: in the guided doses only the guided ones are valid.
 const guidedTools = () => ({
+  ...Object.fromEntries(voiceTools().map(t => t.function.name).filter(name => !name.startsWith('guided_')).map(name => [name, () => 'No uses esa herramienta: aquí solo valen guided_save, guided_skip, guided_back, guided_repeat, guided_status, guided_info, guided_other y guided_end. Llama ahora a la que corresponda a lo que ha dicho y no digas nada más.'])),
   guided_save: guidedTool(() => guidedDecide(true)),
   guided_skip: guidedTool(() => guidedDecide(false)),
   guided_back: guidedTool(guidedBack),
