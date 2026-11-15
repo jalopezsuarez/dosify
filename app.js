@@ -341,6 +341,7 @@ async function renderHome() {
         </ion-label>
       </ion-item>
     </ion-list>
+    ${pending.some(m => productOf(m.id)?.containers.length) && !sortingPending ? '<ion-button id="guided-start" color="primary" expand="block" class="ion-margin-horizontal" aria-label="Tomar las pendientes por voz"><ion-icon slot="icon-only" name="play"></ion-icon></ion-button>' : ''}
     <ion-list-header>
       <ion-label>Pendiente</ion-label>
       ${headerButton('pending-sort', sortingPending ? 'checkmark-outline' : 'swap-vertical-outline', sortingPending ? 'Terminar de ordenar' : 'Ordenar')}
@@ -1639,12 +1640,13 @@ async function eleven(path, init = {}) {
 }
 
 // The tools of the voice conversation: those of the chat but the dynamic UI, plus reading the records, confirming or
-// discarding a proposal and closing (the conversation or the whole assistant).
+// discarding a proposal and closing (the conversation or the whole assistant), and those of the guided doses (below).
 const voiceTools = () => [...tools().filter(t => t.function.name !== 'ui'),
   tool('get_records', 'Consulta las tomas registradas entre dos días, de todos los productos o de uno', { from: stringProp('Primer día AAAA-MM-DD'), to: stringProp('Último día AAAA-MM-DD'), id: stringProp('Id del producto; si no, de todos') }, ['from', 'to']),
   tool('confirm_change', 'Guarda la propuesta que quien usa la app acaba de aprobar', { id: stringProp('Id de la propuesta') }, ['id']),
   tool('discard_change', 'Descarta la propuesta que quien usa la app no quiere', { id: stringProp('Id de la propuesta') }, ['id']),
-  tool('end_conversation', 'Termina la conversación por voz al momento, sin despedirte ni decir nada, y vuelve al chat escrito, cuando pida terminarla, colgar o dejarlo', {})];
+  tool('end_conversation', 'Termina la conversación por voz al momento, sin despedirte ni decir nada, y vuelve al chat escrito, cuando pida terminarla, colgar o dejarlo', {}),
+  ...GUIDED_TOOLS];
 // A JSON schema as ElevenLabs takes it: every property typed and described, and no enums (the timing ids change per
 // device and are in the prompt).
 const elevenSchema = (p, name) => p.type === 'object' ? { type: 'object', description: p.description ?? name, required: p.required ?? [], properties: Object.fromEntries(Object.entries(p.properties ?? {}).map(([k, v]) => [k, elevenSchema(v, k)])) }
@@ -1716,10 +1718,15 @@ function remember(role, text) {
 function onVoiceMessage({ source, message }) {
   message = spoken(message);
   if (!message) return; // silence comes as «...»
-  if (source === 'user') { for (const p of voicePending.values()) p.answered ||= p.asked; endAgentLine(agentSpeaking); voiceLine('user', message); return remember('user', message); }
+  if (source === 'user') {
+    for (const p of voicePending.values()) p.answered ||= p.asked;
+    if (guided) guided.answered ||= guided.asked;
+    endAgentLine(agentSpeaking); voiceLine('user', message);
+    return guided || remember('user', message); // the guided doses do not go to the chat
+  }
   speaking ??= { el: voiceLine('agent', ''), text: '', final: '' };
   speaking.final = [speaking.final, message].filter(Boolean).join(' ');
-  remember('assistant', message);
+  if (!guided) remember('assistant', message);
 }
 const showMic = () => { voiceMic.color = micOn ? 'rose' : 'primary'; voiceMic.querySelector('ion-icon').name = micOn ? 'mic' : 'mic-off'; voiceMic.setAttribute('aria-label', micOn ? 'Silenciar el micro' : 'Activar el micro'); };
 function toggleMic() {
@@ -1775,21 +1782,34 @@ const voiceClientTools = () => ({
   discard_change: ({ id }) => decideByVoice(id, false),
 });
 
-async function openVoice() {
-  if (!ai.voiceAgent) return notice('Conversación por voz', 'Configúrala en Productos › Asistente: el ID del agente de ElevenLabs, su API key y «Preparar el agente de voz».');
+// The voice conversation of the assistant (free, with the data and all its tools).
+const voiceReady = () => ai.voiceAgent || notice('Conversación por voz', 'Configúrala en Productos › Asistente: el ID del agente de ElevenLabs, su API key y «Preparar el agente de voz».');
+function openVoice() {
+  if (!voiceReady()) return;
+  guided = null;
+  return startVoice({ prompt: systemPrompt(true), firstMessage: '¿En qué te ayudo?', clientTools: voiceClientTools() });
+}
+// Opens the voice screen and starts a session of the agent with this prompt, first message (or a function that gives
+// it once the screen is clean) and client tools.
+async function startVoice({ prompt, firstMessage, clientTools }) {
   voiceTranscript.innerHTML = ''; voicePending.clear(); speaking = null; agentSpeaking = false; micOn = true; showMic(); showClock(0); setVoiceState('Conectando…');
+  const first = typeof firstMessage === 'function' ? firstMessage() : firstMessage;
   await voiceModal.present();
   voiceOpen = true;
   try {
     if (!window.ElevenLabsClient) await loadScript(ELEVENLABS);
     const auth = ai.voiceKey ? { conversationToken: (await eleven(`/convai/conversation/token?agent_id=${encodeURIComponent(ai.voiceAgent)}`)).token } : { agentId: ai.voiceAgent };
-    const prompt = systemPrompt(true);
     if (new Blob([prompt]).size > PROMPT_BYTES) throw new Error('Hay demasiados datos para la conversación por voz: acorta las indicaciones, referencias o notas de los productos.');
     call = await window.ElevenLabsClient.Conversation.startSession({ ...auth,
-      overrides: { agent: { prompt: { prompt }, firstMessage: '¿En qué te ayudo?', language: 'es' } },
-      clientTools: voiceClientTools(),
+      overrides: { agent: { prompt: { prompt }, firstMessage: first, language: 'es' } },
+      clientTools,
       onConnect: () => { startClock(); setVoiceState('Te escucho'); },
-      onModeChange: ({ mode }) => { agentSpeaking = mode === 'speaking'; if (agentSpeaking) for (const p of voicePending.values()) p.asked = true; else { clearTimeout(lineEnd); lineEnd = setTimeout(endAgentLine, 3000, false); } setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar'); },
+      onModeChange: ({ mode }) => {
+        agentSpeaking = mode === 'speaking';
+        if (agentSpeaking) { for (const p of voicePending.values()) p.asked = true; if (guided) guided.asked = true; }
+        else { clearTimeout(lineEnd); lineEnd = setTimeout(endAgentLine, 3000, false); if (guided?.done) voiceModal.dismiss(); }
+        setVoiceState(mode === 'speaking' ? 'Hablando…' : micOn ? 'Te escucho' : 'Micro apagado: tócalo para hablar');
+      },
       onAudioAlignment: a => sayChars(a.chars.join('')),
       onMessage: onVoiceMessage,
       onInterruption: () => endAgentLine(true),
@@ -1807,9 +1827,69 @@ function closeVoice(all) {
 }
 function endVoice() {
   clearTimeout(lineEnd); stopClock();
-  voiceOpen = false;
+  voiceOpen = false; guided = null;
   call?.endSession(); call = null;
   renderChat();
+}
+
+// ---------- Doses by voice (guided) ----------
+
+// «▶» above «Pendiente»: a voice session of the same agent with a closed script and no free conversation. The app reads
+// the pending doses of the day and timing on screen (those with a container), one by one in their order; each one is a
+// card with «Descartar» / «Guardar», and only a few commands are understood: guardar, descartar, repetir and terminar.
+// After saving a dose whose container runs out soon (rose), it says how long it lasts. At the end it says so and
+// closes. Every text is the app's: the agent reads it as is. A dose is saved by voice only when the user has answered
+// after the agent read it (or with the card's button).
+let guided = null; // { timing, day, queue: products, i: current, said: last text, asked, answered, done }
+const GUIDED_TOOLS = [
+  tool('guided_save', 'Toma guiada: guarda la toma actual, cuando diga guardar, sí, vale, hecho o tomada', {}),
+  tool('guided_skip', 'Toma guiada: descarta la toma actual sin guardarla, cuando diga descartar, no, saltar o siguiente', {}),
+  tool('guided_repeat', 'Toma guiada: repite lo último, cuando diga repite, otra vez o qué', {}),
+  tool('guided_end', 'Toma guiada: termina y cierra al momento, sin decir nada, cuando diga terminar, cerrar, salir, colgar o para', {}),
+];
+const GUIDED_PROMPT = 'Eres el lector de tomas de Dosify. No conversas ni preguntas ni explicas: lees en voz alta, en español, exactamente el texto que te da la app, sin añadir, quitar ni cambiar nada, y esperas la orden. Órdenes: guardar (o sí, vale, hecho, tomada) → guided_save; descartar (o no, saltar, siguiente) → guided_skip; repetir (o repite, otra vez, ¿qué?) → guided_repeat; terminar (o cerrar, salir, colgar, para) → guided_end. Tras cada herramienta, lee exactamente el texto que devuelve. Si dice otra cosa, di solo: «Di guardar, descartar, repetir o terminar.»';
+const read = text => `Lee exactamente, sin añadir nada: «${text}»`;
+const runsOut = f => f.daysLeft <= 0 ? 'Este envase se agota hoy.' : f.daysLeft === 1 ? 'Este envase se agota mañana.' : `Te quedan ${f.daysLeft} días de este envase.`;
+// Shows the card of the current dose and returns what to read.
+function guidedPresent(prefix = '') {
+  const m = guided.queue[guided.i];
+  guided.asked = guided.answered = false;
+  voiceTranscript.insertAdjacentHTML('beforeend', `<div data-guided-card><ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(m.name)}</h2><p>${esc(m.dose)}</p>${supplyLine(m.id)}</ion-label></ion-item></ion-list>
+    <div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom"><ion-button fill="outline" color="medium" data-guided-act="skip">Descartar</ion-button><ion-button data-guided-act="save">Guardar</ion-button></div></div>`);
+  scrollVoice();
+  guided.said = `Te toca ${m.name}: ${m.dose}.`; // what «repite» reads again
+  return prefix + guided.said;
+}
+// Saves or discards the current dose and goes on with the next one (or ends).
+function guidedDecide(save, tapped = false) {
+  if (!guided || guided.done) return 'No digas nada.';
+  if (save && !tapped && !guided.answered) return 'No guardado: espera su orden y no digas nada.';
+  const m = guided.queue[guided.i];
+  if (save) { addRecord(m, guided.timing, guided.day); commit(); }
+  const f = save && figures(productOf(m.id));
+  voiceTranscript.querySelector('[data-guided-card]').outerHTML = actionLine(save, `«${m.name}» ${save ? 'guardado' : 'descartado'}`);
+  const said = `${save ? 'Guardado.' : 'Descartado.'}${f?.soon ? ` ${runsOut(f)}` : ''} `;
+  guided.i++;
+  if (guided.i < guided.queue.length) return read(guidedPresent(`${said}Siguiente. `));
+  guided.done = true; // closes when the agent stops speaking (or in 10 s at most)
+  setTimeout(() => guided?.done && voiceModal.dismiss(), 10000);
+  return read(guided.said = `${said}Listo: no quedan tomas pendientes de ${label(guided.timing)}.`);
+}
+const guidedTools = () => ({
+  guided_save: () => guidedDecide(true),
+  guided_skip: () => guidedDecide(false),
+  guided_repeat: () => guided ? read(guided.said) : 'No digas nada.',
+  guided_end: () => { voiceModal.dismiss(); return 'Cerrado.'; },
+});
+// Starts with the pending doses (with a container) of the day and timing on screen.
+function openGuided() {
+  if (!voiceReady()) return;
+  const timing = selectedTiming(), day = selectedDay();
+  const queue = dayRows(timing, day).pending.filter(m => productOf(m.id)?.containers.length);
+  if (!queue.length) return notice('Nada pendiente', 'No quedan tomas pendientes que anotar en este momento.');
+  guided = { timing, day, queue, i: 0, done: false };
+  const intro = `${label(timing)}${day === today() ? '' : `, ${longDate(day, false)}`}: ${queue.length === 1 ? 'una toma' : `${queue.length} tomas`}. `;
+  return startVoice({ prompt: GUIDED_PROMPT, firstMessage: () => guidedPresent(intro), clientTools: guidedTools() });
 }
 
 // ---------- Assistant: message bar and «Texto» ----------
@@ -1919,6 +1999,7 @@ $('#home').addEventListener('click', e => {
   if (e.target.closest('ion-label')) e.target.closest('ion-item').querySelector('ion-checkbox')?.click();
   if (e.target.closest('#taken-sort')) chooseSort();
   if (e.target.closest('#pending-sort')) { sortingPending = !sortingPending; renderHome(); }
+  if (e.target.closest('#guided-start')) openGuided();
 });
 // On drop, complete() leaves the row where it is on screen: only the order is saved, no re-render nor scroll.
 $('#home').addEventListener('ionReorderEnd', e => {
@@ -2006,7 +2087,13 @@ $('#voice-setup').onclick = setupVoice;
 $('#voice-mic').onclick = toggleMic;
 $('#voice-close').onclick = () => voiceModal.dismiss();
 voiceModal.addEventListener('ionModalDidDismiss', endVoice);
-$('#voice-transcript').addEventListener('click', e => { const b = e.target.closest('[data-voice-act]'); if (b) decideByVoice(b.dataset.id, b.dataset.voiceAct === 'save', true); });
+$('#voice-transcript').addEventListener('click', e => {
+  const b = e.target.closest('[data-voice-act]'); if (b) decideByVoice(b.dataset.id, b.dataset.voiceAct === 'save', true);
+  // A guided card's button is the same as saying it: the agent gets the command and reads what comes next.
+  const g = e.target.closest('[data-guided-act]'); if (!g || !guided) return;
+  const save = g.dataset.guidedAct === 'save';
+  if (call) { guided.answered = true; call.sendUserMessage(save ? 'Guardar' : 'Descartar'); } else guidedDecide(save, true);
+});
 // Interaction with the chat: suggestions and «Más», message icons, proposal rows (open the edit view), proposal fields
 // (written to the draft), chips (timings, schedules, visible, ui elements) and buttons (ui buttons, save, discard, all).
 // UI elements: checkboxes, toggles, radios and selects write their value to the draft.
