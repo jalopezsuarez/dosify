@@ -1834,26 +1834,33 @@ function endVoice() {
 
 // ---------- Doses by voice (guided) ----------
 
-// «▶» above «Pendiente»: a voice session of the same agent with a closed script and no free conversation. The app reads
-// the pending doses of the day and timing on screen (those with a container), one by one in their order; each one is a
-// card with «Descartar» / «Guardar», and only a few commands are understood: guardar, descartar, repetir and terminar.
-// After saving a dose whose container runs out soon (rose), it says how long it lasts. At the end it says so and
-// closes. Every text is the app's: the agent reads it as is. A dose is saved by voice only when the user has answered
-// after the agent read it (or with the card's button).
-let guided = null; // { timing, day, queue: products, i: current, said: last text, asked, answered, done }
+// «▶» above «Pendiente»: a voice agent specialised in taking the doses, with the same screen and ElevenLabs agent as the
+// voice conversation but a closed, deterministic script it cannot leave. It goes through the pending doses of the day
+// and timing on screen (those with a container), one by one in their order, each one a card with «Descartar» /
+// «Guardar». The agent never speaks on its own: it understands what the user says, in any words, maps it to exactly
+// one of a few tools (save, skip, back, repeat, status, info, other, end) and reads as is the text the app returns.
+// After saving a dose whose container runs out soon (rose), it says how long it lasts; at the end it says so and
+// closes. A dose is saved by voice only when the user has answered after the agent read it (or with the card's button).
+let guided = null; // { timing, day, queue: products, i: current, log: [{ i, saved }], said, asked, answered, done }
 const GUIDED_TOOLS = [
-  tool('guided_save', 'Toma guiada: guarda la toma actual, cuando diga guardar, sí, vale, hecho o tomada', {}),
-  tool('guided_skip', 'Toma guiada: descarta la toma actual sin guardarla, cuando diga descartar, no, saltar o siguiente', {}),
-  tool('guided_repeat', 'Toma guiada: repite lo último, cuando diga repite, otra vez o qué', {}),
-  tool('guided_end', 'Toma guiada: termina y cierra al momento, sin decir nada, cuando diga terminar, cerrar, salir, colgar o para', {}),
+  tool('guided_save', 'La toma actual está hecha: guárdala (sí, hecha, tomada, guárdala, vale, listo…)', {}),
+  tool('guided_skip', 'La toma actual no se hace ahora: descártala sin guardar (no, sáltala, después, no la tengo, descarta…)', {}),
+  tool('guided_back', 'Volver a la toma anterior y deshacer lo que se hizo con ella (atrás, la anterior, me he equivocado, deshaz…)', {}),
+  tool('guided_repeat', 'Repetir la toma actual (repite, otra vez, ¿cuál?, no te he oído…)', {}),
+  tool('guided_status', 'Cuántas tomas lleva y cuáles quedan (¿cuántas quedan?, ¿cuáles faltan?, ¿cuántas llevo?…)', {}),
+  tool('guided_info', 'Indicaciones de la toma actual y cuánto le queda al envase (¿cómo se toma?, ¿con comida?, ¿cuánto me queda?…)', {}),
+  tool('guided_other', 'Cualquier otra cosa que no sea sobre estas tomas', {}),
+  tool('guided_end', 'Terminar y cerrar al momento (termina, cierra, sal, cuelga, para, ya está…)', {}),
 ];
-const GUIDED_PROMPT = 'Eres el lector de tomas de Dosify. No conversas ni preguntas ni explicas: lees en voz alta, en español, exactamente el texto que te da la app, sin añadir, quitar ni cambiar nada, y esperas la orden. Órdenes: guardar (o sí, vale, hecho, tomada) → guided_save; descartar (o no, saltar, siguiente) → guided_skip; repetir (o repite, otra vez, ¿qué?) → guided_repeat; terminar (o cerrar, salir, colgar, para) → guided_end. Tras cada herramienta, lee exactamente el texto que devuelve. Si dice otra cosa, di solo: «Di guardar, descartar, repetir o terminar.»';
+const GUIDED_PROMPT = 'Eres el agente de tomas de Dosify: tu única función es ayudar a hacer, una a una, las tomas que la app te va dando, y no puedes salir de ahí. Nunca hablas por tu cuenta: no saludas, no conversas, no preguntas, no explicas, no opinas ni das consejo. Cada vez que quien usa la app diga algo, entiende lo que quiere, lo diga como lo diga, y llama exactamente a una herramienta: guided_save si la toma está hecha, guided_skip si no la hace ahora, guided_back si quiere volver a la anterior, guided_repeat si quiere oírla otra vez, guided_status si pregunta cuántas o cuáles quedan, guided_info si pregunta por la toma actual (cómo se toma, cuánto queda), guided_end si quiere terminar, y guided_other para todo lo demás. Después lee en voz alta, en español, exactamente el texto que devuelve la herramienta, sin añadir, quitar ni cambiar nada, y espera.';
 const read = text => `Lee exactamente, sin añadir nada: «${text}»`;
 const runsOut = f => f.daysLeft <= 0 ? 'Este envase se agota hoy.' : f.daysLeft === 1 ? 'Este envase se agota mañana.' : `Te quedan ${f.daysLeft} días de este envase.`;
+const guidedDose = () => guided.queue[guided.i];
 // Shows the card of the current dose and returns what to read.
 function guidedPresent(prefix = '') {
-  const m = guided.queue[guided.i];
+  const m = guidedDose();
   guided.asked = guided.answered = false;
+  voiceTranscript.querySelector('[data-guided-card]')?.remove();
   voiceTranscript.insertAdjacentHTML('beforeend', `<div data-guided-card><ion-list inset="true"><ion-item lines="none"><ion-label class="ion-text-wrap"><h2 class="medium">${esc(m.name)}</h2><p>${esc(m.dose)}</p>${supplyLine(m.id)}</ion-label></ion-item></ion-list>
     <div class="proposal-actions ion-display-flex ion-margin-horizontal ion-margin-bottom"><ion-button fill="outline" color="medium" data-guided-act="skip">Descartar</ion-button><ion-button data-guided-act="save">Guardar</ion-button></div></div>`);
   scrollVoice();
@@ -1862,10 +1869,10 @@ function guidedPresent(prefix = '') {
 }
 // Saves or discards the current dose and goes on with the next one (or ends).
 function guidedDecide(save, tapped = false) {
-  if (!guided || guided.done) return 'No digas nada.';
-  if (save && !tapped && !guided.answered) return 'No guardado: espera su orden y no digas nada.';
-  const m = guided.queue[guided.i];
+  if (save && !tapped && !guided.answered) return 'No guardado: espera a que hable y no digas nada.';
+  const m = guidedDose();
   if (save) { addRecord(m, guided.timing, guided.day); commit(); }
+  guided.log.push({ i: guided.i, saved: save });
   const f = save && figures(productOf(m.id));
   voiceTranscript.querySelector('[data-guided-card]').outerHTML = actionLine(save, `«${m.name}» ${save ? 'guardado' : 'descartado'}`);
   const said = `${save ? 'Guardado.' : 'Descartado.'}${f?.soon ? ` ${runsOut(f)}` : ''} `;
@@ -1875,10 +1882,34 @@ function guidedDecide(save, tapped = false) {
   setTimeout(() => guided?.done && voiceModal.dismiss(), 10000);
   return read(guided.said = `${said}Listo: no quedan tomas pendientes de ${label(guided.timing)}.`);
 }
+// Goes back to the previous dose and undoes what was done with it.
+function guidedBack() {
+  const last = guided.log.pop();
+  if (!last) return read(`Es la primera. ${guided.said}`);
+  const m = guided.queue[last.i];
+  if (last.saved) { removeRecord(m.id, guided.timing, guided.day); commit(); }
+  guided.i = last.i;
+  voiceTranscript.insertAdjacentHTML('beforeend', actionLine(false, `«${m.name}» deshecho`));
+  return read(guidedPresent(`Vuelvo a la anterior${last.saved ? ', sin guardar' : ''}. `));
+}
+function guidedStatus() {
+  const saved = guided.log.filter(x => x.saved).length, left = guided.queue.slice(guided.i).map(m => m.name);
+  return read(`Llevas ${saved} de ${guided.queue.length}. Quedan ${left.length}: ${new Intl.ListFormat('es').format(left)}. ${guided.said}`);
+}
+function guidedInfo() {
+  const m = guidedDose(), f = figures(productOf(m.id));
+  return read(`${m.notes ? `${m.name}: ${m.notes}.` : `${m.name} no tiene indicaciones.`}${f.daysLeft !== null ? ` ${runsOut(f)}` : ''} ${guided.said}`);
+}
+// Every tool does nothing once done (the screen is closing) and reads only what the app gives.
+const guidedTool = fn => () => !guided || guided.done ? 'No digas nada.' : fn();
 const guidedTools = () => ({
-  guided_save: () => guidedDecide(true),
-  guided_skip: () => guidedDecide(false),
-  guided_repeat: () => guided ? read(guided.said) : 'No digas nada.',
+  guided_save: guidedTool(() => guidedDecide(true)),
+  guided_skip: guidedTool(() => guidedDecide(false)),
+  guided_back: guidedTool(guidedBack),
+  guided_repeat: guidedTool(() => read(guided.said)),
+  guided_status: guidedTool(guidedStatus),
+  guided_info: guidedTool(guidedInfo),
+  guided_other: guidedTool(() => read(`Solo te ayudo con estas tomas. ${guided.said}`)),
   guided_end: () => { voiceModal.dismiss(); return 'Cerrado.'; },
 });
 // Starts with the pending doses (with a container) of the day and timing on screen.
@@ -1887,7 +1918,7 @@ function openGuided() {
   const timing = selectedTiming(), day = selectedDay();
   const queue = dayRows(timing, day).pending.filter(m => productOf(m.id)?.containers.length);
   if (!queue.length) return notice('Nada pendiente', 'No quedan tomas pendientes que anotar en este momento.');
-  guided = { timing, day, queue, i: 0, done: false };
+  guided = { timing, day, queue, i: 0, log: [], done: false };
   const intro = `${label(timing)}${day === today() ? '' : `, ${longDate(day, false)}`}: ${queue.length === 1 ? 'una toma' : `${queue.length} tomas`}. `;
   return startVoice({ prompt: GUIDED_PROMPT, firstMessage: () => guidedPresent(intro), clientTools: guidedTools() });
 }
